@@ -1,1 +1,89 @@
 @import "tailwindcss";
+
+@theme {
+  --font-serif: var(--font-serif);
+  --font-sans: var(--font-sans);
+}
+
+/* ── TipTap / ProseMirror editor styles ── */
+
+.tiptap {
+  outline: none;
+  min-height: 350px;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.75;
+  color: #1a1a1a;
+}
+
+.tiptap p {
+  margin-bottom: 0.75em;
+}
+
+.tiptap h2 {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: #000;
+}
+
+.tiptap h3 {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  color: #000;
+}
+
+.tiptap ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+.tiptap ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+.tiptap li {
+  margin-bottom: 0.25em;
+}
+
+.tiptap blockquote {
+  border-left: 3px solid #B44C43;
+  padding-left: 1em;
+  margin-left: 0;
+  margin-bottom: 0.75em;
+  color: #555;
+  font-style: italic;
+}
+
+.tiptap code {
+  background-color: #f4f4f4;
+  border-radius: 3px;
+  padding: 0.15em 0.3em;
+  font-size: 0.9em;
+}
+
+.tiptap strong {
+  font-weight: 700;
+}
+
+.tiptap em {
+  font-style: italic;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: "Start writing your micro-essay...";
+  color: #ccc;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

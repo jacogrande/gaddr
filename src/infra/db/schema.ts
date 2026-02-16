@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
 
 // ── Better Auth tables ──
 
@@ -60,7 +60,7 @@ export const essay = pgTable("essay", {
     .notNull()
     .references(() => user.id),
   title: text("title").notNull(),
-  content: text("content").notNull(),
+  content: jsonb("content").notNull(),
   status: text("status", { enum: ["draft", "published"] })
     .notNull()
     .default("draft"),
