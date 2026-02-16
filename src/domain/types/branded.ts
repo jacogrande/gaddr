@@ -13,10 +13,24 @@ declare const brand: unique symbol;
 export type UserId = string & { readonly [brand]: "UserId" };
 export type EssayId = string & { readonly [brand]: "EssayId" };
 
-// ── UUID v4 validation ──
+// ── Validation ──
 
 const UUID_V4_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function validateNonEmpty<T>(
+  raw: string,
+  label: string,
+): Result<T, ValidationError> {
+  if (raw.length === 0) {
+    return err({
+      kind: "ValidationError",
+      message: `Invalid ${label}: must not be empty`,
+      field: label,
+    });
+  }
+  return ok(raw as T);
+}
 
 function validateUuid<T>(
   raw: string,
@@ -35,10 +49,12 @@ function validateUuid<T>(
 
 // ── Constructors ──
 
+// UserId: accepts any non-empty string (Better Auth generates nanoid-style IDs)
 export function userId(raw: string): Result<UserId, ValidationError> {
-  return validateUuid<UserId>(raw, "userId");
+  return validateNonEmpty<UserId>(raw, "userId");
 }
 
+// EssayId: requires UUID v4 (we control generation)
 export function essayId(raw: string): Result<EssayId, ValidationError> {
   return validateUuid<EssayId>(raw, "essayId");
 }
