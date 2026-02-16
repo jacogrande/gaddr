@@ -1,0 +1,22 @@
+{
+  "name": "microblogger",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint src/ test/ --no-error-on-unmatched-pattern",
+    "lint:boundaries": "eslint src/ test/ --no-error-on-unmatched-pattern --rule '{\"no-restricted-imports\": \"error\"}' --quiet",
+    "typecheck": "tsc --noEmit",
+    "knip": "knip",
+    "knip:strict": "knip --strict",
+    "check": "bun run typecheck && bun run lint && bun run knip",
+    "check:barrel-files": "find src/domain -name 'index.ts' -o -name 'index.tsx' | grep . && echo 'ERROR: Barrel files found in domain/' && exit 1 || echo 'No barrel files found.'"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "@types/bun": "latest",
+    "eslint": "^9",
+    "eslint-plugin-import-x": "^4",
+    "knip": "^5.83.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8"
+  }
+}
