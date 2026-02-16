@@ -173,3 +173,9 @@ dist
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Next.js auto-generated
+next-env.d.ts
+
+# Sentry
+.sentryclirc

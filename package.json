@@ -2,21 +2,45 @@
   "name": "microblogger",
   "type": "module",
   "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
     "lint": "eslint src/ test/ --no-error-on-unmatched-pattern",
     "lint:boundaries": "eslint src/ test/ --no-error-on-unmatched-pattern --rule '{\"no-restricted-imports\": \"error\"}' --quiet",
     "typecheck": "tsc --noEmit",
     "knip": "knip",
     "knip:strict": "knip --strict",
     "check": "bun run typecheck && bun run lint && bun run knip",
-    "check:barrel-files": "find src/domain -name 'index.ts' -o -name 'index.tsx' | grep . && echo 'ERROR: Barrel files found in domain/' && exit 1 || echo 'No barrel files found.'"
+    "check:barrel-files": "find src/domain -name 'index.ts' -o -name 'index.tsx' | grep . && echo 'ERROR: Barrel files found in domain/' && exit 1 || echo 'No barrel files found.'",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
     "@eslint/js": "^9",
+    "@next/eslint-plugin-next": "^16.1.6",
     "@types/bun": "latest",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "drizzle-kit": "^0.31.9",
     "eslint": "^9",
     "eslint-plugin-import-x": "^4",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "knip": "^5.83.1",
+    "playwright": "^1.58.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8"
+  },
+  "dependencies": {
+    "@sentry/nextjs": "^10.38.0",
+    "@tailwindcss/postcss": "^4.1.18",
+    "drizzle-orm": "^0.45.1",
+    "next": "^16.1.6",
+    "postcss": "^8.5.6",
+    "postgres": "^3.4.8",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.1.18"
   }
 }

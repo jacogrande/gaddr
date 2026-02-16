@@ -1,6 +1,8 @@
 import eslint from "@eslint/js";
+import nextPlugin from "@next/eslint-plugin-next";
 import tseslint from "typescript-eslint";
 import importX from "eslint-plugin-import-x";
+import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
   { ignores: ["node_modules", ".next", "dist", "out", "*.config.*"] },
@@ -267,6 +269,25 @@ export default tseslint.config(
         "error",
         { restrictedNamedExportsPattern: ".*" },
       ],
+    },
+  },
+
+  // ── Next.js rules ──────────────────────────────────────────────
+  {
+    files: ["src/app/**/*.ts", "src/app/**/*.tsx"],
+    plugins: { "@next/next": nextPlugin },
+    rules: {
+      ...nextPlugin.configs.recommended.rules,
+    },
+  },
+
+  // ── React hooks rules ──────────────────────────────────────────
+  {
+    files: ["src/**/*.tsx"],
+    plugins: { "react-hooks": reactHooks },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
 
