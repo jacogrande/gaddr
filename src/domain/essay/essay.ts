@@ -1,8 +1,15 @@
-// Valid domain file — pure types and functions
-export type EssayId = string & { readonly __brand: "EssayId" };
+// Domain Essay type — pure types, no framework imports
+
+import type { EssayId } from "../types/branded";
+import type { UserId } from "../types/branded";
 
 export type Essay = {
-  id: EssayId;
-  content: string;
-  status: "draft" | "published";
+  readonly id: EssayId;
+  readonly userId: UserId;
+  readonly title: string;
+  readonly content: string;
+  readonly status: "draft" | "published";
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly publishedAt: Date | null;
 };

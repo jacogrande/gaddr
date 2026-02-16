@@ -189,6 +189,21 @@ export default tseslint.config(
     },
   },
 
+  // ── Branded types override ─────────────────────────────────────
+  // Branding requires a single `as` cast — unavoidable for the pattern.
+  {
+    files: ["src/domain/types/branded.ts"],
+    rules: {
+      "@typescript-eslint/consistent-type-assertions": [
+        "error",
+        {
+          assertionStyle: "as",
+          objectLiteralTypeAssertions: "never",
+        },
+      ],
+    },
+  },
+
   // ── Infrastructure layer ─────────────────────────────────────────
   // Implements domain ports. May import from domain/ and external
   // libraries. Must not import from app/.
