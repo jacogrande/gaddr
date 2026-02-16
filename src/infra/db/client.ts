@@ -7,8 +7,10 @@ if (!process.env.DATABASE_URL) {
 }
 
 const sql = postgres(process.env.DATABASE_URL, {
-  max: 1,
+  max: 10,
   prepare: false,
+  idle_timeout: 20,
+  connect_timeout: 10,
 });
 
 export const db = drizzle(sql, { schema });
