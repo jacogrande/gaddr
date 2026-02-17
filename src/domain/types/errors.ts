@@ -42,6 +42,17 @@ export type UnpublishError = { readonly kind: "AlreadyDraft" };
 
 export type UpdateError = { readonly kind: "NotDraft" };
 
+export type LlmError = {
+  readonly kind: "LlmError";
+  readonly message: string;
+  readonly cause?: unknown;
+};
+
+export type AuthorshipViolation = {
+  readonly kind: "AuthorshipViolation";
+  readonly message: string;
+};
+
 export type DomainError =
   | NotFoundError
   | UnauthorizedError
@@ -51,4 +62,6 @@ export type DomainError =
   | RenderError
   | PublishError
   | UnpublishError
-  | UpdateError;
+  | UpdateError
+  | LlmError
+  | AuthorshipViolation;

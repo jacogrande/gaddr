@@ -7,7 +7,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wordCount, WORD_COUNT_TARGET, WORD_COUNT_LIMIT } from "../../../../domain/essay/operations";
 import { formatPublishedDate } from "../../../../domain/essay/formatting";
+import { TipTapDocSchema } from "../../../../domain/essay/schemas";
 import { updateDraftAction, publishEssayAction, unpublishEssayAction } from "../actions";
+import { useReview } from "../use-review";
+import { FeedbackPanel } from "./feedback-panel";
 import type { TipTapDoc } from "../../../../domain/essay/essay";
 
 type SaveStatus = "saved" | "saving" | "unsaved";
@@ -61,6 +64,7 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
   const savePromiseRef = useRef<Promise<void>>(Promise.resolve());
 
   const isDraft = status === "draft";
+  const review = useReview();
 
   const save = useCallback(
     (data: { title?: string; content?: TipTapDoc }) => {
@@ -124,6 +128,10 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
     }
   }, [save]);
 
+  const handleGetFeedback = useCallback(() => {
+    void flushPending().then(() => review.requestReview(id));
+  }, [flushPending, review, id]);
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -131,12 +139,13 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
         heading: { levels: [2, 3] },
       }),
     ],
-    content: initialContent as JSONContent,
+    content: JSON.parse(JSON.stringify(initialContent)) as JSONContent,
     editable: isDraft,
     onUpdate: ({ editor: e }) => {
-      const doc = e.getJSON() as TipTapDoc;
-      setWords(wordCount(doc));
-      scheduleSave({ content: doc });
+      const parsed = TipTapDocSchema.safeParse(e.getJSON());
+      if (!parsed.success) return;
+      setWords(wordCount(parsed.data));
+      scheduleSave({ content: parsed.data });
     },
     editorProps: {
       attributes: {
@@ -144,6 +153,48 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
       },
     },
   });
+
+  const handleCommentClick = useCallback(
+    (quotedText: string) => {
+      if (!editor) return;
+      const { doc } = editor.state;
+
+      // Build position-aware text map: ProseMirror positions differ from
+      // plain-text offsets because node boundaries consume positions.
+      const segments: Array<{ pos: number; text: string }> = [];
+      doc.descendants((node, pos) => {
+        if (node.isText && node.text) {
+          segments.push({ pos, text: node.text });
+        }
+      });
+
+      let combined = "";
+      const offsets: Array<{ textStart: number; docPos: number }> = [];
+      for (const seg of segments) {
+        offsets.push({ textStart: combined.length, docPos: seg.pos });
+        combined += seg.text;
+      }
+
+      const idx = combined.indexOf(quotedText);
+      if (idx === -1) return;
+
+      // Map text offsets to ProseMirror document positions
+      let from = 0;
+      let to = 0;
+      const endIdx = idx + quotedText.length;
+      for (const entry of offsets) {
+        if (entry.textStart <= idx) {
+          from = entry.docPos + (idx - entry.textStart);
+        }
+        if (entry.textStart <= endIdx) {
+          to = entry.docPos + (endIdx - entry.textStart);
+        }
+      }
+
+      editor.chain().focus().setTextSelection({ from, to }).run();
+    },
+    [editor],
+  );
 
   // Sync editable state when status changes
   useEffect(() => {
@@ -217,161 +268,195 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
         ? "text-stone-400"
         : "text-amber-800";
 
+  const showFeedback = review.status !== "idle";
+
   return (
-    <div className="mx-auto max-w-2xl animate-fade-up">
-      {/* Title — borderless, blends into page */}
-      <input
-        type="text"
-        value={title}
-        onChange={handleTitleChange}
-        placeholder="Untitled essay"
-        disabled={!isDraft}
-        className="w-full border-0 bg-transparent px-0 py-2 font-serif text-4xl font-semibold tracking-tight text-stone-900 placeholder:text-stone-300 focus:outline-none disabled:cursor-default disabled:opacity-100"
-        maxLength={200}
-      />
-
-      {/* Status bar — quiet metadata line */}
-      <div className="mt-2 flex items-center gap-3 text-sm font-medium">
-        {isDraft ? (
-          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
-            Draft
-          </span>
-        ) : (
-          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
-            Published
-          </span>
-        )}
-        <span className={wordColor}>
-          {words} words
-        </span>
-        <span className="text-stone-300">&middot;</span>
-        {isDraft ? (
-          <span className={saveColor}>{saveLabel}</span>
-        ) : (
-          publishedAt && (
-            <span className="text-stone-400">
-              Published {formatPublishedDate(new Date(publishedAt))}
-            </span>
-          )
-        )}
-      </div>
-
-      {/* Word progress bar — signature interaction */}
-      <div className="mt-3 mb-6 h-0.5 w-full overflow-hidden rounded-full bg-stone-100">
-        <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{
-            width: `${String(progressWidth)}%`,
-            backgroundColor: progressColor,
-          }}
+    <div className={`mx-auto animate-fade-up ${showFeedback ? "flex max-w-6xl gap-8" : "max-w-2xl"}`}>
+      {/* Editor column */}
+      <div className={showFeedback ? "flex-1 min-w-0" : ""}>
+        {/* Title — borderless, blends into page */}
+        <input
+          type="text"
+          value={title}
+          onChange={handleTitleChange}
+          placeholder="Untitled essay"
+          disabled={!isDraft}
+          className="w-full border-0 bg-transparent px-0 py-2 font-serif text-4xl font-semibold tracking-tight text-stone-900 placeholder:text-stone-300 focus:outline-none disabled:cursor-default disabled:opacity-100"
+          maxLength={200}
         />
-      </div>
 
-      {/* Error feedback */}
-      {publishError && (
-        <div className="mb-4 rounded border-2 border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-800">
-          {publishError}
+        {/* Status bar — quiet metadata line */}
+        <div className="mt-2 flex items-center gap-3 text-sm font-medium">
+          {isDraft ? (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+              Draft
+            </span>
+          ) : (
+            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+              Published
+            </span>
+          )}
+          <span className={wordColor}>
+            {words} words
+          </span>
+          <span className="text-stone-300">&middot;</span>
+          {isDraft ? (
+            <span className={saveColor}>{saveLabel}</span>
+          ) : (
+            publishedAt && (
+              <span className="text-stone-400">
+                Published {formatPublishedDate(new Date(publishedAt))}
+              </span>
+            )
+          )}
         </div>
-      )}
 
-      {/* Action bar — publish/unpublish + view link */}
-      <div className="mb-8 flex items-center gap-3">
-        {isDraft ? (
-          <button
-            type="button"
-            disabled={words === 0 || publishing}
-            onClick={() => void handlePublish()}
-            className="border-2 border-emerald-700 bg-emerald-700 px-4 py-1.5 text-sm font-bold text-white shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:bg-emerald-800 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-          >
-            {publishing ? "Publishing..." : "Publish"}
-          </button>
-        ) : (
+        {/* Word progress bar — signature interaction */}
+        <div className="mt-3 mb-6 h-0.5 w-full overflow-hidden rounded-full bg-stone-100">
+          <div
+            className="h-full rounded-full transition-all duration-700 ease-out"
+            style={{
+              width: `${String(progressWidth)}%`,
+              backgroundColor: progressColor,
+            }}
+          />
+        </div>
+
+        {/* Error feedback */}
+        {publishError && (
+          <div className="mb-4 rounded border-2 border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-800">
+            {publishError}
+          </div>
+        )}
+
+        {/* Action bar — publish/unpublish + feedback + view link */}
+        <div className="mb-8 flex items-center gap-3">
+          {isDraft ? (
+            <>
+              <button
+                type="button"
+                disabled={words === 0 || publishing}
+                onClick={() => void handlePublish()}
+                className="border-2 border-emerald-700 bg-emerald-700 px-4 py-1.5 text-sm font-bold text-white shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:bg-emerald-800 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+              >
+                {publishing ? "Publishing..." : "Publish"}
+              </button>
+              <button
+                type="button"
+                disabled={words === 0 || review.status === "loading" || publishing}
+                onClick={() => { handleGetFeedback(); }}
+                className="border-2 border-[#B74134] bg-white px-4 py-1.5 text-sm font-bold text-[#B74134] shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:bg-[#B74134] hover:text-white active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+              >
+                {review.status === "loading" ? "Reviewing..." : "Get Feedback"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={publishing}
+                onClick={() => void handleUnpublish()}
+                className="border-2 border-stone-300 bg-white px-4 py-1.5 text-sm font-bold text-stone-600 shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:border-stone-900 hover:text-stone-900 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+              >
+                {publishing ? "Unpublishing..." : "Unpublish"}
+              </button>
+              <Link
+                href={`/essay/${id}`}
+                className="text-sm font-semibold text-emerald-700 hover:text-emerald-900"
+              >
+                View public page &rarr;
+              </Link>
+            </>
+          )}
+        </div>
+
+        {/* Toolbar — neobrutalist buttons (hidden when published) */}
+        {editor ? (
           <>
-            <button
-              type="button"
-              disabled={publishing}
-              onClick={() => void handleUnpublish()}
-              className="border-2 border-stone-300 bg-white px-4 py-1.5 text-sm font-bold text-stone-600 shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:border-stone-900 hover:text-stone-900 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-            >
-              {publishing ? "Unpublishing..." : "Unpublish"}
-            </button>
-            <Link
-              href={`/essay/${id}`}
-              className="text-sm font-semibold text-emerald-700 hover:text-emerald-900"
-            >
-              View public page &rarr;
-            </Link>
+            {isDraft && (
+              <div className="mb-6 flex flex-wrap gap-2">
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleBold().run()}
+                  active={editor.isActive("bold")}
+                >
+                  B
+                </ToolbarButton>
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleItalic().run()}
+                  active={editor.isActive("italic")}
+                >
+                  I
+                </ToolbarButton>
+                <ToolbarButton
+                  onClick={() =>
+                    editor.chain().focus().toggleHeading({ level: 2 }).run()
+                  }
+                  active={editor.isActive("heading", { level: 2 })}
+                >
+                  H2
+                </ToolbarButton>
+                <ToolbarButton
+                  onClick={() =>
+                    editor.chain().focus().toggleHeading({ level: 3 }).run()
+                  }
+                  active={editor.isActive("heading", { level: 3 })}
+                >
+                  H3
+                </ToolbarButton>
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleBulletList().run()}
+                  active={editor.isActive("bulletList")}
+                >
+                  List
+                </ToolbarButton>
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                  active={editor.isActive("orderedList")}
+                >
+                  1.
+                </ToolbarButton>
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                  active={editor.isActive("blockquote")}
+                >
+                  &ldquo;
+                </ToolbarButton>
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleCode().run()}
+                  active={editor.isActive("code")}
+                >
+                  {"<>"}
+                </ToolbarButton>
+              </div>
+            )}
+
+            {/* Editor — invisible container, content speaks */}
+            <div className="min-h-[500px]">
+              <EditorContent editor={editor} />
+            </div>
           </>
+        ) : (
+          <div className="min-h-[500px]" />
         )}
       </div>
 
-      {/* Toolbar — neobrutalist buttons (hidden when published) */}
-      {editor ? (
-        <>
-          {isDraft && (
-            <div className="mb-6 flex flex-wrap gap-2">
-              <ToolbarButton
-                onClick={() => editor.chain().focus().toggleBold().run()}
-                active={editor.isActive("bold")}
-              >
-                B
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => editor.chain().focus().toggleItalic().run()}
-                active={editor.isActive("italic")}
-              >
-                I
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() =>
-                  editor.chain().focus().toggleHeading({ level: 2 }).run()
-                }
-                active={editor.isActive("heading", { level: 2 })}
-              >
-                H2
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() =>
-                  editor.chain().focus().toggleHeading({ level: 3 }).run()
-                }
-                active={editor.isActive("heading", { level: 3 })}
-              >
-                H3
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => editor.chain().focus().toggleBulletList().run()}
-                active={editor.isActive("bulletList")}
-              >
-                List
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                active={editor.isActive("orderedList")}
-              >
-                1.
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => editor.chain().focus().toggleBlockquote().run()}
-                active={editor.isActive("blockquote")}
-              >
-                &ldquo;
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => editor.chain().focus().toggleCode().run()}
-                active={editor.isActive("code")}
-              >
-                {"<>"}
-              </ToolbarButton>
-            </div>
-          )}
-
-          {/* Editor — invisible container, content speaks */}
-          <div className="min-h-[500px]">
-            <EditorContent editor={editor} />
+      {/* Feedback panel — right column on desktop */}
+      {showFeedback && (
+        <div className="w-full lg:w-[380px] flex-shrink-0">
+          <div className="lg:sticky lg:top-8">
+            <FeedbackPanel
+              status={review.status}
+              comments={review.comments}
+              issues={review.issues}
+              questions={review.questions}
+              scores={review.scores}
+              errorMessage={review.errorMessage}
+              onCommentClick={handleCommentClick}
+              onDismiss={review.dismiss}
+              onRetry={() => { handleGetFeedback(); }}
+            />
           </div>
-        </>
-      ) : (
-        <div className="min-h-[500px]" />
+        </div>
       )}
     </div>
   );

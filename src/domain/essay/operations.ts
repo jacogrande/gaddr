@@ -108,6 +108,13 @@ export function unpublishEssay(
   });
 }
 
+// ── Text extraction ──
+
+export function extractEssayText(doc: TipTapDoc): string {
+  if (!doc.content) return "";
+  return doc.content.map((node) => extractText(node)).join(" ").trim();
+}
+
 // ── Word counting ──
 
 export function wordCount(doc: TipTapDoc): number {
