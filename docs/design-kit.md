@@ -1,101 +1,212 @@
-# Design Kit
+# Design Kit: Warm Editorial Craft
 
-A serious editorial workspace with tangible, physical-feeling UI elements. Playfair Display typography and high-contrast black-and-white create structural authority. Hard drop shadows, heavy borders, and handwritten coaching annotations add substance and personality. This is a letterpress broadsheet you can touch — graphic and disciplined, yet crafted and human.
+A serious editorial workspace with warmth and texture. Typography creates authority. Warm shadows add tactile depth on interaction. Paper grain gives physical craft. Choreographed motion brings it to life.
 
-## Sources
+## Identity
 
-This design system synthesizes **Pressed Type** (foundation) with selective personality elements from **Collage Board**:
+**Name:** Warm Editorial Craft
 
-### FROM PRESSED TYPE (the foundation — retained in full):
-- Typography: Playfair Display (headings, 600/700 weight) + Inter (body/UI)
-- Color palette: High-contrast black/white + single warm accent (brick red #B74134)
-- Warm white background: #FAFAF8 for page, true white for cards
-- Sharp containers: `rounded-none` on cards and major structural elements
-- Pill primary buttons: `rounded-full` for primary CTAs, `rounded-md` for secondary
-- `border-t-4` structural pattern on essay cards
-- Tight grid discipline and strong vertical rhythm
-- Editorial restraint — the type does the heavy lifting
-- H1 at 48px, weight 700 (not the original 60px/900 — already refined)
+**Concept:** An editorial workspace that feels both serious and welcoming. Newsreader typography provides distinctive authority. Stone-scale neutrals bring warmth. Hard shadows appear on interaction as a tactile reward. Subtle paper grain adds craft. Entrance animations create delight without distraction.
 
-### FROM COLLAGE BOARD (cherry-picked personality elements):
-1. **Hard drop shadows** — The BIG addition: `shadow-[4px_4px_0px_#1A1A1A]` on cards and interactive elements (hover: `shadow-[6px_6px_0px_#1A1A1A]`). Makes everything feel tangible — like paper on a surface.
-2. **Rubber stamp badges** for essay status — Rotated stamp badges (DRAFT, PUBLISHED, IN REVIEW) with heavy 3px borders and slight rotation (2-3 degrees). Used ONLY for status indicators.
-3. **Caveat handwriting font** for coaching annotations ONLY — Creates a "professor's red pen" feeling. Used exclusively for inline coaching margin notes. NEVER for UI elements, headings, or body text.
-4. **Heavy 2px borders** — `border-2` (2px) as default instead of `border` (1px). Makes everything feel more substantial and graphic.
-
-### EXPLICITLY EXCLUDED from Collage Board:
-- NO rotated/angled cards — No `rotate-1`, `-rotate-1` etc. All cards stay perfectly aligned on the grid
-- NO pushpin accents — No fake pushpin dots on cards
-- NO multi-color palette — No navy/coral/yellow/sage. Keep the single brick-red accent
-- NO Fraunces font — Keep Playfair Display, not Fraunces
-- NO all-caps headings — Keep sentence case/title case, not Bauhaus all-caps
-- NO grid construction marks (background dots) — Too playful
-- NO overlapping cards with negative margins — Too chaotic
-- NO color block sections — Keep the restrained black/white approach
+**Evolution from previous:** The "neobrutalist letterpress" foundation remains, but with modernization. Clinical greys become warm stone tones. Static shadows become interaction rewards. Flat surfaces gain paper texture. Instant rendering becomes choreographed entrance. Same editorial soul, more refined execution.
 
 ## Color Palette
 
-| Token | Tailwind Class | Hex | Usage |
-|-------|---------------|-----|-------|
-| primary | `bg-[#B74134]` / `text-[#B74134]` | #B74134 | Main actions, links, active states — brick red (warm, editorial, not urgent) |
-| primary-hover | `bg-[#9A3329]` / `hover:bg-[#9A3329]` | #9A3329 | Hover state for primary elements |
-| primary-light | `bg-[#FFF5F3]` / `text-[#FFF5F3]` | #FFF5F3 | Subtle accent backgrounds, coaching annotation backgrounds |
-| surface | `bg-[#FAFAF8]` | #FAFAF8 | Page background — very subtle warm white |
-| surface-raised | `bg-white` | #FFFFFF | Card backgrounds, elevated elements — true white for contrast |
-| neutral-900 | `text-black` / `bg-black` | #000000 | Primary text, headings — pure black for maximum contrast |
-| neutral-950 | `text-[#1A1A1A]` / `bg-[#1A1A1A]` | #1A1A1A | Hard drop shadows (ink black from Collage Board) |
-| neutral-800 | `text-zinc-800` | #27272a | Secondary headings, strong labels |
-| neutral-600 | `text-zinc-600` | #52525b | Body text in UI contexts, captions |
-| neutral-400 | `text-zinc-400` | #a1a1aa | Placeholder text, deemphasized text |
-| neutral-200 | `border-zinc-200` | #e4e4e7 | Borders, dividers |
-| neutral-100 | `bg-zinc-100` | #f4f4f5 | Subtle backgrounds, disabled states |
-| success | `bg-emerald-50` / `text-emerald-800` / `border-emerald-200` | #ecfdf5 / #065f46 / #a7f3d0 | Success states, published status |
-| warning | `bg-amber-50` / `text-amber-900` / `border-amber-200` | #fffbeb / #78350f / #fde68a | Warning states, draft reminders |
-| error | `bg-red-50` / `text-red-800` / `border-red-200` | #fef2f2 / #991b1b / #fecaca | Error states, destructive actions |
-| info | `bg-sky-50` / `text-sky-800` / `border-sky-200` | #f0f9ff / #075985 / #bae6fd | Informational states, tips |
+Warm stone scale replaces cold zinc. Warm black replaces pure black. Warm ink shadows replace neutral shadows.
 
-**Philosophy:** High-contrast black-and-white foundation preserves Pressed Type's graphic quality. Brick red (#B74134) for actions — warm, editorial, and confident without signaling urgency. Ink black (#1A1A1A) for hard drop shadows adds physicality borrowed from Collage Board.
+| Token | Tailwind | Hex | Usage |
+|-------|----------|-----|-------|
+| primary | `bg-[#B74134]` | #B74134 | Main actions, links, active states — brick red (warm, editorial, not urgent) |
+| primary-hover | `bg-[#9A3329]` | #9A3329 | Hover state for primary elements |
+| primary-light | `bg-[#FFF5F3]` | #FFF5F3 | Coaching annotation backgrounds, subtle accents |
+| surface | `bg-[#FAFAF8]` | #FAFAF8 | Page background — warm white |
+| surface-raised | `bg-white` | #FFFFFF | Card backgrounds — true white for contrast |
+| ink | `text-stone-900` | #1C1917 | Primary text — warm black, not pure black |
+| shadow-ink | shadow color | #2C2416 | Hard shadows — warm brown-black |
+| stone-800 | `text-stone-800` | #292524 | Strong labels, secondary headings |
+| stone-600 | `text-stone-600` | #57534e | Body text in UI contexts |
+| stone-500 | `text-stone-500` | #78716c | Tertiary text, captions |
+| stone-400 | `text-stone-400` | #a8a29e | Placeholder text, deemphasis |
+| stone-300 | `text-stone-300` | #d6d3d1 | Separator dots in metadata |
+| stone-200 | `border-stone-200` | #e7e5e4 | Borders, dividers |
+| stone-100 | `bg-stone-100` | #f5f5f4 | Code backgrounds, subtle fills |
+| success | `bg-emerald-50` / `text-emerald-800` / `border-emerald-800` | #ecfdf5 / #065f46 / #065f46 | Success states, published status |
+| warning | `bg-amber-50` / `text-amber-800` / `border-amber-800` | #fffbeb / #92400e / #92400e | Warning states, draft reminders |
+| error | `bg-red-50` / `text-red-800` / `border-red-200` | #fef2f2 / #991b1b / #fecaca | Error states, destructive actions |
+| info | `bg-sky-50` / `text-sky-800` / `border-sky-800` | #f0f9ff / #075985 / #075985 | Informational states, tips |
+
+**Key changes:** Pure black (#000) → warm black stone-900 (#1C1917). Zinc scale → stone scale throughout. Shadow color #1A1A1A → #2C2416 (warm ink).
+
+**Philosophy:** Warm neutrals prevent clinical coldness while maintaining high contrast. Brick red signals action without urgency. Stone tones have subtle brown undertones that feel organic and editorial.
 
 ## Typography
 
 ### Font Stack
-- **Headings/Display:** Playfair Display (serif, Google Fonts) — weights 600, 700
-- **Body/UI:** Inter (sans-serif, Google Fonts) — weights 400, 500, 600
-- **Coaching Annotations:** Caveat (handwriting, Google Fonts) — weight 400, 600 — used ONLY for margin notes, never for UI
+
+- **Display/Headings:** Newsreader (serif, Google Fonts) — weights 400, 600
+- **Body/UI:** DM Sans (sans-serif, Google Fonts) — weights 400, 500, 600
+- **Coaching:** Caveat (handwriting, Google Fonts) — weights 400, 600 — used ONLY for margin coaching annotations
 - **Code:** System monospace stack (`font-mono`)
 
 Loaded via `next/font/google` with CSS variables:
+
 ```typescript
-const playfair = Playfair_Display({ subsets: ['latin'], weight: ['600', '700'], variable: '--font-serif' })
-const inter = Inter({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-sans' })
+const newsreader = Newsreader({ subsets: ['latin'], weight: ['400', '600'], variable: '--font-serif' })
+const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-sans' })
 const caveat = Caveat({ subsets: ['latin'], weight: ['400', '600'], variable: '--font-handwriting' })
 ```
+
+**Why these fonts:**
+- **Newsreader:** Designed by Production Type for on-screen reading. Distinctive, underused, editorial. More refined and modern than Playfair Display.
+- **DM Sans:** Geometric with humanist touches. More character than Inter, warmer feel.
+- **Caveat:** Retained for "professor's red pen" coaching effect.
 
 ### Type Scale
 
 | Level | Tailwind Classes | Usage |
 |-------|-----------------|-------|
-| Display | `[font-family:var(--font-serif)] text-5xl md:text-6xl font-bold tracking-tight leading-tight` | Hero headlines, landing page (48px/60px responsive) |
-| H1 | `[font-family:var(--font-serif)] text-4xl md:text-5xl font-bold tracking-tight leading-tight` | Page titles (36px/48px responsive) |
-| H2 | `[font-family:var(--font-serif)] text-3xl font-bold tracking-tight leading-tight` | Section headers (30px) |
-| H3 | `[font-family:var(--font-serif)] text-2xl font-bold tracking-tight leading-snug` | Subsection headers, card titles (24px) |
-| H4 | `text-xl font-semibold leading-snug` | Minor headers, labels (20px) |
-| Body (Editor) | `text-lg leading-relaxed` | Editor content area (18px, 1.7 line height) |
+| Display | `font-serif text-5xl md:text-6xl font-semibold tracking-tight` | Hero headlines (48px/60px responsive) |
+| H1 | `font-serif text-4xl md:text-5xl font-semibold tracking-tight` | Page titles (36px/48px responsive) |
+| H2 | `font-serif text-3xl font-semibold tracking-tight` | Section headers (30px) |
+| H3 | `font-serif text-2xl font-semibold tracking-tight` | Subsection headers, card titles (24px) |
+| H4 | `text-xl font-semibold` | Minor headers, labels (20px, DM Sans) |
+| Body (Editor) | `text-lg leading-relaxed` | Editor content area (18px, 1.75 line height) |
 | Body | `text-base leading-relaxed` | Default paragraph text (16px, 1.625 line height) |
 | Body Small | `text-sm leading-normal` | Captions, helper text (14px) |
-| Caption | `text-xs tracking-wide leading-normal` | Metadata, timestamps (12px) |
+| Caption | `text-xs tracking-wide` | Metadata, timestamps (12px) |
+| Coaching | `font-handwriting text-lg leading-relaxed text-[#B74134]` | Coaching margin notes ONLY (18px, Caveat) |
+| Stamp | `text-xs font-black uppercase tracking-wider` | Rubber stamp badges (12px) |
 | Code | `font-mono text-sm` | Inline code, technical content (14px) |
-| Coaching Annotation | `[font-family:var(--font-handwriting)] text-lg leading-relaxed` | Inline coaching margin notes ONLY (18px, Caveat) |
-| Stamp Text | `text-xs font-black uppercase tracking-wider` | Rubber stamp badges (12px, all-caps, heavy weight) |
 
-**Key refinements:** H1 at 48px (not 60px), weight 700 (not 900). Caveat handwriting font added for coaching annotations only — creates "professor's red pen" effect in brick red.
+**Key change:** `font-semibold` (600) replaces `font-bold` (700) on serif headings. Newsreader looks more refined and less heavy at 600 weight.
 
 ### Reading Comfort
 
 - **Line length target:** 65ch max-width for long-form content (`max-w-prose` or `max-w-2xl`)
-- **Editor line height:** 1.7 (leading-relaxed) — superior for sustained writing
+- **Editor line height:** 1.75 (`leading-relaxed`) — superior for sustained writing
 - **Paragraph spacing:** `space-y-4` (16px) for body text blocks
 - **Heading margins:** `mb-4` after headings, `mt-8` before section headings
+
+## Shadow Hierarchy
+
+The biggest conceptual change: shadows are now a REWARD for interaction, not a default state.
+
+| Level | Tailwind | Usage |
+|-------|----------|-------|
+| None | (none) | Background elements, passive UI |
+| Rest | `shadow-sm` | Cards and interactive elements at rest (subtle elevation) |
+| Hover/Focus | `shadow-[3px_3px_0px_#2C2416]` | Cards on hover, inputs on focus (tactile reward) |
+| Emphasis | `shadow-[5px_5px_0px_#2C2416]` | Featured cards, buttons on hover (strong presence) |
+
+**Philosophy:** "Shadow as emphasis, not wallpaper." At rest, cards use subtle elevation (`shadow-sm`). The hard ink shadow appears on hover/focus as a tactile reward. This creates delight through interaction.
+
+**Exceptions (always have hard shadow):**
+- **Primary CTA buttons:** `shadow-[3px_3px_0px_#2C2416]` at rest (must feel pressable)
+- **Stamp badges:** `shadow-[2px_2px_0px_#2C2416]` (contained personality)
+- **Coaching annotations:** `shadow-[3px_3px_0px_#2C2416]` (tangible coaching note)
+- **Error banners:** `shadow-[3px_3px_0px_#2C2416]` (demands attention)
+
+**Transitions:** `transition-all duration-300` for smooth shadow reveal on hover.
+
+## Paper Grain Texture
+
+CSS-only paper grain overlay creates subconscious "paper craft" feeling:
+
+```css
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.018;
+  z-index: 9999;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+```
+
+1.8% opacity. Fixed position. Subtle texture across entire viewport.
+
+## Motion System
+
+Choreographed entrance animations and smooth transitions create delight without distraction.
+
+### Entrance Animations
+
+**Fade up (primary entrance):**
+```css
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+```
+
+**Fade in (subtle entrance):**
+```css
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.35s ease-out;
+}
+```
+
+**Stagger (sequential reveal):**
+```css
+.stagger > *:nth-child(1) { animation-delay: 0s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.12s; }
+.stagger > *:nth-child(4) { animation-delay: 0.18s; }
+.stagger > *:nth-child(5) { animation-delay: 0.24s; }
+/* etc. */
+```
+
+Apply `.stagger` to parent container. Children with `animate-fade-up` will reveal sequentially.
+
+### Transitions
+
+| Element | Duration | Easing | Usage |
+|---------|----------|--------|-------|
+| Card shadow | 300ms | default | `transition-all duration-300` for hover shadow reveal |
+| Color changes | 200ms | default | `transition-colors duration-200` for text/bg changes |
+| Button press | 150ms | default | `transition-all duration-150` for fast tactile feedback |
+| Word progress bar | 700ms | ease-out | `transition-all duration-700 ease-out` for satisfying fill |
+
+### Word Count Progress Bar (Signature Interaction)
+
+Thin bar below editor status. Smooth fill as user types. Color changes based on word count range.
+
+```html
+<div class="h-0.5 w-full rounded-full bg-stone-100">
+  <div
+    class="h-full rounded-full transition-all duration-700 ease-out"
+    style="width: 65%"
+    class:bg-stone-400={wordCount < targetMin}
+    class:bg-[#B74134]={wordCount >= targetMin && wordCount <= targetMax}
+    class:bg-red-900={wordCount > targetMax}
+  ></div>
+</div>
+```
+
+- Below target: `bg-stone-400` (neutral)
+- In target range (200-800 words): `bg-[#B74134]` (brick red)
+- Over target: `bg-red-900` (dark red warning)
+
+700ms transition creates smooth, satisfying fill.
 
 ## Spacing
 
@@ -104,284 +215,277 @@ const caveat = Caveat({ subsets: ['latin'], weight: ['400', '600'], variable: '-
 
 ### Component Spacing
 
-| Context | Tailwind Class | Value | Usage |
-|---------|---------------|-------|-------|
-| Button padding (sm) | `px-4 py-2` | 16px × 8px | Small buttons, tags |
-| Button padding (md) | `px-6 py-3` | 24px × 12px | Default buttons |
-| Button padding (lg) | `px-8 py-4` | 32px × 16px | Hero CTAs, primary actions |
-| Input padding | `px-4 py-3` | 16px × 12px | Text inputs, selects |
-| Textarea padding | `px-4 py-3` | 16px × 12px | Multi-line inputs |
-| Card padding (standard) | `p-6` | 24px | Default cards |
-| Card padding (featured) | `p-8` | 32px | Featured cards, editor surface |
+| Context | Tailwind | Value | Usage |
+|---------|----------|-------|-------|
+| Button (sm) | `px-4 py-2` | 16px × 8px | Small buttons, tags |
+| Button (md) | `px-6 py-3` | 24px × 12px | Default buttons |
+| Button (lg) | `px-8 py-4` | 32px × 16px | Hero CTAs |
+| Input | `px-4 py-3` | 16px × 12px | Text inputs, selects |
+| Card (standard) | `p-6` | 24px | Default cards |
+| Card (featured) | `p-8` | 32px | Editor surface, featured cards |
 | Section gap | `space-y-12` | 48px | Between major sections |
 | Element gap | `space-y-4` | 16px | Between related elements |
 | Tight gap | `space-y-2` / `gap-2` | 8px | Form field groups |
-| Comfortable gap | `gap-6` | 24px | Card grids, flex layouts |
+| Card grid gap | `gap-6` | 24px | Card grids, flex layouts |
 | Page gutter | `px-6 md:px-12 lg:px-24` | 24px/48px/96px | Page edge padding (responsive) |
-| Max content width | `max-w-2xl` | 672px | Editor and long-form content |
+| Max content width | `max-w-2xl` | 672px | Editor, long-form content |
 | Max layout width | `max-w-7xl` | 1280px | Page container |
 
 ## Borders & Corners
 
-| Element | Border Radius | Border | Shadow |
-|---------|--------------|--------|--------|
-| Containers/Cards | `rounded-none` (sharp) | `border-2 border-zinc-200` (heavy 2px from Collage Board) | Hard drop shadow: `shadow-[4px_4px_0px_#1A1A1A]` |
-| Buttons (primary) | `rounded-full` (pill) | none | Hard shadow: `shadow-[4px_4px_0px_#1A1A1A]` hover: `shadow-[6px_6px_0px_#1A1A1A]` |
-| Buttons (secondary) | `rounded-md` (6px) | `border-2 border-black` (heavy 2px) | none |
-| Inputs | `rounded-md` (6px) | `border-2 border-zinc-200` (heavy 2px) | Focus: hard shadow `shadow-[4px_4px_0px_#1A1A1A]` |
-| Form elements | `rounded-md` (6px) | varies | none |
-| Modals | `rounded-lg` (8px) | none | Hard shadow: `shadow-[8px_8px_0px_#1A1A1A]` |
+| Element | Radius | Border | Shadow |
+|---------|--------|--------|--------|
+| Cards | none (sharp) | none | `shadow-sm` at rest, `hover:shadow-[4px_4px_0px_#2C2416]` |
+| Primary buttons | `rounded-full` (pill) | none | `shadow-[3px_3px_0px_#2C2416]` always |
+| Secondary buttons | `rounded-full` (pill) | `border-2 border-stone-900` | none |
+| Ghost buttons | `rounded-full` (pill) | none | none |
+| Toolbar buttons | none (sharp) | `border-2` | `shadow-[2px_2px_0px_#2C2416]` |
+| Inputs | `rounded-lg` (8px) | `border border-stone-200` | `focus:shadow-[3px_3px_0px_#2C2416]` |
+| Stamp badges | `rounded` (4px) | `border-[3px]` | `shadow-[2px_2px_0px_#2C2416]` |
+| Error banner | none (sharp) | `border border-red-200` | `shadow-[3px_3px_0px_#2C2416]` |
+| Modals | `rounded-lg` (8px) | none | `shadow-[8px_8px_0px_#2C2416]` |
 | Avatars | `rounded-full` | none | none |
-| Stamp Badges | `rounded` (4px) | `border-[3px]` (3px from Collage Board) | Hard shadow: `shadow-[3px_3px_0px_#1A1A1A]` |
-| Tags (standard) | `rounded-full` | `border` | none |
+| Tags | `rounded-full` | `border` | none |
 | Code inline | `rounded` (4px) | none | none |
 
+**Key changes:**
+- Inputs now `rounded-lg` (8px) instead of `rounded-md` (6px)
+- Cards have no border — shadow provides the edge
+- Default border weight is `border` (1px), not `border-2` (2px), except for toolbar buttons, stamp badges, and secondary buttons
+
 **Three-tier corner system:**
-1. **Sharp corners (rounded-none):** Major containers, cards, structural elements — signature brutalist element
-2. **Rounded-md (6px):** Inputs and form elements — adds comfort for daily use
-3. **Pill shape (rounded-full):** Primary CTAs only — creates deliberate contrast and hierarchy
+1. **Sharp (none):** Cards, structural elements — signature brutalist element
+2. **Rounded-lg (8px):** Inputs, modals — comfortable for interaction
+3. **Pill (rounded-full):** Buttons, tags — deliberate hierarchy
 
-**Border philosophy:** Default to `border-2` (2px) instead of `border` (1px) — borrowed from Collage Board. Makes everything feel more substantial and graphic.
+## Navigation
 
-**Shadow philosophy:** Hard drop shadows `shadow-[4px_4px_0px_#1A1A1A]` make UI elements feel tangible — like paper on a surface. This is THE defining visual addition from Collage Board. Hover states increase shadow to `shadow-[6px_6px_0px_#1A1A1A]`.
+**Sticky glassmorphism nav:**
 
-## Interactive States
+```html
+<nav class="sticky top-0 z-50 border-b border-stone-200 bg-white/80 backdrop-blur-md">
+  <div class="mx-auto max-w-7xl px-6 md:px-12 lg:px-24">
+    <div class="flex h-16 items-center justify-between">
+      <!-- Logo -->
+      <a href="/" class="font-serif text-xl font-semibold tracking-tight text-stone-900">
+        Microblogger
+      </a>
 
-| State | Pattern | Example |
-|-------|---------|---------|
-| Hover | Background color change or shadow increase | Primary buttons: `hover:bg-[#9A3329]`, Cards: `hover:shadow-[6px_6px_0px_#1A1A1A]` |
-| Focus | Brick red ring with offset OR hard shadow | Inputs: `focus:border-[#B74134] focus:shadow-[4px_4px_0px_#1A1A1A]` |
-| Focus (editor) | Subtle border change only | `focus:border-[#B74134]` (no ring — less distracting during writing) |
-| Active | Darker color, shadow flattens | `active:bg-[#7F2619] active:shadow-[2px_2px_0px_#1A1A1A] active:translate-x-[2px] active:translate-y-[2px]` |
-| Disabled | 40% opacity, no hover | `disabled:opacity-40 disabled:cursor-not-allowed` |
-| Loading | Brick spinner | Brick red `animate-spin` border on transparent background |
-| Error | Red border and hard shadow | `border-red-200 focus:border-red-500 focus:shadow-[4px_4px_0px_#1A1A1A]` |
+      <!-- Nav links -->
+      <div class="flex items-center gap-6">
+        <a href="/dashboard" class="text-sm font-medium text-stone-500 hover:text-stone-900 transition-colors">
+          Dashboard
+        </a>
+        <a href="/library" class="text-sm font-medium text-stone-900 underline decoration-2 underline-offset-4">
+          Library
+        </a>
 
-**Transitions:**
-- Color changes: `transition-colors duration-200 ease-out`
-- Shadow changes: `transition-shadow duration-200 ease-out` (for card hovers)
-- Layout shifts: `transition-all duration-200 ease-in-out`
+        <!-- Avatar -->
+        <img
+          src="/avatar.jpg"
+          alt="User"
+          class="h-8 w-8 rounded-full ring-2 ring-stone-200"
+        />
+      </div>
+    </div>
+  </div>
+</nav>
+```
+
+**Elements:**
+- Logo: `font-serif text-xl font-semibold tracking-tight text-stone-900`
+- Links: `text-sm font-medium text-stone-500 hover:text-stone-900`
+- Active link: `text-stone-900 underline decoration-2 underline-offset-4`
+- Avatar: `ring-2 ring-stone-200` (not border)
 
 ## Component Patterns
 
 ### Buttons
 
-**Primary (pill shape, brick red, hard shadow):**
-```
-rounded-full bg-[#B74134] px-6 py-3 text-sm font-semibold text-white
-shadow-[4px_4px_0px_#1A1A1A] hover:bg-[#9A3329] hover:shadow-[6px_6px_0px_#1A1A1A]
-active:shadow-[2px_2px_0px_#1A1A1A] active:translate-x-[2px] active:translate-y-[2px]
-transition-all duration-200
+**Primary (pill, brick red, hard shadow always):**
+```html
+<button class="rounded-full bg-[#B74134] px-6 py-3 text-sm font-semibold text-white shadow-[3px_3px_0px_#2C2416] hover:bg-[#9A3329] hover:shadow-[5px_5px_0px_#2C2416] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] transition-all duration-200">
+  Start Writing
+</button>
 ```
 
-**Secondary (rounded-md, black outline, heavy border):**
-```
-rounded-md border-2 border-black bg-white px-6 py-3 text-sm font-semibold
-text-black hover:bg-black hover:text-white transition-colors duration-200
+**Secondary (pill, outline):**
+```html
+<button class="rounded-full border-2 border-stone-900 bg-white px-6 py-3 text-sm font-semibold text-stone-900 hover:bg-stone-900 hover:text-white transition-all duration-200">
+  Learn More
+</button>
 ```
 
 **Ghost:**
-```
-rounded-md px-6 py-3 text-sm font-semibold text-zinc-800
-hover:bg-zinc-100 transition-colors duration-200
+```html
+<button class="rounded-full px-6 py-3 text-sm font-semibold text-stone-500 hover:bg-stone-100 hover:text-stone-900 transition-colors duration-200">
+  Cancel
+</button>
 ```
 
 **Destructive:**
-```
-rounded-full bg-red-600 px-6 py-3 text-sm font-semibold text-white
-shadow-[4px_4px_0px_#1A1A1A] hover:bg-red-700 hover:shadow-[6px_6px_0px_#1A1A1A]
-transition-all duration-200
-```
-
-### Form Inputs
-
-**Text input (heavy border, hard shadow on focus):**
-```
-w-full rounded-md border-2 border-zinc-200 bg-white px-4 py-3
-text-base text-black placeholder:text-zinc-400
-focus:border-[#B74134] focus:outline-none focus:shadow-[4px_4px_0px_#1A1A1A]
-transition-all duration-200
+```html
+<button class="rounded-full bg-red-600 px-6 py-3 text-sm font-semibold text-white shadow-[3px_3px_0px_#2C2416] hover:bg-red-700 hover:shadow-[5px_5px_0px_#2C2416] transition-all duration-200">
+  Delete Essay
+</button>
 ```
 
-**Textarea:**
-```
-Same as text input, add: resize-none min-h-[120px]
-```
+**Toolbar button:**
+```html
+<!-- Active -->
+<button class="border-2 border-[#B74134] bg-[#B74134] px-2.5 py-1 text-sm font-bold text-white shadow-[3px_3px_0px_#2C2416]">
+  B
+</button>
 
-**Title input (editor — underline only):**
-```
-w-full border-0 border-b-2 border-zinc-200 bg-transparent
-px-0 py-3 [font-family:var(--font-serif)] text-3xl font-bold text-black
-placeholder:text-zinc-400 focus:border-[#B74134] focus:outline-none
-focus:ring-0 transition-colors duration-200
-```
-
-**Label:**
-```
-text-sm font-semibold text-black mb-2 block
-```
-
-**Helper text:**
-```
-text-sm text-zinc-600 mt-1.5
-```
-
-**Error message:**
-```
-text-sm text-red-800 mt-1.5
+<!-- Inactive -->
+<button class="border-2 border-stone-300 bg-white px-2.5 py-1 text-sm font-bold text-stone-500 shadow-[2px_2px_0px_#2C2416] hover:border-stone-900 hover:text-stone-900 transition-colors">
+  B
+</button>
 ```
 
 ### Cards
 
-**Standard card (sharp corners, heavy border, hard shadow):**
-```
-border-2 border-zinc-200 bg-white p-6
-shadow-[4px_4px_0px_#1A1A1A]
-hover:shadow-[6px_6px_0px_#1A1A1A] transition-shadow duration-200
-```
-
-**Featured card (editor surface, generous padding):**
-```
-border-2 border-zinc-200 bg-white p-8
-shadow-[6px_6px_0px_#1A1A1A]
-```
-
-**Evidence card (thick left border, NO rotation):**
-```
-border-2 border-zinc-200 border-l-4 border-l-[#B74134]
-bg-white p-6 shadow-[4px_4px_0px_#1A1A1A]
-hover:shadow-[6px_6px_0px_#1A1A1A] transition-shadow duration-200
-```
-
-**Essay card (with top border, Pressed Type pattern):**
-```
-border-t-4 border-t-black bg-white p-6
-shadow-[4px_4px_0px_#1A1A1A]
-hover:shadow-[6px_6px_0px_#1A1A1A] transition-shadow duration-200
-```
-
-**Stamp Badge (rotated, heavy border, hard shadow):**
+**Standard card (sharp corners, subtle shadow at rest, hard shadow on hover):**
 ```html
-<div class="inline-block rotate-2">
-  <span class="inline-block border-[3px] border-black px-3 py-1 rounded
-    text-xs font-black uppercase tracking-wider bg-amber-50 text-amber-900
-    shadow-[3px_3px_0px_#1A1A1A]">
-    DRAFT
-  </span>
+<div class="bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-[4px_4px_0px_#2C2416]">
+  <h3 class="font-serif text-2xl font-semibold tracking-tight text-stone-900">
+    Card Title
+  </h3>
+  <p class="mt-2 text-sm text-stone-600">
+    Card content goes here.
+  </p>
 </div>
 ```
 
-Variants:
-- DRAFT: `bg-amber-50 text-amber-900 border-amber-900 rotate-2`
-- PUBLISHED: `bg-emerald-50 text-emerald-900 border-emerald-900 -rotate-2`
-- IN REVIEW: `bg-sky-50 text-sky-900 border-sky-900 rotate-3`
-
-### Navigation
-
-**Top nav:**
-```
-bg-[#FAFAF8] border-b-2 border-black
-Container: max-w-7xl mx-auto px-6 md:px-12 lg:px-24
-Height: h-16 (64px)
-```
-
-**Logo/site name:**
-```
-[font-family:var(--font-serif)] text-xl font-bold text-black tracking-tight
-```
-
-**Nav links:**
-```
-Default: text-sm font-semibold text-zinc-800 hover:text-black
-Active: text-black underline decoration-2 underline-offset-4
-Transition: transition-colors duration-150
-```
-
-### Editor-Specific
-
-**Editor container (hard shadow):**
-```
-border-2 border-zinc-200 bg-white p-8
-shadow-[6px_6px_0px_#1A1A1A]
-min-h-[600px]
-```
-
-**Editor content area (where user types):**
-```
-text-lg leading-relaxed text-black
-max-w-prose mx-auto
-Focus: focus:outline-none (no visible focus ring during writing)
-```
-
-**Toolbar:**
-```
-bg-white border-b-2 border-zinc-200 px-6 py-3
-Buttons: ghost style, grouped with gap-2, vertical dividers between groups
-Icons: text-zinc-600, active state text-[#B74134]
-```
-
-**Inline comment (LLM coaching annotation with handwriting):**
+**Essay card (with top border, title color change on hover):**
 ```html
-<!-- Highlighted text in content -->
-<mark class="bg-[#FFF5F3] border-b-2 border-[#B74134]">
-  {user's text being commented on}
-</mark>
+<a href="/essay/123" class="group block border-t-4 border-t-stone-900 bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-[4px_4px_0px_#2C2416]">
+  <h3 class="font-serif text-2xl font-semibold tracking-tight text-stone-900 group-hover:text-[#B74134] transition-colors">
+    The Attention Economy is Backwards
+  </h3>
+  <p class="mt-2 text-sm text-stone-600">
+    347 words · 2 min read · Draft
+  </p>
+</a>
+```
 
-<!-- Margin annotation with handwriting font -->
-<div class="border-l-4 border-[#B74134] bg-[#FFF5F3] p-4
-  shadow-[4px_4px_0px_#1A1A1A]">
-  <div class="flex items-start gap-2">
-    <CommentIcon class="h-5 w-5 text-[#B74134] flex-shrink-0" />
-    <div class="text-sm">
-      <p class="[font-family:var(--font-handwriting)] text-lg text-[#B74134] mb-1">
-        Coach feedback
-      </p>
-      <p class="text-zinc-800">{comment content}</p>
-    </div>
-  </div>
+**Evidence card (thick left border):**
+```html
+<div class="border-l-4 border-l-[#B74134] bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-[4px_4px_0px_#2C2416]">
+  <blockquote class="text-sm text-stone-700">
+    "Citation or evidence text goes here."
+  </blockquote>
+  <cite class="mt-2 block text-xs text-stone-500">
+    Source Name, 2024
+  </cite>
 </div>
 ```
 
-**Checklist panel:**
-```
-border-l-2 border-zinc-200 bg-zinc-50 p-6
-Checkbox: completed items text-zinc-500 line-through
-Active item: bg-[#FFF5F3] border-l-2 border-l-[#B74134]
-```
-
-**Word count / metadata display:**
-```
-text-sm text-zinc-600 font-medium
-Separator between items: " · " (middot)
-Example: "347 words · 2 min read · Draft"
+**Featured card (always has hard shadow):**
+```html
+<div class="bg-white p-8 shadow-[3px_3px_0px_#2C2416]">
+  <h2 class="font-serif text-3xl font-semibold tracking-tight text-stone-900">
+    Featured Content
+  </h2>
+  <p class="mt-4 text-base text-stone-600">
+    Featured content with permanent hard shadow for emphasis.
+  </p>
+</div>
 ```
 
-### Structural Elements
+### Stamp Badges
 
-**Page container:**
-```
-max-w-7xl mx-auto px-6 md:px-12 lg:px-24
-```
-
-**Content column (editor, essays):**
-```
-max-w-2xl mx-auto
+**Draft:**
+```html
+<span class="inline-block rotate-2 rounded border-[3px] border-amber-800 bg-amber-50 px-3 py-1 text-xs font-black uppercase tracking-wider text-amber-800 shadow-[2px_2px_0px_#2C2416]">
+  DRAFT
+</span>
 ```
 
-**Section header with border-top (from Pressed Type):**
-```
-border-t-4 border-black pt-6
+**Published:**
+```html
+<span class="inline-block -rotate-2 rounded border-[3px] border-emerald-800 bg-emerald-50 px-3 py-1 text-xs font-black uppercase tracking-wider text-emerald-800 shadow-[2px_2px_0px_#2C2416]">
+  PUBLISHED
+</span>
 ```
 
-**Code/monospace:**
+**In Review:**
+```html
+<span class="inline-block rotate-3 rounded border-[3px] border-sky-800 bg-sky-50 px-3 py-1 text-xs font-black uppercase tracking-wider text-sky-800 shadow-[2px_2px_0px_#2C2416]">
+  IN REVIEW
+</span>
 ```
-Inline: font-mono text-sm bg-zinc-100 text-black px-2 py-0.5 rounded
-Block: font-mono text-sm bg-zinc-50 border-2 border-zinc-200 p-4
+
+### Inputs
+
+**Text input (rounded-lg, hard shadow on focus):**
+```html
+<input
+  type="text"
+  placeholder="Enter title..."
+  class="w-full rounded-lg border border-stone-200 bg-white px-4 py-3 text-base text-stone-900 placeholder:text-stone-400 focus:border-[#B74134] focus:shadow-[3px_3px_0px_#2C2416] focus:outline-none transition-all duration-200"
+/>
+```
+
+**Title input (editor — no visible container):**
+```html
+<input
+  type="text"
+  placeholder="Untitled Essay"
+  class="w-full border-0 bg-transparent px-0 py-2 font-serif text-4xl font-semibold text-stone-900 placeholder:text-stone-300 focus:outline-none"
+/>
+```
+
+**Label:**
+```html
+<label class="mb-2 block text-sm font-semibold text-stone-900">
+  Essay Title
+</label>
+```
+
+**Helper text:**
+```html
+<p class="mt-1.5 text-sm text-stone-600">
+  A clear, specific title helps readers understand your argument.
+</p>
+```
+
+**Error message:**
+```html
+<p class="mt-1.5 text-sm text-red-800">
+  Title is required.
+</p>
+```
+
+### Coaching Annotation
+
+Handwritten label + structured feedback. Always has hard shadow.
+
+```html
+<div class="border-l-4 border-[#B74134] bg-[#FFF5F3] p-4 shadow-[3px_3px_0px_#2C2416]">
+  <p class="font-handwriting text-lg text-[#B74134]">
+    Coach feedback
+  </p>
+  <p class="mt-1 text-sm text-stone-700">
+    This claim needs evidence. What study or source supports this statement?
+  </p>
+</div>
+```
+
+### Error Banner
+
+Sharp corners, hard shadow, demands attention.
+
+```html
+<div class="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 shadow-[3px_3px_0px_#2C2416]">
+  <strong class="font-semibold">Error:</strong> Unable to save essay. Please try again.
+</div>
 ```
 
 ## Layout
 
 ### Breakpoints
+
 Mobile-first responsive strategy using Tailwind defaults:
 - `sm`: 640px
 - `md`: 768px
@@ -392,94 +496,155 @@ Mobile-first responsive strategy using Tailwind defaults:
 ### Page Layouts
 
 **Editor (core screen):**
-```
-Desktop: sidebar (250px fixed) + main content (flex-1, max-w-4xl)
-Tablet: collapsible sidebar, full-width content when collapsed
-Mobile: stacked, sidebar becomes bottom sheet or separate view
-```
+- Desktop: Sidebar (250px fixed) + main content (flex-1, max-w-4xl)
+- Tablet: Collapsible sidebar, full-width content when collapsed
+- Mobile: Stacked, sidebar becomes bottom sheet or separate view
 
 **Library (essay grid):**
-```
-Desktop: 3-column grid (grid-cols-3, gap-6)
-Tablet: 2-column grid (md:grid-cols-2)
-Mobile: single column (grid-cols-1)
-```
+- Desktop: 3-column grid (`grid-cols-3 gap-6`)
+- Tablet: 2-column grid (`md:grid-cols-2`)
+- Mobile: Single column (`grid-cols-1`)
 
-**Publish (reading view):**
-```
-Single column, max-w-2xl, centered
-Evidence and objections: expandable sections or sidebar on desktop
-Mobile: linear stacked layout
-```
+**Published essay (reading view):**
+- Single column, `max-w-2xl`, centered
+- Evidence and objections: Expandable sections or sidebar on desktop
+- Mobile: Linear stacked layout
 
 ### Grid System
+
 - **Card grids:** CSS Grid (`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6`)
-- **Form layouts:** Flexbox with vertical stacking and gap-4
+- **Form layouts:** Flexbox with vertical stacking and `gap-4`
 - **Two-column splits:** CSS Grid (`grid grid-cols-1 lg:grid-cols-2 gap-8`)
 - **Sidebar + content:** Flexbox or Grid with fixed sidebar and flexible content area
 
-## Design Principles (for LLM Judge Reference)
+### Structural Elements
+
+**Page container:**
+```html
+<div class="mx-auto max-w-7xl px-6 md:px-12 lg:px-24">
+  <!-- Page content -->
+</div>
+```
+
+**Content column (editor, essays):**
+```html
+<div class="mx-auto max-w-2xl">
+  <!-- Centered content -->
+</div>
+```
+
+**Section header with top border:**
+```html
+<div class="border-t-4 border-stone-900 pt-6">
+  <h2 class="font-serif text-3xl font-semibold tracking-tight text-stone-900">
+    Section Title
+  </h2>
+</div>
+```
+
+**Code (inline):**
+```html
+<code class="rounded bg-stone-100 px-2 py-0.5 font-mono text-sm text-stone-900">
+  const example = true
+</code>
+```
+
+**Code (block):**
+```html
+<pre class="rounded-lg border border-stone-200 bg-stone-50 p-4 font-mono text-sm text-stone-900">
+  <code>
+    function example() {
+      return true;
+    }
+  </code>
+</pre>
+```
+
+## Design Principles
 
 These principles guide the aesthetic and should be used to evaluate design consistency:
 
-1. **Typographic authority without aggression:** Playfair Display creates clear hierarchy and editorial confidence, but scaled to 48px (not 60px) and weight 700 (not 900) to avoid performance pressure.
+1. **Shadow as emphasis, not wallpaper:** Cards rest with subtle elevation. Hard ink shadows appear on hover as a tactile reward. This creates delight through interaction.
 
-2. **High contrast for focus:** Black text on white surfaces with minimal color creates absolute clarity. The design doesn't whisper — it speaks clearly and directly.
+2. **Warm neutrals, not clinical greys:** Stone-scale neutrals with brown undertones. Warm black (#1C1917) instead of pure black (#000). Ink shadows (#2C2416) instead of neutral grey.
 
-3. **Tangible UI elements:** Hard drop shadows (`shadow-[4px_4px_0px_#1A1A1A]`) make every element feel physical — like paper on a surface. This is the signature visual element borrowed from Collage Board.
+3. **Typography does the heavy lifting:** Newsreader creates authority without aggression. DM Sans provides warmth and clarity. Hierarchy comes from type, not decoration.
 
-4. **Heavy borders for substance:** 2px borders by default (instead of 1px) make everything feel more graphic and substantial. Borrowed from Collage Board's bold approach.
+4. **Contained personality:** Stamp badges, handwritten coaching, brick red accents — personality exists in specific, intentional places. Not sprinkled everywhere.
 
-5. **Brick red, not alarm red:** The accent color (#B74134) is warm and editorial (think literary journals, not error messages). It signals action without urgency.
+5. **Brick red signals action, not alarm:** The accent color (#B74134) is warm and editorial. Think literary journals, not error messages. Confidence without urgency.
 
-6. **Sharp corners with intentional exceptions:** Containers and cards stay sharp (signature brutalist element), but inputs get rounded-md for daily comfort, and primary buttons get pill shape for hierarchy.
+6. **Entrance, not arrival:** Fade-up animations with stagger. Smooth shadow reveals. Word progress bar fill. Motion creates delight without distraction.
 
-7. **Handwritten coaching annotations:** Caveat font in brick red for margin notes ONLY — creates "professor's red pen" effect. This adds humanity to the coaching model without undermining the editorial discipline.
+7. **Paper texture adds craft:** Subtle grain overlay (1.8% opacity) creates subconscious feeling of physical material. Digital, but tangible.
 
-8. **Stamp badges for status:** Rubber stamp badges (rotated 2-3 degrees, 3px border, hard shadow) for essay status — small, contained, memorable. Used sparingly for status markers only.
+8. **Generous breathing room for practice:** Despite tight grid discipline, generous padding (p-8 for editor, p-6 for cards) and larger editor text (18px, 1.75 line height) create comfort for sustained work.
 
-9. **Generous breathing room for practice:** Despite the tight grid discipline, generous padding (p-8 for editor, p-6 for cards) and larger editor text (18px, 1.7 line height) create comfort for sustained work.
+9. **Sharp corners with intentional exceptions:** Cards and structural elements stay sharp (signature brutalist element). Inputs get rounded-lg for comfort. Buttons get pill shape for hierarchy.
 
-10. **Graphic boldness with warmth:** The warm off-white background (#FAFAF8) prevents clinical coldness while preserving the high-contrast graphic aesthetic. Cards remain true white for maximum clarity.
+10. **Graphic boldness with warmth:** High-contrast foundation (white cards on warm-white background) preserves graphic quality while preventing clinical coldness.
 
-## Conflict Resolutions
+## What Changed from Previous Kit
 
-When synthesizing Pressed Type with selective Collage Board elements, these conflicts were resolved:
+Evolution from "neobrutalist letterpress" to "Warm Editorial Craft":
 
-1. **Shadows vs. flat aesthetic:** Pressed Type was completely flat. Added Collage Board's hard drop shadows (`shadow-[4px_4px_0px_#1A1A1A]`) because they add physicality and substance WITHOUT soft/blurred decoration. The shadows are architectural, not ornamental.
+### Typography
+- Playfair Display → Newsreader (more distinctive, less overused, refined at 600 weight)
+- Inter → DM Sans (more character, geometric warmth, humanist touches)
+- Weight: font-bold (700) → font-semibold (600) on serif headings
 
-2. **Border weight:** Collage Board uses 2px borders everywhere; Pressed Type uses 1px. Adopted 2px as default — makes everything more graphic and substantial without overwhelming the layout.
+### Color
+- Zinc → Stone (warm brown undertones throughout)
+- Pure black (#000) → Warm black stone-900 (#1C1917)
+- Shadow #1A1A1A → Shadow #2C2416 (warm ink)
 
-3. **Typography mix:** Collage Board uses Fraunces (display serif) + Space Grotesk (sans) + Caveat (handwriting). Kept Pressed Type's Playfair Display + Inter foundation, but added Caveat for coaching annotations only. This preserves typographic consistency while adding human warmth where it matters.
+### Shadows (MAJOR EVOLUTION)
+- Hard shadows everywhere → Shadow hierarchy (rest: subtle, hover: hard)
+- Static depth → Interactive reward
+- "Shadow as wallpaper" → "Shadow as emphasis"
 
-4. **Rotated elements:** Collage Board rotates evidence cards (`rotate-1`, `-rotate-1`). EXCLUDED this — the user explicitly said angled evidence is too playful. Instead, kept all cards grid-aligned. Only stamp badges get rotation (2-3 degrees) because they're small, contained status markers.
+### Texture
+- No texture → Paper grain overlay (1.8% opacity, CSS-only)
+- Flat surfaces → Subtle craft feeling
 
-5. **Color palette:** Collage Board uses navy/coral/yellow/sage multi-color palette. EXCLUDED — kept Pressed Type's single brick-red accent (#B74134) for simplicity and restraint. Used semantic colors (emerald/amber/red/sky) only for status badges.
+### Motion
+- No animations → Fade-up entrances with stagger
+- Static rendering → Choreographed entrance
+- No feedback → Word count progress bar (signature interaction, 700ms smooth fill)
 
-6. **Button shadows:** Primary buttons get hard shadows (`shadow-[4px_4px_0px_#1A1A1A]`) from Collage Board. Hover state increases shadow to `shadow-[6px_6px_0px_#1A1A1A]` and active state flattens shadow with translate — creates physical "press" feeling.
+### Borders
+- border-2 default → border default (lighter borders, shadows do the work)
+- Heavy borders everywhere → Selective use (toolbar buttons, stamps, secondary buttons)
 
-7. **Input focus states:** Pressed Type uses ring-based focus (standard). Added option for hard shadow focus (`focus:shadow-[4px_4px_0px_#1A1A1A]`) on inputs — creates consistency with the card shadow system.
+### Corners
+- rounded-md inputs → rounded-lg inputs (8px, more comfortable)
 
-8. **Handwriting placement:** Collage Board uses Caveat for various UI elements. Limited it strictly to coaching annotations in the editor — this makes it a meaningful signal of "human feedback" rather than decorative typography.
+### Navigation
+- Heavy solid bar → Glassmorphism sticky nav (bg-white/80, backdrop-blur-md)
 
-9. **Stamp badge use case:** Collage Board uses stamp badges broadly. Limited to essay status only (DRAFT, PUBLISHED, IN REVIEW) — small, functional, memorable. Not used for tags, labels, or other UI elements.
+### Cards
+- Static with hard shadows → Rest with shadow-sm, reveal hard shadow on hover
+- Fixed title color → Title changes to brick red on hover
+- Instant render → Fade-up entrance with stagger
 
-10. **Corner system:** Both kits use sharp corners, but Collage Board is more absolute. Maintained Pressed Type's three-tier system (sharp containers, rounded-md inputs, pill primary buttons) — this creates more usable hierarchy for daily use.
+### Interactive Feedback
+- None → Word progress bar with color changes (stone-400 → brick red → dark red)
+- Static → Smooth 700ms transition on type
 
-## Summary: The Hybrid Identity
+## Summary
 
-**The concept:** A letterpress broadsheet you can touch.
-
-This synthesis creates a visual identity that feels like a tool for serious intellectual work that also feels crafted and substantial. Not flat and lifeless. Not chaotic and playful. The hard shadows and heavy borders give physicality. The stamp badges give personality. The handwriting annotations give humanity. Everything else is Pressed Type's editorial discipline.
-
-**The signature elements:**
-- Playfair Display typography (editorial authority)
-- High-contrast black/white palette (focus and clarity)
-- Brick red accent (action without urgency)
-- Sharp containers (graphic discipline)
-- Hard drop shadows (tangible physicality) — THE defining visual addition
-- Heavy 2px borders (substance and weight)
-- Stamp badges (memorable status markers)
-- Handwritten coaching notes (human feedback signal)
+**The concept:** A serious editorial workspace with warmth and texture.
 
 **The emotional tone:** Trustworthy, practice-oriented, evidence-backed, intellectually warm, crafted, substantial — not flashy, not corporate, not gamified, not playful.
+
+**The signature elements:**
+- Newsreader typography (distinctive editorial authority)
+- Stone-scale warmth (organic, not clinical)
+- Shadow hierarchy (emphasis through interaction)
+- Paper grain texture (subtle craft feeling)
+- Entrance animations (choreographed delight)
+- Brick red accent (action without urgency)
+- Word progress bar (satisfying visual feedback)
+- Handwritten coaching (human feedback signal)
+
+**The difference:** Same editorial soul, more refined execution. Warmth without sacrificing authority. Delight without distraction. Craft without clutter.

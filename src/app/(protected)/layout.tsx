@@ -27,14 +27,14 @@ export default async function ProtectedLayout({
 
   return (
     <div className="min-h-screen bg-[#FAFAF8]">
-      <nav className="flex items-center justify-between border-b-2 border-black bg-white px-6 py-3">
+      <nav className="sticky top-0 z-50 flex items-center justify-between border-b border-stone-200 bg-white/80 px-6 py-3 backdrop-blur-md">
         <div className="flex items-center gap-6">
-          <Link href="/" className="font-serif text-xl font-bold tracking-tight">
+          <Link href="/" className="font-serif text-xl font-semibold tracking-tight text-stone-900">
             Microblogger
           </Link>
           <Link
             href="/dashboard"
-            className="text-sm font-medium text-zinc-600 hover:text-black"
+            className="text-sm font-medium text-stone-500 transition-colors duration-200 hover:text-stone-900"
           >
             Dashboard
           </Link>
@@ -46,10 +46,10 @@ export default async function ProtectedLayout({
             <img
               src={image}
               alt={name}
-              className="h-8 w-8 rounded-full border-2 border-black"
+              className="h-8 w-8 rounded-full ring-2 ring-stone-200"
             />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-black bg-zinc-100 text-xs font-bold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-100 text-xs font-semibold text-stone-600 ring-2 ring-stone-200">
               {initials}
             </div>
           )}
