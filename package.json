@@ -18,6 +18,8 @@
     "db:studio": "drizzle-kit studio",
     "test": "bun test test/unit/",
     "test:unit": "bun test test/unit/",
+    "test:contract": "bun test test/contract/",
+    "test:all": "bun test test/unit/ test/contract/",
     "test:e2e": "bunx playwright test"
   },
   "devDependencies": {

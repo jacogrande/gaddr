@@ -1,6 +1,6 @@
 import { test, expect } from "playwright/test";
 
-test.describe("Write and Publish flow", () => {
+test.describe.serial("Write and Publish flow", () => {
   let essayId: string;
 
   test("create a new draft from dashboard", async ({ page }) => {
@@ -68,7 +68,7 @@ test.describe("Write and Publish flow", () => {
     await expect(page.getByText("Published")).toBeVisible({ timeout: 5000 });
 
     // Toolbar should be hidden (read-only mode)
-    await expect(page.locator(".mb-6.flex.flex-wrap.gap-2")).not.toBeVisible();
+    await expect(page.getByTestId("editor-toolbar")).not.toBeVisible();
 
     // "View public page" link should appear
     await expect(page.getByText("View public page")).toBeVisible();

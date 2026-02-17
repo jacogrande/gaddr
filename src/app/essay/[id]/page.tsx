@@ -8,7 +8,7 @@ import { extractOgDescription } from "../../../domain/essay/og-metadata";
 import { formatPublishedDate, pluralize } from "../../../domain/essay/formatting";
 import { buildPublishedEssayView } from "../../../domain/evidence/public-view";
 import { isErr } from "../../../domain/types/result";
-import type { EssayId } from "../../../domain/types/branded";
+import type { EssayId, UserId } from "../../../domain/types/branded";
 import { postgresEssayRepository } from "../../../infra/essay/postgres-essay-repository";
 import { postgresEvidenceCardRepository } from "../../../infra/evidence/postgres-evidence-card-repository";
 import { postgresEssayVersionRepository } from "../../../infra/essay/postgres-essay-version-repository";
@@ -24,8 +24,8 @@ const getPublishedEvidence = cache((id: EssayId) =>
   postgresEvidenceCardRepository.findPublishedEvidenceByEssay(id),
 );
 
-const getVersionCount = cache((id: EssayId) =>
-  postgresEssayVersionRepository.countByEssay(id),
+const getVersionCount = cache((id: EssayId, uid: UserId) =>
+  postgresEssayVersionRepository.countByEssay(id, uid),
 );
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
@@ -81,7 +81,7 @@ export default async function PublicEssayPage({ params }: { params: Params }) {
   // Gracefully degrade — if evidence/version fetch fails, render without them
   const [evidenceResult, versionCountResult] = await Promise.all([
     getPublishedEvidence(eid.value),
-    getVersionCount(eid.value),
+    getVersionCount(eid.value, essay.userId),
   ]);
   const links = isErr(evidenceResult) ? [] : evidenceResult.value;
   const revisionCount = isErr(versionCountResult) ? 0 : versionCountResult.value;

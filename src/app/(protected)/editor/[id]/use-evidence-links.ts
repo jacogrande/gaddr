@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
-import { attachEvidenceAction, detachEvidenceAction, listEssayEvidenceAction } from "../actions";
+import { attachEvidenceAction, detachEvidenceAction } from "../actions";
 import { findTextPosition } from "./prosemirror-utils";
 import type { EvidenceLinkData } from "../../evidence-types";
 
@@ -114,18 +114,6 @@ export function useEvidenceLinks(
     [essayId, applyMarks],
   );
 
-  const refresh = useCallback(
-    async (editor: Editor) => {
-      const result = await listEssayEvidenceAction(essayId);
-      if ("error" in result) return;
-
-      linksRef.current = result.links;
-      setLinks(result.links);
-      applyMarks(editor, result.links);
-    },
-    [essayId, applyMarks],
-  );
-
   return {
     links,
     pickerOpen,
@@ -133,7 +121,6 @@ export function useEvidenceLinks(
     closePicker: () => { setPickerOpen(false); },
     attach,
     detach,
-    refresh,
     applyMarks,
   };
 }

@@ -36,6 +36,6 @@ export async function requireSession(): Promise<Result<Session, AuthError>> {
       error instanceof Error
         ? `Session verification failed: ${error.message}`
         : "Session verification failed";
-    return err({ kind: "AuthError", message });
+    return err({ kind: "AuthError", message, cause: error });
   }
 }

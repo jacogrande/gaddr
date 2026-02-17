@@ -14,6 +14,7 @@ import { isErr } from "../../domain/types/result";
 import { anthropic } from "./client";
 import { REVIEW_SYSTEM_PROMPT } from "./prompts/review-system-prompt";
 import { reviewTools } from "./tools/review-tools";
+import { reportError } from "../observability/report-error";
 
 const MODEL = process.env["LLM_MODEL"] ?? "claude-sonnet-4-5-20250929";
 const MAX_ITERATIONS = 10;
@@ -97,6 +98,9 @@ async function* reviewGenerator(
       const event = parseToolCall(block.name, block.input);
 
       if (!event) {
+        reportError(new Error(`Invalid tool input for ${block.name}: ${JSON.stringify(block.input)}`), {
+          action: `review.parseToolCall:${block.name}`,
+        });
         toolResults.push({
           type: "tool_result",
           tool_use_id: block.id,
@@ -128,6 +132,11 @@ async function* reviewGenerator(
 
     if (response.stop_reason === "end_turn") {
       yield { type: "done" };
+      return;
+    }
+
+    if (response.stop_reason !== "tool_use") {
+      yield { type: "error", message: `Review interrupted: unexpected stop reason '${String(response.stop_reason)}'` };
       return;
     }
 

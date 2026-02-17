@@ -12,6 +12,12 @@ function hasSessionCookie(request: NextRequest): boolean {
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Dev kit route guard: 404 in production so the design sandbox isn't publicly accessible
+  if (pathname.startsWith("/kit") && process.env.NODE_ENV === "production") {
+    return NextResponse.rewrite(new URL("/_not-found", request.url));
+  }
+
   const isAuthenticated = hasSessionCookie(request);
 
   // Protected routes: redirect unauthenticated users to sign-in
@@ -40,5 +46,7 @@ export const config = {
     "/editor/:path*",
     "/library/:path*",
     "/sign-in",
+    "/kit",
+    "/kit/:path*",
   ],
 };

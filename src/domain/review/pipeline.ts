@@ -65,6 +65,7 @@ export async function* validateReviewStream(
           type: "error",
           message: `Incomplete review: missing rubric scores for ${missing.join(", ")}`,
         };
+        return;
       }
     }
 

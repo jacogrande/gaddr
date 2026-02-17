@@ -17,6 +17,7 @@ import { savePublishWithVersion } from "../../../infra/essay/publish-transaction
 import { reportError } from "../../../infra/observability/report-error";
 import type { EvidenceLinkData } from "../evidence-types";
 import type { TipTapDoc } from "../../../domain/essay/essay";
+import { NOT_DRAFT_ERROR } from "./error-codes";
 
 const repo = postgresEssayRepository;
 const evidenceRepo = postgresEvidenceCardRepository;
@@ -42,10 +43,40 @@ export async function createDraftAction(): Promise<void> {
   const essay = createDraft({ id: eid.value, userId: uid.value, now: new Date() });
   const saved = await repo.save(essay);
   if (isErr(saved)) {
+    reportError(saved.error, { action: "createDraft", userId: uid.value });
     redirect("/dashboard?error=create-failed");
   }
 
   redirect(`/editor/${saved.value.id}`);
+}
+
+export async function deleteEssayAction(
+  id: string,
+): Promise<{ success: true } | { error: string }> {
+  const session = await requireSession();
+  if (isErr(session)) {
+    return { error: "Not authenticated" };
+  }
+
+  const eid = essayId(id);
+  if (isErr(eid)) {
+    return { error: "Invalid essay ID" };
+  }
+
+  const uid = userId(session.value.userId);
+  if (isErr(uid)) {
+    return { error: "Invalid user ID" };
+  }
+
+  const result = await repo.delete(eid.value, uid.value);
+  if (isErr(result)) {
+    if (result.error.kind !== "NotFoundError") {
+      reportError(result.error, { action: "deleteEssay", userId: uid.value, essayId: eid.value });
+    }
+    return { error: result.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
+  }
+
+  return { success: true };
 }
 
 export async function updateDraftAction(
@@ -74,6 +105,9 @@ export async function updateDraftAction(
 
   const found = await repo.findById(eid.value, uid.value);
   if (isErr(found)) {
+    if (found.error.kind !== "NotFoundError") {
+      reportError(found.error, { action: "updateDraft.findById", userId: uid.value, essayId: eid.value });
+    }
     return { error: found.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
   }
 
@@ -99,6 +133,8 @@ function publishErrorMessage(error: PublishError | { kind: "ValidationError"; me
   switch (error.kind) {
     case "EmptyContent":
       return "Cannot publish an empty essay";
+    case "EmptyTitle":
+      return "Please add a title before publishing";
     case "AlreadyPublished":
       return "Essay is already published";
     case "ValidationError":
@@ -113,7 +149,7 @@ function unpublishErrorMessage(_error: UnpublishError): string {
 function updateErrorMessage(error: UpdateError | { kind: "ValidationError"; message: string }): string {
   switch (error.kind) {
     case "NotDraft":
-      return "Can only update essays in draft status";
+      return NOT_DRAFT_ERROR;
     case "ValidationError":
       return error.message;
   }
@@ -139,10 +175,13 @@ export async function publishEssayAction(
 
   const found = await repo.findById(eid.value, uid.value);
   if (isErr(found)) {
+    if (found.error.kind !== "NotFoundError") {
+      reportError(found.error, { action: "publishEssay.findById", userId: uid.value, essayId: eid.value });
+    }
     return { error: found.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
   }
 
-  const versionCount = await versionRepo.countByEssay(eid.value);
+  const versionCount = await versionRepo.countByEssay(eid.value, uid.value);
   if (isErr(versionCount)) {
     reportError(versionCount.error, { action: "publishEssay.countVersions", userId: uid.value, essayId: eid.value });
     return { error: "Failed to count versions" };
@@ -198,6 +237,9 @@ export async function unpublishEssayAction(
 
   const found = await repo.findById(eid.value, uid.value);
   if (isErr(found)) {
+    if (found.error.kind !== "NotFoundError") {
+      reportError(found.error, { action: "unpublishEssay.findById", userId: uid.value, essayId: eid.value });
+    }
     return { error: found.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
   }
 
@@ -244,6 +286,9 @@ export async function attachEvidenceAction(
   // Verify essay ownership
   const essayResult = await repo.findById(eid.value, uid.value);
   if (isErr(essayResult)) {
+    if (essayResult.error.kind !== "NotFoundError") {
+      reportError(essayResult.error, { action: "attachEvidence.findEssay", userId: uid.value, essayId: eid.value });
+    }
     return { error: essayResult.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
   }
 
@@ -254,6 +299,9 @@ export async function attachEvidenceAction(
   }
   const card = await evidenceRepo.findById(ecid.value, uid.value);
   if (isErr(card)) {
+    if (card.error.kind !== "NotFoundError") {
+      reportError(card.error, { action: "attachEvidence.findCard", userId: uid.value, evidenceCardId: ecid.value });
+    }
     return { error: card.error.kind === "NotFoundError" ? "Evidence card not found" : "Database error" };
   }
 
@@ -338,46 +386,6 @@ export async function detachEvidenceAction(
   }
 
   return { success: true };
-}
-
-export async function listEssayEvidenceAction(
-  rawEssayId: string,
-): Promise<{ links: EvidenceLinkData[] } | { error: string }> {
-  const session = await requireSession();
-  if (isErr(session)) {
-    return { error: "Not authenticated" };
-  }
-
-  const eid = essayId(rawEssayId);
-  if (isErr(eid)) {
-    return { error: "Invalid essay ID" };
-  }
-
-  const uid = userId(session.value.userId);
-  if (isErr(uid)) {
-    return { error: "Invalid user ID" };
-  }
-
-  const linksResult = await evidenceRepo.findLinksWithCardsByEssay(eid.value, uid.value);
-  if (isErr(linksResult)) {
-    reportError(linksResult.error, { action: "listEssayEvidence", userId: uid.value, essayId: eid.value });
-    return { error: "Failed to load evidence links" };
-  }
-
-  return {
-    links: linksResult.value.map((link) => ({
-      id: link.id,
-      essayId: link.essayId,
-      evidenceCardId: link.evidenceCardId,
-      claimText: link.claimText,
-      anchorBlockIndex: link.anchorBlockIndex,
-      card: {
-        id: link.card.id,
-        sourceTitle: link.card.sourceTitle,
-        stance: link.card.stance,
-      },
-    })),
-  };
 }
 
 // ── Version history actions ──

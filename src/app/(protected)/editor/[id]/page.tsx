@@ -42,7 +42,7 @@ export default async function EditorPage({ params }: { params: Params }) {
   const [linksResult, cardsResult, versionCountResult] = await Promise.all([
     postgresEvidenceCardRepository.findLinksWithCardsByEssay(eid.value, uid.value),
     postgresEvidenceCardRepository.listByUser(uid.value),
-    postgresEssayVersionRepository.countByEssay(eid.value),
+    postgresEssayVersionRepository.countByEssay(eid.value, uid.value),
   ]);
 
   const initialLinks = isErr(linksResult)

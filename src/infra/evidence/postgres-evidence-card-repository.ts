@@ -46,8 +46,8 @@ function cardToDomain(row: CardRow): Result<EvidenceCard, PersistenceError> {
 
 function cardToRow(card: EvidenceCard) {
   return {
-    id: card.id as string,
-    userId: card.userId as string,
+    id: card.id,
+    userId: card.userId,
     sourceUrl: card.sourceUrl,
     sourceTitle: card.sourceTitle,
     quoteSnippet: card.quoteSnippet,
@@ -89,10 +89,10 @@ function linkToDomain(row: LinkRow): Result<ClaimEvidenceLink, PersistenceError>
 
 function linkToRow(link: ClaimEvidenceLink) {
   return {
-    id: link.id as string,
-    essayId: link.essayId as string,
-    evidenceCardId: link.evidenceCardId as string,
-    userId: link.userId as string,
+    id: link.id,
+    essayId: link.essayId,
+    evidenceCardId: link.evidenceCardId,
+    userId: link.userId,
     claimText: link.claimText,
     anchorBlockIndex: link.anchorBlockIndex,
     createdAt: link.createdAt,

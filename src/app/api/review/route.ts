@@ -63,6 +63,8 @@ export async function POST(request: Request) {
   const rawEvents = adapter.review(reviewRequest.value);
   const events = validateReviewStream(rawEvents);
 
+  const STREAM_TIMEOUT_MS = 60_000;
+
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -71,10 +73,20 @@ export async function POST(request: Request) {
           { name: "review.stream", op: "llm.stream" },
           async () => {
             try {
+              const deadline = Date.now() + STREAM_TIMEOUT_MS;
               for await (const event of events) {
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
                 );
+                if (Date.now() > deadline) {
+                  reportError(new Error("Review stream timed out"), { action: "review.timeout", userId: uid.value, essayId: eid.value });
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({ type: "error", message: "Review timed out. Please try again." })}\n\n`,
+                    ),
+                  );
+                  break;
+                }
               }
             } catch (streamError: unknown) {
               reportError(streamError, { action: "review.stream", userId: uid.value, essayId: eid.value });

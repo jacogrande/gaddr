@@ -38,6 +38,7 @@ function toDomain(row: VersionRow): Result<EssayVersion, PersistenceError> {
     versionNumber: row.versionNumber,
     title: row.title,
     content: contentResult.data,
+    // DB column is `createdAt` (row insert time); domain uses `publishedAt` (when the version was published)
     publishedAt: row.createdAt,
   });
 }
@@ -112,12 +113,12 @@ export const postgresEssayVersionRepository: EssayVersionRepository = {
     }
   },
 
-  async countByEssay(eid: EssayId): Promise<Result<number, PersistenceError>> {
+  async countByEssay(eid: EssayId, uid: UserId): Promise<Result<number, PersistenceError>> {
     try {
       const [row] = await db
         .select({ value: count() })
         .from(essayVersion)
-        .where(eq(essayVersion.essayId, eid));
+        .where(and(eq(essayVersion.essayId, eid), eq(essayVersion.userId, uid)));
       return ok(row?.value ?? 0);
     } catch (cause: unknown) {
       return err({ kind: "PersistenceError", message: "Failed to count versions", cause });

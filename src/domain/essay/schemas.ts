@@ -24,8 +24,6 @@ export const TipTapDocSchema: z.ZodType<TipTapDoc> = z.object({
   content: z.array(TipTapNodeSchema).optional(),
 });
 
-export const CreateEssayInputSchema = z.object({});
-
 export const UpdateEssayInputSchema = z
   .object({
     title: z.string().optional(),

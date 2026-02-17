@@ -18,4 +18,11 @@ export type EssayRepository = {
   listByUser(
     userId: UserId,
   ): Promise<Result<readonly Essay[], PersistenceError>>;
+  listPublishedByUser(
+    userId: UserId,
+  ): Promise<Result<readonly Essay[], PersistenceError>>;
+  delete(
+    id: EssayId,
+    userId: UserId,
+  ): Promise<Result<void, NotFoundError | PersistenceError>>;
 };

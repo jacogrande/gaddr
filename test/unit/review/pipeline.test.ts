@@ -139,7 +139,7 @@ describe("validateReviewStream", () => {
     expect(result[result.length - 1]).toEqual({ type: "done" });
   });
 
-  test("injects error before done when rubric dimensions missing", async () => {
+  test("yields error and stops when rubric dimensions missing", async () => {
     const input: ReviewEvent[] = [
       {
         type: "rubric_score",
@@ -163,8 +163,8 @@ describe("validateReviewStream", () => {
       expect(errors[0].message).toContain("argument");
       expect(errors[0].message).toContain("originality");
     }
-    // done event still emitted after the error
-    expect(result[result.length - 1]).toEqual({ type: "done" });
+    // error is the terminal event — done is NOT emitted (prevents overwriting error state)
+    expect(result[result.length - 1]?.type).toBe("error");
   });
 
   test("passes through error events without completeness check", async () => {

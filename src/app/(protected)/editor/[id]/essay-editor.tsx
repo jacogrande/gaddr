@@ -5,11 +5,12 @@ import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { wordCount, WORD_COUNT_TARGET, WORD_COUNT_LIMIT } from "../../../../domain/essay/operations";
+import { wordCount, canPublish, WORD_COUNT_TARGET, WORD_COUNT_LIMIT } from "../../../../domain/essay/operations";
 import { formatPublishedDate } from "../../../../domain/essay/formatting";
 import { TipTapDocSchema } from "../../../../domain/essay/schemas";
 import { checkCitationMismatches } from "../../../../domain/evidence/citation-mismatch";
 import { updateDraftAction, publishEssayAction, unpublishEssayAction } from "../actions";
+import { NOT_DRAFT_ERROR } from "../error-codes";
 import { useReview } from "../use-review";
 import { FeedbackPanel } from "./feedback-panel";
 import { EvidencePicker } from "./evidence-picker";
@@ -18,6 +19,7 @@ import { useEvidenceLinks } from "./use-evidence-links";
 import { findTextPosition } from "./prosemirror-utils";
 import { EvidenceMark } from "../extensions/evidence-mark";
 import { VersionHistoryPanel } from "./version-history-panel";
+import { SprintTimer } from "./sprint-timer";
 import type { TipTapDoc } from "../../../../domain/essay/essay";
 import type { EvidenceLinkData, EvidenceCardSummary } from "../../evidence-types";
 
@@ -77,10 +79,12 @@ export function EssayEditor({
 }: Props) {
   const [title, setTitle] = useState(initialTitle);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [words, setWords] = useState(() => wordCount(initialContent));
   const [status, setStatus] = useState(initialStatus);
   const [publishedAt, setPublishedAt] = useState(initialPublishedAt);
   const [publishing, setPublishing] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [sidePanel, setSidePanel] = useState<SidePanel>("none");
@@ -88,34 +92,42 @@ export function EssayEditor({
   const [currentDoc, setCurrentDoc] = useState<TipTapDoc>(initialContent);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<{ title?: string; content?: TipTapDoc } | null>(null);
-  const savingRef = useRef(false);
-  const savePromiseRef = useRef<Promise<void>>(Promise.resolve());
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
 
   const isDraft = status === "draft";
-  const review = useReview();
+  const review = useReview(id);
   const evidence = useEvidenceLinks(id, initialLinks);
+
+  // Auto-open feedback panel if review was hydrated from sessionStorage
+  useEffect(() => {
+    if (review.status === "done" || review.status === "error") {
+      setSidePanel((prev) => prev === "none" ? "feedback" : prev);
+    }
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const save = useCallback(
     (data: { title?: string; content?: TipTapDoc }) => {
-      const doSave = async () => {
-        savingRef.current = true;
+      const doSave = async (payload: { title?: string; content?: TipTapDoc }) => {
         setSaveStatus("saving");
-        const result = await updateDraftAction(id, data);
-        savingRef.current = false;
+        const result = await updateDraftAction(id, payload);
         if ("error" in result) {
+          setSaveError(result.error);
           setSaveStatus("unsaved");
           return;
         }
+        setSaveError(null);
         setSaveStatus("saved");
+        // Drain any changes that accumulated during this save
         if (pendingRef.current) {
           const queued = pendingRef.current;
           pendingRef.current = null;
-          void save(queued);
+          await doSave(queued);
         }
       };
-      const promise = doSave();
-      savePromiseRef.current = promise;
-      return promise;
+      queueRef.current = queueRef.current.then(() => doSave(data));
+      return queueRef.current;
     },
     [id],
   );
@@ -131,7 +143,7 @@ export function EssayEditor({
         clearTimeout(saveTimerRef.current);
       }
       saveTimerRef.current = setTimeout(() => {
-        if (pendingRef.current && !savingRef.current) {
+        if (pendingRef.current) {
           const toSave = pendingRef.current;
           pendingRef.current = null;
           void save(toSave);
@@ -146,12 +158,12 @@ export function EssayEditor({
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    await savePromiseRef.current;
     if (pendingRef.current) {
       const toSave = pendingRef.current;
       pendingRef.current = null;
-      await save(toSave);
+      void save(toSave);
     }
+    await queueRef.current;
   }, [save]);
 
   const handleGetFeedback = useCallback(() => {
@@ -216,7 +228,9 @@ export function EssayEditor({
         clearTimeout(saveTimerRef.current);
       }
       if (pendingRef.current) {
-        void save(pendingRef.current);
+        const toSave = pendingRef.current;
+        pendingRef.current = null;
+        void save(toSave);
       }
     };
   }, [save]);
@@ -343,7 +357,9 @@ export function EssayEditor({
       ? "Saving..."
       : saveStatus === "saved"
         ? "Saved"
-        : "Unsaved changes";
+        : saveError === NOT_DRAFT_ERROR
+          ? "This essay was published in another tab. Unpublish to continue editing."
+          : saveError ?? "Unsaved changes";
 
   const saveColor =
     saveStatus === "saved"
@@ -433,7 +449,7 @@ export function EssayEditor({
             <>
               <button
                 type="button"
-                disabled={words === 0 || publishing}
+                disabled={!canPublish(currentDoc, title) || publishing}
                 onClick={() => void handlePublish()}
                 className="border-2 border-emerald-700 bg-emerald-700 px-4 py-1.5 text-sm font-bold text-white shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:bg-emerald-800 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
@@ -476,6 +492,22 @@ export function EssayEditor({
               >
                 View public page &rarr;
               </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `${window.location.origin}/essay/${id}`;
+                  void navigator.clipboard.writeText(url).then(
+                    () => {
+                      setCopied(true);
+                      setTimeout(() => { setCopied(false); }, 2000);
+                    },
+                    () => { /* clipboard permission denied — button stays as "Copy link" */ },
+                  );
+                }}
+                className="text-sm font-semibold text-stone-500 hover:text-stone-900"
+              >
+                {copied ? "Copied!" : "Copy link"}
+              </button>
             </>
           )}
           {versionCount > 0 && (
@@ -493,11 +525,14 @@ export function EssayEditor({
           )}
         </div>
 
+        {/* Sprint timer — only visible in draft mode */}
+        {isDraft && <SprintTimer />}
+
         {/* Toolbar — neobrutalist buttons (hidden when published) */}
         {editor ? (
           <>
             {isDraft && (
-              <div className="mb-6 flex flex-wrap gap-2">
+              <div data-testid="editor-toolbar" className="mb-6 flex flex-wrap gap-2">
                 <ToolbarButton
                   onClick={() => editor.chain().focus().toggleBold().run()}
                   active={editor.isActive("bold")}

@@ -82,6 +82,9 @@ export function publishEssay(
   if (essay.status === "published") {
     return err({ kind: "AlreadyPublished" });
   }
+  if (!essay.title.trim()) {
+    return err({ kind: "EmptyTitle" });
+  }
   if (wordCount(essay.content) === 0) {
     return err({ kind: "EmptyContent" });
   }
@@ -106,6 +109,12 @@ export function unpublishEssay(
     updatedAt: now,
     publishedAt: null,
   });
+}
+
+// ── Publish eligibility ──
+
+export function canPublish(doc: TipTapDoc, title: string): boolean {
+  return title.trim().length > 0 && wordCount(doc) > 0;
 }
 
 // ── Text extraction ──

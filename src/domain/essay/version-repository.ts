@@ -15,5 +15,5 @@ export type EssayVersionRepository = {
     id: EssayVersionId,
     userId: UserId,
   ): Promise<Result<EssayVersion, NotFoundError | PersistenceError>>;
-  countByEssay(essayId: EssayId): Promise<Result<number, PersistenceError>>;
+  countByEssay(essayId: EssayId, userId: UserId): Promise<Result<number, PersistenceError>>;
 };

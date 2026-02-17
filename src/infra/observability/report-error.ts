@@ -1,10 +1,11 @@
 import * as Sentry from "@sentry/nextjs";
-import type { UserId, EssayId } from "../../domain/types/branded";
+import type { UserId, EssayId, EvidenceCardId } from "../../domain/types/branded";
 
 type ErrorContext = {
   action: string;
   userId?: UserId;
   essayId?: EssayId;
+  evidenceCardId?: EvidenceCardId;
 };
 
 function extractMessage(cause: unknown): string {
@@ -27,6 +28,7 @@ export function reportError(cause: unknown, context: ErrorContext): void {
     scope.setTag("action", context.action);
     if (context.userId) scope.setUser({ id: context.userId });
     if (context.essayId) scope.setTag("essayId", context.essayId);
+    if (context.evidenceCardId) scope.setTag("evidenceCardId", context.evidenceCardId);
     Sentry.captureException(error);
   });
 }

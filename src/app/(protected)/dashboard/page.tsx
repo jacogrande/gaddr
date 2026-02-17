@@ -7,7 +7,9 @@ import { wordCount } from "../../../domain/essay/operations";
 import { relativeTime } from "../../../domain/essay/formatting";
 import { isErr } from "../../../domain/types/result";
 import { createDraftAction } from "../editor/actions";
+import { reportError } from "../../../infra/observability/report-error";
 import { ErrorBanner } from "./error-banner";
+import { DeleteEssayButton } from "./delete-essay-button";
 import type { Essay } from "../../../domain/essay/essay";
 
 function StampBadge({ status }: { status: "draft" | "published" }) {
@@ -30,22 +32,27 @@ function StampBadge({ status }: { status: "draft" | "published" }) {
 function EssayCard({ essay, now }: { essay: Essay; now: Date }) {
   const words = wordCount(essay.content);
   return (
-    <Link
-      href={`/editor/${essay.id}`}
-      className="group block border-t-4 border-t-stone-900 bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-[4px_4px_0px_#2C2416]"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate font-serif text-lg font-semibold text-stone-900 transition-colors duration-200 group-hover:text-[#B74134]">
-            {essay.title || "Untitled"}
-          </h3>
-          <p className="mt-1 text-sm text-stone-500 font-medium">
-            {words} words &middot; {relativeTime(essay.updatedAt, now)}
-          </p>
+    <div className="group relative border-t-4 border-t-stone-900 bg-white shadow-sm transition-all duration-300 hover:shadow-[4px_4px_0px_#2C2416]">
+      <Link
+        href={`/editor/${essay.id}`}
+        className="block p-6"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate font-serif text-lg font-semibold text-stone-900 transition-colors duration-200 group-hover:text-[#B74134]">
+              {essay.title || "Untitled"}
+            </h3>
+            <p className="mt-1 text-sm text-stone-500 font-medium">
+              {words} words &middot; {relativeTime(essay.updatedAt, now)}
+            </p>
+          </div>
+          <StampBadge status={essay.status} />
         </div>
-        <StampBadge status={essay.status} />
+      </Link>
+      <div className="absolute top-2 right-2">
+        <DeleteEssayButton essayId={essay.id} />
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -70,6 +77,9 @@ export default async function DashboardPage({
   }
 
   const result = await postgresEssayRepository.listByUser(uid.value);
+  if (isErr(result)) {
+    reportError(result.error, { action: "dashboard.listByUser", userId: uid.value });
+  }
   const listError = isErr(result) ? "Failed to load essays. Please try refreshing." : null;
   const essays = isErr(result) ? [] : result.value;
   const now = new Date();

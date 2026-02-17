@@ -99,6 +99,9 @@ export async function updateEvidenceCardAction(
 
   const found = await repo.findById(eid.value, uid.value);
   if (isErr(found)) {
+    if (found.error.kind !== "NotFoundError") {
+      reportError(found.error, { action: "updateEvidenceCard.findById", userId: uid.value, evidenceCardId: eid.value });
+    }
     return { error: found.error.kind === "NotFoundError" ? "Evidence card not found" : "Database error" };
   }
 

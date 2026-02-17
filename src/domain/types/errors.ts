@@ -26,6 +26,7 @@ export type PersistenceError = {
 export type AuthError = {
   readonly kind: "AuthError";
   readonly message: string;
+  readonly cause?: unknown;
 };
 
 export type RenderError = {
@@ -36,6 +37,7 @@ export type RenderError = {
 
 export type PublishError =
   | { readonly kind: "EmptyContent" }
+  | { readonly kind: "EmptyTitle" }
   | { readonly kind: "AlreadyPublished" };
 
 export type UnpublishError = { readonly kind: "AlreadyDraft" };

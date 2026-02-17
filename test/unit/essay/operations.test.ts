@@ -118,7 +118,7 @@ describe("publishEssay", () => {
   });
 
   test("fails on empty doc", () => {
-    const draft = makeDraft({ content: { type: "doc" } });
+    const draft = makeDraft({ title: "Has Title", content: { type: "doc" } });
     const result = publishEssay(draft, PUBLISH_TIME);
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {
@@ -126,8 +126,39 @@ describe("publishEssay", () => {
     }
   });
 
+  test("fails on empty title", () => {
+    const draft = makeDraft({
+      title: "",
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Content" }] }],
+      },
+    });
+    const result = publishEssay(draft, PUBLISH_TIME);
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.kind).toBe("EmptyTitle");
+    }
+  });
+
+  test("fails on whitespace-only title", () => {
+    const draft = makeDraft({
+      title: "   ",
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Content" }] }],
+      },
+    });
+    const result = publishEssay(draft, PUBLISH_TIME);
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.kind).toBe("EmptyTitle");
+    }
+  });
+
   test("fails on doc with empty paragraph", () => {
     const draft = makeDraft({
+      title: "Has Title",
       content: { type: "doc", content: [{ type: "paragraph" }] },
     });
     const result = publishEssay(draft, PUBLISH_TIME);

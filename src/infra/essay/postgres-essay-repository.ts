@@ -42,8 +42,8 @@ function toDomain(row: EssayRow): Result<Essay, PersistenceError> {
 
 function toRow(e: Essay) {
   return {
-    id: e.id as string,
-    userId: e.userId as string,
+    id: e.id,
+    userId: e.userId,
     title: e.title,
     content: e.content,
     status: e.status,
@@ -145,6 +145,32 @@ export const postgresEssayRepository: EssayRepository = {
     }
   },
 
+  async delete(
+    id: EssayId,
+    ownerUserId: UserId,
+  ): Promise<Result<void, NotFoundError | PersistenceError>> {
+    try {
+      const rows = await db
+        .delete(essay)
+        .where(and(eq(essay.id, id), eq(essay.userId, ownerUserId)))
+        .returning({ id: essay.id });
+      if (rows.length === 0) {
+        return err({
+          kind: "NotFoundError",
+          entity: "Essay",
+          id: id as string,
+        });
+      }
+      return ok(undefined);
+    } catch (cause: unknown) {
+      return err({
+        kind: "PersistenceError",
+        message: "Failed to delete essay",
+        cause,
+      });
+    }
+  },
+
   async listByUser(
     userId: UserId,
   ): Promise<Result<readonly Essay[], PersistenceError>> {
@@ -165,6 +191,31 @@ export const postgresEssayRepository: EssayRepository = {
       return err({
         kind: "PersistenceError",
         message: "Failed to list essays",
+        cause,
+      });
+    }
+  },
+
+  async listPublishedByUser(
+    userId: UserId,
+  ): Promise<Result<readonly Essay[], PersistenceError>> {
+    try {
+      const rows = await db
+        .select()
+        .from(essay)
+        .where(and(eq(essay.userId, userId), eq(essay.status, "published")))
+        .orderBy(desc(essay.publishedAt));
+      const essays: Essay[] = [];
+      for (const row of rows) {
+        const result = toDomain(row);
+        if (isErr(result)) return result;
+        essays.push(result.value);
+      }
+      return ok(essays);
+    } catch (cause: unknown) {
+      return err({
+        kind: "PersistenceError",
+        message: "Failed to list published essays",
         cause,
       });
     }
