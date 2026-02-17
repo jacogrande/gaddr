@@ -48,13 +48,13 @@ export default async function EditorPage({ params }: { params: Params }) {
   const initialLinks = isErr(linksResult)
     ? []
     : linksResult.value.map((link) => ({
-        id: link.id as string,
-        essayId: link.essayId as string,
-        evidenceCardId: link.evidenceCardId as string,
+        id: link.id,
+        essayId: link.essayId,
+        evidenceCardId: link.evidenceCardId,
         claimText: link.claimText,
         anchorBlockIndex: link.anchorBlockIndex,
         card: {
-          id: link.card.id as string,
+          id: link.card.id,
           sourceTitle: link.card.sourceTitle,
           stance: link.card.stance,
         },
@@ -63,7 +63,7 @@ export default async function EditorPage({ params }: { params: Params }) {
   const evidenceCards = isErr(cardsResult)
     ? []
     : cardsResult.value.map((card) => ({
-        id: card.id as string,
+        id: card.id,
         sourceTitle: card.sourceTitle,
         quoteSnippet: card.quoteSnippet,
         userSummary: card.userSummary,

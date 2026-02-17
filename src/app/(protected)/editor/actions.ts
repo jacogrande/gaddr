@@ -14,6 +14,9 @@ import { AttachEvidenceInputSchema } from "../../../domain/evidence/schemas";
 import { createClaimEvidenceLink } from "../../../domain/evidence/operations";
 import { postgresEssayVersionRepository } from "../../../infra/essay/postgres-essay-version-repository";
 import { savePublishWithVersion } from "../../../infra/essay/publish-transaction";
+import { reportError } from "../../../infra/observability/report-error";
+import type { EvidenceLinkData } from "../evidence-types";
+import type { TipTapDoc } from "../../../domain/essay/essay";
 
 const repo = postgresEssayRepository;
 const evidenceRepo = postgresEvidenceCardRepository;
@@ -85,6 +88,7 @@ export async function updateDraftAction(
 
   const saved = await repo.save(updated.value);
   if (isErr(saved)) {
+    reportError(saved.error, { action: "updateDraft", userId: uid.value, essayId: eid.value });
     return { error: "Failed to save changes" };
   }
 
@@ -162,6 +166,7 @@ export async function publishEssayAction(
 
   const txResult = await savePublishWithVersion(prepared.value.published, prepared.value.snapshot);
   if (isErr(txResult)) {
+    reportError(txResult.error, { action: "publishEssay", userId: uid.value, essayId: eid.value });
     return { error: "Failed to publish essay" };
   }
 
@@ -202,6 +207,7 @@ export async function unpublishEssayAction(
 
   const saved = await repo.save(unpublished.value);
   if (isErr(saved)) {
+    reportError(saved.error, { action: "unpublishEssay", userId: uid.value, essayId: eid.value });
     return { error: "Failed to unpublish essay" };
   }
 
@@ -209,8 +215,6 @@ export async function unpublishEssayAction(
 }
 
 // ── Evidence link actions ──
-
-import type { EvidenceLinkData } from "../evidence-types";
 
 export async function attachEvidenceAction(
   rawEssayId: string,
@@ -273,19 +277,20 @@ export async function attachEvidenceAction(
 
   const savedLink = await evidenceRepo.saveLink(link.value);
   if (isErr(savedLink)) {
+    reportError(savedLink.error, { action: "attachEvidence", userId: uid.value, essayId: eid.value });
     return { error: "Failed to save evidence link" };
   }
 
   return {
     success: true,
     link: {
-      id: savedLink.value.id as string,
-      essayId: savedLink.value.essayId as string,
-      evidenceCardId: savedLink.value.evidenceCardId as string,
+      id: savedLink.value.id,
+      essayId: savedLink.value.essayId,
+      evidenceCardId: savedLink.value.evidenceCardId,
       claimText: savedLink.value.claimText,
       anchorBlockIndex: savedLink.value.anchorBlockIndex,
       card: {
-        id: card.value.id as string,
+        id: card.value.id,
         sourceTitle: card.value.sourceTitle,
         stance: card.value.stance,
       },
@@ -356,13 +361,13 @@ export async function listEssayEvidenceAction(
 
   return {
     links: linksResult.value.map((link) => ({
-      id: link.id as string,
-      essayId: link.essayId as string,
-      evidenceCardId: link.evidenceCardId as string,
+      id: link.id,
+      essayId: link.essayId,
+      evidenceCardId: link.evidenceCardId,
       claimText: link.claimText,
       anchorBlockIndex: link.anchorBlockIndex,
       card: {
-        id: link.card.id as string,
+        id: link.card.id,
         sourceTitle: link.card.sourceTitle,
         stance: link.card.stance,
       },
@@ -378,6 +383,10 @@ export type VersionSummary = {
   title: string;
   publishedAt: string;
   wordCount: number;
+};
+
+export type VersionDetail = VersionSummary & {
+  content: TipTapDoc;
 };
 
 export async function listVersionsAction(
@@ -413,12 +422,6 @@ export async function listVersionsAction(
     })),
   };
 }
-
-import type { TipTapDoc } from "../../../domain/essay/essay";
-
-export type VersionDetail = VersionSummary & {
-  content: TipTapDoc;
-};
 
 export async function getVersionAction(
   rawEssayId: string,

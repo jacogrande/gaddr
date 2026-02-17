@@ -21,6 +21,7 @@
     "test:e2e": "bunx playwright test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
     "@eslint/js": "^9",
     "@next/eslint-plugin-next": "^16.1.6",
     "@types/bun": "latest",

@@ -7,6 +7,7 @@ import { isErr } from "../../../domain/types/result";
 import { createEvidenceCard, updateEvidenceCard } from "../../../domain/evidence/operations";
 import { CreateEvidenceCardInputSchema, UpdateEvidenceCardInputSchema } from "../../../domain/evidence/schemas";
 import type { SerializedCard } from "../evidence-types";
+import { reportError } from "../../../infra/observability/report-error";
 
 const repo = postgresEvidenceCardRepository;
 
@@ -52,13 +53,14 @@ export async function createEvidenceCardAction(
 
   const saved = await repo.save(card.value);
   if (isErr(saved)) {
+    reportError(saved.error, { action: "createEvidenceCard", userId: uid.value });
     return { error: "Failed to save evidence card" };
   }
 
   return {
     success: true,
     card: {
-      id: saved.value.id as string,
+      id: saved.value.id,
       sourceUrl: saved.value.sourceUrl,
       sourceTitle: saved.value.sourceTitle,
       quoteSnippet: saved.value.quoteSnippet,
@@ -115,13 +117,14 @@ export async function updateEvidenceCardAction(
 
   const saved = await repo.save(updated.value);
   if (isErr(saved)) {
+    reportError(saved.error, { action: "updateEvidenceCard", userId: uid.value });
     return { error: "Failed to save evidence card" };
   }
 
   return {
     success: true,
     card: {
-      id: saved.value.id as string,
+      id: saved.value.id,
       sourceUrl: saved.value.sourceUrl,
       sourceTitle: saved.value.sourceTitle,
       quoteSnippet: saved.value.quoteSnippet,
@@ -154,6 +157,9 @@ export async function deleteEvidenceCardAction(
 
   const result = await repo.delete(eid.value, uid.value);
   if (isErr(result)) {
+    if (result.error.kind !== "NotFoundError") {
+      reportError(result.error, { action: "deleteEvidenceCard", userId: uid.value });
+    }
     return { error: result.error.kind === "NotFoundError" ? "Evidence card not found" : "Database error" };
   }
 

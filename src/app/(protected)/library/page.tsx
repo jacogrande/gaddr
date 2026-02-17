@@ -21,7 +21,7 @@ export default async function LibraryPage() {
   const loadError = isErr(result) ? "Failed to load evidence cards. Please try refreshing." : null;
 
   const serialized = cards.map((card) => ({
-    id: card.id as string,
+    id: card.id,
     sourceUrl: card.sourceUrl,
     sourceTitle: card.sourceTitle,
     quoteSnippet: card.quoteSnippet,

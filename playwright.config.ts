@@ -7,6 +7,10 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
+  timeout: 30_000,
+  expect: {
+    timeout: 10_000,
+  },
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8080",
     trace: "on-first-retry",
@@ -28,7 +32,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "bun run dev",
+        command: "E2E_TESTING=true bun run dev",
         url: "http://localhost:8080",
         reuseExistingServer: !process.env.CI,
       },

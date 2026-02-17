@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "../../../infra/auth/require-session";
 import { postgresEssayRepository } from "../../../infra/essay/postgres-essay-repository";
 import { reviewAdapter } from "../../../infra/llm/review-adapter";
+import { fixtureReviewAdapter } from "../../../infra/llm/fixture-review-adapter";
 import { ReviewRequestSchema } from "../../../domain/review/schemas";
 import {
   prepareReviewRequest,
@@ -9,6 +10,9 @@ import {
 } from "../../../domain/review/pipeline";
 import { essayId, userId } from "../../../domain/types/branded";
 import { isErr } from "../../../domain/types/result";
+import * as Sentry from "@sentry/nextjs";
+import { reportError } from "../../../infra/observability/report-error";
+import { isE2ETesting } from "../../../infra/env";
 
 export async function POST(request: Request) {
   const session = await requireSession();
@@ -43,6 +47,7 @@ export async function POST(request: Request) {
     if (result.error.kind === "NotFoundError") {
       return NextResponse.json({ error: "Essay not found" }, { status: 404 });
     }
+    reportError(result.error, { action: "review", userId: uid.value, essayId: eid.value });
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 
@@ -54,25 +59,32 @@ export async function POST(request: Request) {
     );
   }
 
-  const rawEvents = reviewAdapter.review(reviewRequest.value);
+  const adapter = isE2ETesting() ? fixtureReviewAdapter : reviewAdapter;
+  const rawEvents = adapter.review(reviewRequest.value);
   const events = validateReviewStream(rawEvents);
 
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      try {
-        for await (const event of events) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
-          );
-        }
-      } catch {
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ type: "error", message: "Stream failed" })}\n\n`,
-          ),
-        );
-      }
+      await Sentry.startSpan(
+        { name: "review.stream", op: "llm.stream" },
+        async () => {
+          try {
+            for await (const event of events) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+              );
+            }
+          } catch (streamError: unknown) {
+            reportError(streamError, { action: "review.stream", userId: uid.value, essayId: eid.value });
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "error", message: "Stream failed" })}\n\n`,
+              ),
+            );
+          }
+        },
+      );
       controller.close();
     },
   });
