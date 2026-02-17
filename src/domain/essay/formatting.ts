@@ -31,6 +31,10 @@ export function formatPublishedDate(date: Date): string {
   return formatDate(date);
 }
 
+export function pluralize(count: number, singular: string, plural: string): string {
+  return `${String(count)} ${count === 1 ? singular : plural}`;
+}
+
 function formatDate(date: Date): string {
   const month = MONTHS[date.getUTCMonth()];
   const day = date.getUTCDate();

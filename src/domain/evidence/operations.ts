@@ -8,14 +8,13 @@ import type { UserId } from "../types/branded";
 import type { ValidationError } from "../types/errors";
 import type { Result } from "../types/result";
 import { ok, err } from "../types/result";
+import { isSafeUrl } from "../types/url";
 
 export const MAX_SOURCE_TITLE_LENGTH = 300;
 export const MAX_QUOTE_LENGTH = 2000;
 export const MAX_SUMMARY_LENGTH = 2000;
 export const MAX_CAVEATS_LENGTH = 1000;
 export const MAX_CLAIM_TEXT_LENGTH = 1000;
-
-const URL_RE = /^https?:\/\//;
 
 function validationErr(
   message: string,
@@ -39,7 +38,7 @@ export function createEvidenceCard(params: {
   stance: string;
   now: Date;
 }): Result<EvidenceCard, ValidationError> {
-  if (!URL_RE.test(params.sourceUrl)) {
+  if (!isSafeUrl(params.sourceUrl)) {
     return validationErr(
       "Source URL must start with http:// or https://",
       "sourceUrl",
@@ -123,7 +122,7 @@ export function updateEvidenceCard(
   },
 ): Result<EvidenceCard, ValidationError> {
   const sourceUrl = update.sourceUrl ?? card.sourceUrl;
-  if (!URL_RE.test(sourceUrl)) {
+  if (!isSafeUrl(sourceUrl)) {
     return validationErr(
       "Source URL must start with http:// or https://",
       "sourceUrl",

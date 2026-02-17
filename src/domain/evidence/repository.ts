@@ -41,4 +41,7 @@ export type EvidenceCardRepository = {
     essayId: EssayId,
     userId: UserId,
   ): Promise<Result<readonly ClaimEvidenceLinkWithCard[], PersistenceError>>;
+  findPublishedEvidenceByEssay(
+    essayId: EssayId,
+  ): Promise<Result<readonly ClaimEvidenceLinkWithCard[], PersistenceError>>;
 };

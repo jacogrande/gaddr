@@ -4,16 +4,23 @@ import { cache } from "react";
 import { notFound } from "next/navigation";
 import { essayId } from "../../../domain/types/branded";
 import { wordCount } from "../../../domain/essay/operations";
-import { formatPublishedDate } from "../../../domain/essay/formatting";
+import { extractOgDescription } from "../../../domain/essay/og-metadata";
+import { formatPublishedDate, pluralize } from "../../../domain/essay/formatting";
+import { buildPublishedEssayView } from "../../../domain/evidence/public-view";
 import { isErr } from "../../../domain/types/result";
 import type { EssayId } from "../../../domain/types/branded";
 import { postgresEssayRepository } from "../../../infra/essay/postgres-essay-repository";
-import { renderEssayHtml } from "../../../infra/essay/render-essay-html";
+import { postgresEvidenceCardRepository } from "../../../infra/evidence/postgres-evidence-card-repository";
+import { EssayRenderer } from "./essay-renderer";
 
 type Params = Promise<{ id: string }>;
 
 const getPublishedEssay = cache((id: EssayId) =>
   postgresEssayRepository.findPublishedById(id),
+);
+
+const getPublishedEvidence = cache((id: EssayId) =>
+  postgresEvidenceCardRepository.findPublishedEvidenceByEssay(id),
 );
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
@@ -29,9 +36,24 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   }
 
   const essay = result.value;
+  const title = essay.title || "Untitled";
+  const description = extractOgDescription(essay.content)
+    || `A ${String(wordCount(essay.content))}-word micro-essay on Microblogger.`;
+
   return {
-    title: `${essay.title || "Untitled"} — Microblogger`,
-    description: `A ${String(wordCount(essay.content))}-word micro-essay on Microblogger.`,
+    title: `${title} — Microblogger`,
+    description,
+    openGraph: {
+      title: `${title} — Microblogger`,
+      description,
+      type: "article",
+      siteName: "Microblogger",
+    },
+    twitter: {
+      card: "summary",
+      title: `${title} — Microblogger`,
+      description,
+    },
   };
 }
 
@@ -49,12 +71,17 @@ export default async function PublicEssayPage({ params }: { params: Params }) {
   }
 
   const essay = result.value;
-  const htmlResult = renderEssayHtml(essay.content);
-  if (isErr(htmlResult)) {
-    notFound();
-  }
-  const html = htmlResult.value;
   const words = wordCount(essay.content);
+
+  // Gracefully degrade — if evidence fetch fails, render without evidence
+  const evidenceResult = await getPublishedEvidence(eid.value);
+  const links = isErr(evidenceResult) ? [] : evidenceResult.value;
+
+  const view = buildPublishedEssayView({
+    title: essay.title,
+    doc: essay.content,
+    links,
+  });
 
   return (
     <main className="min-h-screen bg-[#FAFAF8]">
@@ -78,14 +105,19 @@ export default async function PublicEssayPage({ params }: { params: Params }) {
           <span>
             {essay.publishedAt ? formatPublishedDate(essay.publishedAt) : ""}
           </span>
+          {view.hasEvidence ? (
+            <>
+              <span>&middot;</span>
+              <span>{pluralize(view.evidenceCount, "source", "sources")} cited</span>
+            </>
+          ) : null}
         </div>
 
         <div className="mx-auto mt-8 h-px w-12 bg-[#B74134]" />
 
-        <div
-          className="tiptap mt-8"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        <div className="mt-8">
+          <EssayRenderer doc={essay.content} evidenceByBlock={view.evidenceByBlock} />
+        </div>
       </article>
     </main>
   );

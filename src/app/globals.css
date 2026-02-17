@@ -129,6 +129,16 @@ body::after {
   font-style: italic;
 }
 
+.tiptap s {
+  text-decoration: line-through;
+}
+
+.tiptap hr {
+  border: none;
+  border-top: 1px solid #d6d3d1;
+  margin: 1.5em 0;
+}
+
 .tiptap p.is-editor-empty:first-child::before {
   content: "Start writing your micro-essay...";
   color: #a8a29e;
@@ -138,6 +148,13 @@ body::after {
 }
 
 /* ── Evidence mark styles ── */
+
+.evidence-mark {
+  cursor: default;
+  border-radius: 2px;
+  padding: 0 1px;
+  transition: background-color 0.15s ease;
+}
 
 .evidence-mark--supports {
   border-bottom: 2px solid #059669;

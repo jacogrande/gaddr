@@ -1,6 +1,6 @@
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../db/client";
-import { evidenceCard, claimEvidenceLink } from "../db/schema";
+import { evidenceCard, claimEvidenceLink, essay } from "../db/schema";
 import type { EvidenceCardRepository, ClaimEvidenceLinkWithCard } from "../../domain/evidence/repository";
 import type { EvidenceCard } from "../../domain/evidence/evidence-card";
 import type { ClaimEvidenceLink } from "../../domain/evidence/claim-evidence-link";
@@ -280,6 +280,42 @@ export const postgresEvidenceCardRepository: EvidenceCardRepository = {
       return ok(results);
     } catch (cause: unknown) {
       return err({ kind: "PersistenceError", message: "Failed to find links with cards", cause });
+    }
+  },
+
+  async findPublishedEvidenceByEssay(
+    eid: EssayId,
+  ): Promise<Result<readonly ClaimEvidenceLinkWithCard[], PersistenceError>> {
+    try {
+      const rows = await db
+        .select()
+        .from(claimEvidenceLink)
+        .innerJoin(evidenceCard, eq(claimEvidenceLink.evidenceCardId, evidenceCard.id))
+        .innerJoin(essay, eq(claimEvidenceLink.essayId, essay.id))
+        .where(
+          and(
+            eq(claimEvidenceLink.essayId, eid),
+            eq(essay.status, "published"),
+            eq(claimEvidenceLink.userId, essay.userId),
+          ),
+        )
+        .orderBy(
+          claimEvidenceLink.anchorBlockIndex,
+          claimEvidenceLink.createdAt,
+          claimEvidenceLink.id,
+        );
+
+      const results: ClaimEvidenceLinkWithCard[] = [];
+      for (const row of rows) {
+        const linkResult = linkToDomain(row.claim_evidence_link);
+        if (isErr(linkResult)) return linkResult;
+        const cardResult = cardToDomain(row.evidence_card);
+        if (isErr(cardResult)) return cardResult;
+        results.push({ ...linkResult.value, card: cardResult.value });
+      }
+      return ok(results);
+    } catch (cause: unknown) {
+      return err({ kind: "PersistenceError", message: "Failed to find published evidence", cause });
     }
   },
 };
