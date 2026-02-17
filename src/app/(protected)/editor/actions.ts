@@ -3,13 +3,17 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "../../../infra/auth/require-session";
 import { postgresEssayRepository } from "../../../infra/essay/postgres-essay-repository";
-import { essayId, userId } from "../../../domain/types/branded";
+import { postgresEvidenceCardRepository } from "../../../infra/evidence/postgres-evidence-card-repository";
+import { essayId, userId, evidenceCardId, claimEvidenceLinkId } from "../../../domain/types/branded";
 import type { PublishError, UnpublishError, UpdateError } from "../../../domain/types/errors";
 import { isErr } from "../../../domain/types/result";
 import { createDraft, updateDraft, publishEssay, unpublishEssay } from "../../../domain/essay/operations";
 import { UpdateEssayInputSchema } from "../../../domain/essay/schemas";
+import { AttachEvidenceInputSchema } from "../../../domain/evidence/schemas";
+import { createClaimEvidenceLink } from "../../../domain/evidence/operations";
 
 const repo = postgresEssayRepository;
+const evidenceRepo = postgresEvidenceCardRepository;
 
 export async function createDraftAction(): Promise<void> {
   const session = await requireSession();
@@ -179,4 +183,166 @@ export async function unpublishEssayAction(
   }
 
   return { success: true };
+}
+
+// ── Evidence link actions ──
+
+import type { EvidenceLinkData } from "../evidence-types";
+
+export async function attachEvidenceAction(
+  rawEssayId: string,
+  data: unknown,
+): Promise<{ success: true; link: EvidenceLinkData } | { error: string }> {
+  const session = await requireSession();
+  if (isErr(session)) {
+    return { error: "Not authenticated" };
+  }
+
+  const parsed = AttachEvidenceInputSchema.safeParse(data);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const eid = essayId(rawEssayId);
+  if (isErr(eid)) {
+    return { error: "Invalid essay ID" };
+  }
+
+  const uid = userId(session.value.userId);
+  if (isErr(uid)) {
+    return { error: "Invalid user ID" };
+  }
+
+  // Verify essay ownership
+  const essayResult = await repo.findById(eid.value, uid.value);
+  if (isErr(essayResult)) {
+    return { error: essayResult.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
+  }
+
+  // Verify evidence card ownership
+  const ecid = evidenceCardId(parsed.data.evidenceCardId);
+  if (isErr(ecid)) {
+    return { error: "Invalid evidence card ID" };
+  }
+  const card = await evidenceRepo.findById(ecid.value, uid.value);
+  if (isErr(card)) {
+    return { error: card.error.kind === "NotFoundError" ? "Evidence card not found" : "Database error" };
+  }
+
+  const rawLinkId = crypto.randomUUID();
+  const lid = claimEvidenceLinkId(rawLinkId);
+  if (isErr(lid)) {
+    return { error: "Failed to generate link ID" };
+  }
+
+  const link = createClaimEvidenceLink({
+    id: lid.value,
+    essayId: eid.value,
+    evidenceCardId: ecid.value,
+    userId: uid.value,
+    claimText: parsed.data.claimText,
+    anchorBlockIndex: parsed.data.anchorBlockIndex,
+    now: new Date(),
+  });
+  if (isErr(link)) {
+    return { error: link.error.message };
+  }
+
+  const savedLink = await evidenceRepo.saveLink(link.value);
+  if (isErr(savedLink)) {
+    return { error: "Failed to save evidence link" };
+  }
+
+  return {
+    success: true,
+    link: {
+      id: savedLink.value.id as string,
+      essayId: savedLink.value.essayId as string,
+      evidenceCardId: savedLink.value.evidenceCardId as string,
+      claimText: savedLink.value.claimText,
+      anchorBlockIndex: savedLink.value.anchorBlockIndex,
+      card: {
+        id: card.value.id as string,
+        sourceTitle: card.value.sourceTitle,
+        stance: card.value.stance,
+      },
+    },
+  };
+}
+
+export async function detachEvidenceAction(
+  rawEssayId: string,
+  linkId: string,
+): Promise<{ success: true } | { error: string }> {
+  const session = await requireSession();
+  if (isErr(session)) {
+    return { error: "Not authenticated" };
+  }
+
+  const uid = userId(session.value.userId);
+  if (isErr(uid)) {
+    return { error: "Invalid user ID" };
+  }
+
+  const eid = essayId(rawEssayId);
+  if (isErr(eid)) {
+    return { error: "Invalid essay ID" };
+  }
+
+  // Verify essay ownership before allowing link deletion
+  const essayCheck = await repo.findById(eid.value, uid.value);
+  if (isErr(essayCheck)) {
+    return { error: essayCheck.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
+  }
+
+  const lid = claimEvidenceLinkId(linkId);
+  if (isErr(lid)) {
+    return { error: "Invalid link ID" };
+  }
+
+  const deleteResult = await evidenceRepo.deleteLink(lid.value, eid.value, uid.value);
+  if (isErr(deleteResult)) {
+    return { error: deleteResult.error.kind === "NotFoundError" ? "Link not found" : "Database error" };
+  }
+
+  return { success: true };
+}
+
+export async function listEssayEvidenceAction(
+  rawEssayId: string,
+): Promise<{ links: EvidenceLinkData[] } | { error: string }> {
+  const session = await requireSession();
+  if (isErr(session)) {
+    return { error: "Not authenticated" };
+  }
+
+  const eid = essayId(rawEssayId);
+  if (isErr(eid)) {
+    return { error: "Invalid essay ID" };
+  }
+
+  const uid = userId(session.value.userId);
+  if (isErr(uid)) {
+    return { error: "Invalid user ID" };
+  }
+
+  const linksResult = await evidenceRepo.findLinksWithCardsByEssay(eid.value, uid.value);
+  if (isErr(linksResult)) {
+    return { error: "Failed to load evidence links" };
+  }
+
+  return {
+    links: linksResult.value.map((link) => ({
+      id: link.id as string,
+      essayId: link.essayId as string,
+      evidenceCardId: link.evidenceCardId as string,
+      claimText: link.claimText,
+      anchorBlockIndex: link.anchorBlockIndex,
+      card: {
+        id: link.card.id as string,
+        sourceTitle: link.card.sourceTitle,
+        stance: link.card.stance,
+      },
+    })),
+  };
 }

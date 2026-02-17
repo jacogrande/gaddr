@@ -136,3 +136,20 @@ body::after {
   height: 0;
   pointer-events: none;
 }
+
+/* ── Evidence mark styles ── */
+
+.evidence-mark--supports {
+  border-bottom: 2px solid #059669;
+  background: rgba(5, 150, 105, 0.06);
+}
+
+.evidence-mark--complicates {
+  border-bottom: 2px dashed #d97706;
+  background: rgba(217, 119, 6, 0.06);
+}
+
+.evidence-mark--contradicts {
+  border-bottom: 2px dotted #dc2626;
+  background: rgba(220, 38, 38, 0.06);
+}

@@ -4,16 +4,24 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { wordCount, WORD_COUNT_TARGET, WORD_COUNT_LIMIT } from "../../../../domain/essay/operations";
 import { formatPublishedDate } from "../../../../domain/essay/formatting";
 import { TipTapDocSchema } from "../../../../domain/essay/schemas";
+import { checkCitationMismatches } from "../../../../domain/evidence/citation-mismatch";
 import { updateDraftAction, publishEssayAction, unpublishEssayAction } from "../actions";
 import { useReview } from "../use-review";
 import { FeedbackPanel } from "./feedback-panel";
+import { EvidencePicker } from "./evidence-picker";
+import { CitationWarnings } from "./citation-warnings";
+import { useEvidenceLinks } from "./use-evidence-links";
+import { findTextPosition } from "./prosemirror-utils";
+import { EvidenceMark } from "../extensions/evidence-mark";
 import type { TipTapDoc } from "../../../../domain/essay/essay";
+import type { EvidenceLinkData, EvidenceCardSummary } from "../../evidence-types";
 
 type SaveStatus = "saved" | "saving" | "unsaved";
+type SidePanel = "none" | "feedback" | "evidence-picker";
 
 type Props = {
   id: string;
@@ -21,20 +29,25 @@ type Props = {
   initialContent: TipTapDoc;
   initialStatus: "draft" | "published";
   initialPublishedAt: string | null;
+  initialLinks?: EvidenceLinkData[];
+  evidenceCards?: EvidenceCardSummary[];
 };
 
 function ToolbarButton({
   onClick,
   active,
+  disabled,
   children,
 }: {
   onClick: () => void;
   active?: boolean;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onMouseDown={(e) => {
         e.preventDefault();
         onClick();
@@ -43,14 +56,22 @@ function ToolbarButton({
         active
           ? "border-[#B74134] bg-[#B74134] text-white shadow-[3px_3px_0px_#2C2416]"
           : "border-stone-300 bg-white text-stone-500 shadow-[2px_2px_0px_#2C2416] hover:border-stone-900 hover:text-stone-900 hover:shadow-[3px_3px_0px_#2C2416]"
-      } active:shadow-[1px_1px_0px_#2C2416] active:translate-x-[1px] active:translate-y-[1px]`}
+      } active:shadow-[1px_1px_0px_#2C2416] active:translate-x-[1px] active:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-50`}
     >
       {children}
     </button>
   );
 }
 
-export function EssayEditor({ id, initialTitle, initialContent, initialStatus, initialPublishedAt }: Props) {
+export function EssayEditor({
+  id,
+  initialTitle,
+  initialContent,
+  initialStatus,
+  initialPublishedAt,
+  initialLinks = [],
+  evidenceCards = [],
+}: Props) {
   const [title, setTitle] = useState(initialTitle);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [words, setWords] = useState(() => wordCount(initialContent));
@@ -58,6 +79,9 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
   const [publishedAt, setPublishedAt] = useState(initialPublishedAt);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [sidePanel, setSidePanel] = useState<SidePanel>("none");
+  const [currentDoc, setCurrentDoc] = useState<TipTapDoc>(initialContent);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<{ title?: string; content?: TipTapDoc } | null>(null);
   const savingRef = useRef(false);
@@ -65,6 +89,7 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
 
   const isDraft = status === "draft";
   const review = useReview();
+  const evidence = useEvidenceLinks(id, initialLinks);
 
   const save = useCallback(
     (data: { title?: string; content?: TipTapDoc }) => {
@@ -78,7 +103,6 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
           return;
         }
         setSaveStatus("saved");
-        // Flush any changes that arrived while we were saving
         if (pendingRef.current) {
           const queued = pendingRef.current;
           pendingRef.current = null;
@@ -118,9 +142,7 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    // Wait for any in-flight save to complete
     await savePromiseRef.current;
-    // Flush any queued changes that weren't yet saved
     if (pendingRef.current) {
       const toSave = pendingRef.current;
       pendingRef.current = null;
@@ -129,6 +151,7 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
   }, [save]);
 
   const handleGetFeedback = useCallback(() => {
+    setSidePanel("feedback");
     void flushPending().then(() => review.requestReview(id));
   }, [flushPending, review, id]);
 
@@ -138,6 +161,7 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
       StarterKit.configure({
         heading: { levels: [2, 3] },
       }),
+      EvidenceMark,
     ],
     content: JSON.parse(JSON.stringify(initialContent)) as JSONContent,
     editable: isDraft,
@@ -145,6 +169,7 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
       const parsed = TipTapDocSchema.safeParse(e.getJSON());
       if (!parsed.success) return;
       setWords(wordCount(parsed.data));
+      setCurrentDoc(parsed.data);
       scheduleSave({ content: parsed.data });
     },
     editorProps: {
@@ -154,44 +179,21 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
     },
   });
 
+  // Apply evidence marks when editor or links change
+  useEffect(() => {
+    if (editor && evidence.links.length > 0) {
+      evidence.applyMarks(editor, evidence.links);
+    }
+    // Only run on initial load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
+
   const handleCommentClick = useCallback(
     (quotedText: string) => {
       if (!editor) return;
-      const { doc } = editor.state;
-
-      // Build position-aware text map: ProseMirror positions differ from
-      // plain-text offsets because node boundaries consume positions.
-      const segments: Array<{ pos: number; text: string }> = [];
-      doc.descendants((node, pos) => {
-        if (node.isText && node.text) {
-          segments.push({ pos, text: node.text });
-        }
-      });
-
-      let combined = "";
-      const offsets: Array<{ textStart: number; docPos: number }> = [];
-      for (const seg of segments) {
-        offsets.push({ textStart: combined.length, docPos: seg.pos });
-        combined += seg.text;
-      }
-
-      const idx = combined.indexOf(quotedText);
-      if (idx === -1) return;
-
-      // Map text offsets to ProseMirror document positions
-      let from = 0;
-      let to = 0;
-      const endIdx = idx + quotedText.length;
-      for (const entry of offsets) {
-        if (entry.textStart <= idx) {
-          from = entry.docPos + (idx - entry.textStart);
-        }
-        if (entry.textStart <= endIdx) {
-          to = entry.docPos + (endIdx - entry.textStart);
-        }
-      }
-
-      editor.chain().focus().setTextSelection({ from, to }).run();
+      const position = findTextPosition(editor.state.doc, quotedText);
+      if (!position) return;
+      editor.chain().focus().setTextSelection(position).run();
     },
     [editor],
   );
@@ -247,6 +249,79 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
     setPublishedAt(null);
   };
 
+  const handleAttachEvidence = () => {
+    if (sidePanel === "evidence-picker") {
+      setSidePanel("none");
+      evidence.closePicker();
+    } else {
+      setSidePanel("evidence-picker");
+      evidence.openPicker();
+    }
+  };
+
+  const handlePickCard = useCallback(
+    (cardId: string) => {
+      if (!editor) return;
+      const { from, to } = editor.state.selection;
+      if (from === to) return;
+
+      const selectedText = editor.state.doc.textBetween(from, to);
+      if (!selectedText.trim()) return;
+
+      // Determine the block index of the selection start
+      let blockIndex = 0;
+      const { doc } = editor.state;
+      doc.forEach((node, offset, index) => {
+        if (offset <= from) {
+          blockIndex = index;
+        }
+      });
+
+      setEvidenceError(null);
+      void evidence.attach(editor, cardId, selectedText, blockIndex).then((err) => {
+        if (err) setEvidenceError(err);
+      });
+    },
+    [editor, evidence],
+  );
+
+  const handleDetachLink = useCallback(
+    (linkId: string) => {
+      if (!editor) return;
+      setEvidenceError(null);
+      void evidence.detach(editor, linkId).then((err) => {
+        if (err) setEvidenceError(err);
+      });
+    },
+    [editor, evidence],
+  );
+
+  // Citation mismatch detection — uses narrow LinkForMismatchCheck type
+  const mismatches = useMemo(() => {
+    const linksForCheck = evidence.links.map((l) => ({
+      linkId: l.id,
+      claimText: l.claimText,
+      anchorBlockIndex: l.anchorBlockIndex,
+      card: {
+        sourceTitle: l.card.sourceTitle,
+        stance: l.card.stance,
+      },
+    }));
+    return checkCitationMismatches({ doc: currentDoc, links: linksForCheck });
+  }, [currentDoc, evidence.links]);
+
+  // Check if text is selected for the "Attach Evidence" button
+  const [hasSelection, setHasSelection] = useState(false);
+  useEffect(() => {
+    if (!editor) return;
+    const handler = () => {
+      const { from, to } = editor.state.selection;
+      setHasSelection(from !== to);
+    };
+    editor.on("selectionUpdate", handler);
+    return () => { editor.off("selectionUpdate", handler); };
+  }, [editor]);
+
   const wordColor =
     words > WORD_COUNT_LIMIT ? "text-red-800" : words >= WORD_COUNT_TARGET ? "text-[#B74134]" : "text-stone-400";
 
@@ -268,12 +343,14 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
         ? "text-stone-400"
         : "text-amber-800";
 
-  const showFeedback = review.status !== "idle";
+  const showFeedback = sidePanel === "feedback" && review.status !== "idle";
+  const showPicker = sidePanel === "evidence-picker";
+  const hasSidePanel = showFeedback || showPicker;
 
   return (
-    <div className={`mx-auto animate-fade-up ${showFeedback ? "flex max-w-6xl gap-8" : "max-w-2xl"}`}>
+    <div className={`mx-auto animate-fade-up ${hasSidePanel ? "flex max-w-6xl gap-8" : "max-w-2xl"}`}>
       {/* Editor column */}
-      <div className={showFeedback ? "flex-1 min-w-0" : ""}>
+      <div className={hasSidePanel ? "flex-1 min-w-0" : ""}>
         {/* Title — borderless, blends into page */}
         <input
           type="text"
@@ -328,8 +405,19 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
             {publishError}
           </div>
         )}
+        {evidenceError && (
+          <div className="mb-4 rounded border-2 border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-800">
+            {evidenceError}
+          </div>
+        )}
 
-        {/* Action bar — publish/unpublish + feedback + view link */}
+        {/* Citation warnings */}
+        <CitationWarnings
+          mismatches={mismatches}
+          onRemoveLink={handleDetachLink}
+        />
+
+        {/* Action bar — publish/unpublish + feedback + evidence + view link */}
         <div className="mb-8 flex items-center gap-3">
           {isDraft ? (
             <>
@@ -348,6 +436,18 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
                 className="border-2 border-[#B74134] bg-white px-4 py-1.5 text-sm font-bold text-[#B74134] shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:bg-[#B74134] hover:text-white active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
                 {review.status === "loading" ? "Reviewing..." : "Get Feedback"}
+              </button>
+              <button
+                type="button"
+                disabled={!hasSelection}
+                onClick={handleAttachEvidence}
+                className={`border-2 px-4 py-1.5 text-sm font-bold shadow-[3px_3px_0px_#2C2416] transition-all duration-150 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none ${
+                  showPicker
+                    ? "border-emerald-700 bg-emerald-700 text-white"
+                    : "border-emerald-700 bg-white text-emerald-700 hover:bg-emerald-700 hover:text-white"
+                }`}
+              >
+                Attach Evidence
               </button>
             </>
           ) : (
@@ -452,11 +552,20 @@ export function EssayEditor({ id, initialTitle, initialContent, initialStatus, i
               scores={review.scores}
               errorMessage={review.errorMessage}
               onCommentClick={handleCommentClick}
-              onDismiss={review.dismiss}
+              onDismiss={() => { review.dismiss(); setSidePanel("none"); }}
               onRetry={() => { handleGetFeedback(); }}
             />
           </div>
         </div>
+      )}
+
+      {/* Evidence picker — right column on desktop */}
+      {showPicker && (
+        <EvidencePicker
+          cards={evidenceCards}
+          onPick={handlePickCard}
+          onClose={() => { setSidePanel("none"); evidence.closePicker(); }}
+        />
       )}
     </div>
   );

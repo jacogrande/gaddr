@@ -38,6 +38,12 @@ export default async function ProtectedLayout({
           >
             Dashboard
           </Link>
+          <Link
+            href="/library"
+            className="text-sm font-medium text-stone-500 transition-colors duration-200 hover:text-stone-900"
+          >
+            Library
+          </Link>
         </div>
 
         <div className="flex items-center gap-4">

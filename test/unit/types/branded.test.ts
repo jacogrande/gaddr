@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { userId, essayId } from "../../../src/domain/types/branded";
+import { userId, essayId, evidenceCardId, claimEvidenceLinkId } from "../../../src/domain/types/branded";
 import { isOk, isErr } from "../../../src/domain/types/result";
 
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
@@ -58,6 +58,62 @@ describe("essayId", () => {
     if (isErr(result)) {
       expect(result.error.kind).toBe("ValidationError");
       expect(result.error.field).toBe("essayId");
+    }
+  });
+});
+
+describe("evidenceCardId", () => {
+  test("accepts valid UUID v4", () => {
+    const result = evidenceCardId(VALID_UUID);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value as string).toBe(VALID_UUID);
+    }
+  });
+
+  test("rejects empty string", () => {
+    const result = evidenceCardId("");
+    expect(isErr(result)).toBe(true);
+  });
+
+  test("rejects non-UUID string", () => {
+    const result = evidenceCardId("not-a-uuid");
+    expect(isErr(result)).toBe(true);
+  });
+
+  test("rejects UUID v1", () => {
+    const result = evidenceCardId("550e8400-e29b-11d4-a716-446655440000");
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.field).toBe("evidenceCardId");
+    }
+  });
+});
+
+describe("claimEvidenceLinkId", () => {
+  test("accepts valid UUID v4", () => {
+    const result = claimEvidenceLinkId(VALID_UUID);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value as string).toBe(VALID_UUID);
+    }
+  });
+
+  test("rejects empty string", () => {
+    const result = claimEvidenceLinkId("");
+    expect(isErr(result)).toBe(true);
+  });
+
+  test("rejects non-UUID string", () => {
+    const result = claimEvidenceLinkId("not-a-uuid");
+    expect(isErr(result)).toBe(true);
+  });
+
+  test("rejects UUID v1", () => {
+    const result = claimEvidenceLinkId("550e8400-e29b-11d4-a716-446655440000");
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.field).toBe("claimEvidenceLinkId");
     }
   });
 });

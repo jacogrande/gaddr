@@ -12,6 +12,10 @@ declare const brand: unique symbol;
 
 export type UserId = string & { readonly [brand]: "UserId" };
 export type EssayId = string & { readonly [brand]: "EssayId" };
+export type EvidenceCardId = string & { readonly [brand]: "EvidenceCardId" };
+export type ClaimEvidenceLinkId = string & {
+  readonly [brand]: "ClaimEvidenceLinkId";
+};
 
 // ── Validation ──
 
@@ -57,4 +61,18 @@ export function userId(raw: string): Result<UserId, ValidationError> {
 // EssayId: requires UUID v4 (we control generation)
 export function essayId(raw: string): Result<EssayId, ValidationError> {
   return validateUuid<EssayId>(raw, "essayId");
+}
+
+// EvidenceCardId: requires UUID v4 (we control generation)
+export function evidenceCardId(
+  raw: string,
+): Result<EvidenceCardId, ValidationError> {
+  return validateUuid<EvidenceCardId>(raw, "evidenceCardId");
+}
+
+// ClaimEvidenceLinkId: requires UUID v4 (we control generation)
+export function claimEvidenceLinkId(
+  raw: string,
+): Result<ClaimEvidenceLinkId, ValidationError> {
+  return validateUuid<ClaimEvidenceLinkId>(raw, "claimEvidenceLinkId");
 }
