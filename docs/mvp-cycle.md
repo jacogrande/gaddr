@@ -142,9 +142,23 @@ Close the loop: drafts become readable public pages.
 ### Testable
 Write a draft with formatting (headings, bold, lists). Click "Publish." See status change to "Published." Open the public URL in an incognito window. Read the essay with formatting intact. Go back and unpublish. Incognito refresh shows 404.
 
+### Implementation Notes
+
+- **Domain functions** (`src/domain/essay/operations.ts`): `publishEssay(essay, now)` and `unpublishEssay(essay, now)` are pure state transitions returning `Result<Essay, PublishError | UnpublishError>`. `now` is injected (domain purity — no `Date.now()`). Error types (`PublishError`, `UnpublishError`) centralized in `src/domain/types/errors.ts` alongside the `DomainError` union.
+- **Formatting module** (`src/domain/essay/formatting.ts`): `relativeTime(date, now)` and `formatPublishedDate(date)` — pure functions moved here to keep derived view logic out of Server Components per architecture rules. Dashboard and public page both import from domain.
+- **Repository port** (`src/domain/essay/repository.ts`): Added `findPublishedById(id)` — no `userId` param since it serves the unauthenticated public page. Returns `NotFoundError` for both missing and draft essays.
+- **TipTap HTML rendering** (`src/infra/essay/render-essay-html.ts`): `renderEssayHtml(doc)` wraps `@tiptap/html`'s `generateHTML` in a `Result`, catching render errors. StarterKit config matches the editor (heading levels [2, 3]).
+- **Postgres repository** (`src/infra/essay/postgres-essay-repository.ts`): `findPublishedById` filters `status = 'published'` in the query. `toDomain` now validates TipTap content via `TipTapDocSchema.safeParse()` at the infra boundary. `listByUser` fail-fast: returns `PersistenceError` on any invalid row instead of silently dropping.
+- **Schemas** (`src/domain/essay/schemas.ts`): Typed against domain `TipTapDoc`/`TipTapNode` types (`z.ZodType<TipTapDoc>`) so schema drift causes compile errors.
+- **Server actions** (`src/app/(protected)/editor/actions.ts`): `publishEssayAction` flushes pending saves via `savePromiseRef` before publishing (prevents stale DB content). Returns `publishedAt` ISO string for client state. If `publishedAt` is null after save, returns error rather than a timestamp fallback.
+- **Editor** (`src/app/(protected)/editor/[id]/essay-editor.tsx`): Tracks `status` and `publishedAt` in state. Published mode: editor non-editable, title disabled, toolbar hidden, "View public page" link shown. Flush-before-publish uses a Promise ref pattern (`savePromiseRef`) instead of spin-waiting. Publish errors shown as inline banner.
+- **Public page** (`src/app/essay/[id]/page.tsx`): Server component, no auth. React `cache()` wraps `findPublishedById` to deduplicate the DB call between `generateMetadata` and the page component. Renders HTML via `dangerouslySetInnerHTML` (safe — output is from `@tiptap/html` server-side, not raw user HTML). 404 page includes "has been unpublished" messaging.
+- **E2E scaffolding**: Playwright config (`playwright.config.ts`) with auth setup project using `storageState` pattern. 8 test cases in `test/e2e/write-and-publish.spec.ts` covering create, edit, publish, public view, unpublish, and 404 edge cases. `bunfig.toml` scopes `bun test` to `test/unit/` to avoid loading Playwright files.
+- **8 unit tests** for publish/unpublish covering success paths, error variants (`empty_content`, `already_published`, `already_draft`), empty paragraph edge case, and field preservation.
+
 ---
 
-## Sprint 4: Coach Review MVP
+## Sprint 4: Coach Review MVP [DONE]
 
 The product's core differentiator. LLM coaching with no-ghostwriting enforcement.
 
@@ -181,6 +195,21 @@ The product's core differentiator. LLM coaching with no-ghostwriting enforcement
 
 ### Testable
 Write a 200+ word essay with formatting. Click "Get Feedback." Wait for LLM response. See inline comments highlighted in the TipTap editor pinned to parts of your essay. See an issue list with priorities. Verify no "here's a rewritten version" appears anywhere.
+
+### Implementation Notes
+
+- **Agentic tool-use loop** (`src/infra/llm/review-adapter.ts`): Claude uses 4 tools (`add_inline_comment`, `add_issue`, `ask_question`, `score_rubric`) as structured output channels — each tool call emits one coaching artifact. The adapter runs an agentic loop (message → tool_use → tool_result → continue) for up to 10 iterations until Claude issues `end_turn`. Non-streaming API per turn, but events are yielded between turns for incremental client delivery. Model defaults to `claude-sonnet-4-5-20250929`, configurable via `LLM_MODEL` env var.
+- **Authorship enforcement at two layers**: The adapter validates each tool call via `validateArtifact()` and sends corrective `is_error` tool_results back to Claude when violations are detected (giving the LLM a chance to rephrase). The domain pipeline (`validateReviewStream`) re-validates as defense-in-depth, so any adapter implementation is forced through the constraint. Heuristics: rejects fields starting with "Replace with:", "Change to:", "Rewrite as:", "Try:", or containing backtick-wrapped sentences (4+ words). Checks all free-text fields (problem, why, description, rationale, suggestedAction), not just `suggestedAction`.
+- **Domain pipeline** (`src/domain/review/pipeline.ts`): `prepareReviewRequest(essay)` validates essay is reviewable (non-empty) and extracts plain text. `validateReviewStream(events)` wraps the adapter's `AsyncIterable<ReviewEvent>` with authorship re-validation and completeness checking (verifies all 5 rubric dimensions — clarity, evidence, structure, argument, originality — were scored before `done`).
+- **Streaming via SSE** (`src/app/api/review/route.ts`): Thin Route Handler — auth, parse `ReviewRequestSchema`, load essay from DB, call `prepareReviewRequest`, pipe adapter output through `validateReviewStream`, convert `AsyncIterable` to `ReadableStream` with `data: {json}\n\n` framing. Returns 422 for empty essays, 404 for missing, 401 for unauthenticated.
+- **Client hook** (`src/app/(protected)/editor/use-review.ts`): `useReview()` manages SSE lifecycle with `AbortController`. Parses each SSE line through `ReviewEventSchema.safeParse()` (Zod boundary validation, not unsafe cast). Accumulates comments, issues, questions, and scores into React state. Handles abort, stream completion without `done` event, and HTTP errors.
+- **Schema-type coupling**: All Zod schemas typed against domain types (`z.ZodType<InlineComment>`, `z.ZodType<ReviewEvent>`, etc.) so drift between schemas and types causes compile errors. `RubricDimension` type and `RUBRIC_DIMENSIONS` constant defined once in `review.ts`, consumed by schemas and pipeline (no duplication).
+- **Click-to-highlight** (`essay-editor.tsx`): Clicking an inline comment walks ProseMirror's document tree via `doc.descendants()`, building a position-aware text map that correctly accounts for node boundaries (headings, lists, etc.), then maps the text match back to ProseMirror `from`/`to` positions for `setTextSelection`. This avoids the plain-text `indexOf` bug where positions diverge in multi-block documents.
+- **FeedbackPanel** (`feedback-panel.tsx`): Right-side panel with sections for inline comments (clickable, quoted text highlighted), issues (severity badges: red/amber/stone), Socratic questions (left-border accent), and rubric scores (filled/empty dot visualization). Skeleton shimmer during loading, streaming indicator when partial results are in.
+- **Editor integration**: Two-column layout on desktop when feedback is active (`flex max-w-6xl gap-8`), single-column otherwise (`max-w-2xl`). "Get Feedback" button flushes pending saves before requesting review. Disabled when essay is empty, during streaming, or while publishing. Panel is sticky (`lg:sticky lg:top-8`).
+- **TipTap content validation**: `getJSON()` output validated through `TipTapDocSchema.safeParse()` at the editor boundary rather than an `as TipTapDoc` cast. Initial content deep-cloned via `JSON.parse(JSON.stringify(...))` to bridge readonly domain types to TipTap's mutable API.
+- **30 new tests**: Unit tests for constraints (~17 tests covering all field checks, passthrough events, `extractEssayText`), schemas (8 tests), pipeline (7 tests including defense-in-depth authorship filtering and rubric completeness). Contract tests (13 tests) validate parsing of realistic LLM `tool_use` outputs through Zod schemas and authorship constraints.
+- **New dependency**: `@anthropic-ai/sdk`. Client (`src/infra/llm/client.ts`) validates `ANTHROPIC_API_KEY` at startup with fail-fast error.
 
 ---
 
