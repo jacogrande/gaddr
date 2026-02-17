@@ -41,6 +41,8 @@ export default async function EditorPage({ params }: { params: Params }) {
       id={essay.id}
       initialTitle={essay.title}
       initialContent={essay.content}
+      initialStatus={essay.status}
+      initialPublishedAt={essay.publishedAt?.toISOString() ?? null}
     />
   );
 }

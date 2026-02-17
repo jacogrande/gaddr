@@ -1,21 +1,25 @@
 // Essay input validation schemas — Zod at the boundary
 
 import { z } from "zod";
+import type { TipTapDoc, TipTapNode } from "./essay";
 
-const TipTapMarkSchema = z.object({
-  type: z.string(),
-  attrs: z.record(z.string(), z.unknown()).optional(),
-});
+const TipTapMarkSchema: z.ZodType<NonNullable<TipTapNode["marks"]>[number]> =
+  z.object({
+    type: z.string(),
+    attrs: z.record(z.string(), z.unknown()).optional(),
+  });
 
-const TipTapNodeSchema: z.ZodType = z.object({
-  type: z.string(),
-  text: z.string().optional(),
-  content: z.lazy(() => z.array(TipTapNodeSchema)).optional(),
-  marks: z.array(TipTapMarkSchema).optional(),
-  attrs: z.record(z.string(), z.unknown()).optional(),
-});
+const TipTapNodeSchema: z.ZodType<TipTapNode> = z.lazy(() =>
+  z.object({
+    type: z.string(),
+    text: z.string().optional(),
+    content: z.array(TipTapNodeSchema).optional(),
+    marks: z.array(TipTapMarkSchema).optional(),
+    attrs: z.record(z.string(), z.unknown()).optional(),
+  }),
+);
 
-export const TipTapDocSchema = z.object({
+export const TipTapDocSchema: z.ZodType<TipTapDoc> = z.object({
   type: z.literal("doc"),
   content: z.array(TipTapNodeSchema).optional(),
 });

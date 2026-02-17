@@ -3,9 +3,11 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wordCount, WORD_COUNT_TARGET, WORD_COUNT_LIMIT } from "../../../../domain/essay/operations";
-import { updateDraftAction } from "../actions";
+import { formatPublishedDate } from "../../../../domain/essay/formatting";
+import { updateDraftAction, publishEssayAction, unpublishEssayAction } from "../actions";
 import type { TipTapDoc } from "../../../../domain/essay/essay";
 
 type SaveStatus = "saved" | "saving" | "unsaved";
@@ -14,6 +16,8 @@ type Props = {
   id: string;
   initialTitle: string;
   initialContent: TipTapDoc;
+  initialStatus: "draft" | "published";
+  initialPublishedAt: string | null;
 };
 
 function ToolbarButton({
@@ -32,42 +36,54 @@ function ToolbarButton({
         e.preventDefault();
         onClick();
       }}
-      className={`rounded px-2 py-1 text-sm font-medium transition-colors ${
+      className={`border-2 px-2.5 py-1 text-sm font-bold transition-all duration-150 ${
         active
-          ? "bg-[#B44C43] text-white"
-          : "text-zinc-600 hover:bg-zinc-100 hover:text-black"
-      }`}
+          ? "border-[#B74134] bg-[#B74134] text-white shadow-[3px_3px_0px_#2C2416]"
+          : "border-stone-300 bg-white text-stone-500 shadow-[2px_2px_0px_#2C2416] hover:border-stone-900 hover:text-stone-900 hover:shadow-[3px_3px_0px_#2C2416]"
+      } active:shadow-[1px_1px_0px_#2C2416] active:translate-x-[1px] active:translate-y-[1px]`}
     >
       {children}
     </button>
   );
 }
 
-export function EssayEditor({ id, initialTitle, initialContent }: Props) {
+export function EssayEditor({ id, initialTitle, initialContent, initialStatus, initialPublishedAt }: Props) {
   const [title, setTitle] = useState(initialTitle);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [words, setWords] = useState(() => wordCount(initialContent));
+  const [status, setStatus] = useState(initialStatus);
+  const [publishedAt, setPublishedAt] = useState(initialPublishedAt);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<{ title?: string; content?: TipTapDoc } | null>(null);
   const savingRef = useRef(false);
+  const savePromiseRef = useRef<Promise<void>>(Promise.resolve());
+
+  const isDraft = status === "draft";
 
   const save = useCallback(
-    async (data: { title?: string; content?: TipTapDoc }) => {
-      savingRef.current = true;
-      setSaveStatus("saving");
-      const result = await updateDraftAction(id, data);
-      savingRef.current = false;
-      if ("error" in result) {
-        setSaveStatus("unsaved");
-        return;
-      }
-      setSaveStatus("saved");
-      // Flush any changes that arrived while we were saving
-      if (pendingRef.current) {
-        const queued = pendingRef.current;
-        pendingRef.current = null;
-        void save(queued);
-      }
+    (data: { title?: string; content?: TipTapDoc }) => {
+      const doSave = async () => {
+        savingRef.current = true;
+        setSaveStatus("saving");
+        const result = await updateDraftAction(id, data);
+        savingRef.current = false;
+        if ("error" in result) {
+          setSaveStatus("unsaved");
+          return;
+        }
+        setSaveStatus("saved");
+        // Flush any changes that arrived while we were saving
+        if (pendingRef.current) {
+          const queued = pendingRef.current;
+          pendingRef.current = null;
+          void save(queued);
+        }
+      };
+      const promise = doSave();
+      savePromiseRef.current = promise;
+      return promise;
     },
     [id],
   );
@@ -93,13 +109,30 @@ export function EssayEditor({ id, initialTitle, initialContent }: Props) {
     [save],
   );
 
+  const flushPending = useCallback(async () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    // Wait for any in-flight save to complete
+    await savePromiseRef.current;
+    // Flush any queued changes that weren't yet saved
+    if (pendingRef.current) {
+      const toSave = pendingRef.current;
+      pendingRef.current = null;
+      await save(toSave);
+    }
+  }, [save]);
+
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         heading: { levels: [2, 3] },
       }),
     ],
     content: initialContent as JSONContent,
+    editable: isDraft,
     onUpdate: ({ editor: e }) => {
       const doc = e.getJSON() as TipTapDoc;
       setWords(wordCount(doc));
@@ -107,10 +140,17 @@ export function EssayEditor({ id, initialTitle, initialContent }: Props) {
     },
     editorProps: {
       attributes: {
-        class: "tiptap prose-editor outline-none",
+        class: "tiptap outline-none",
       },
     },
   });
+
+  // Sync editable state when status changes
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(isDraft);
+    }
+  }, [editor, isDraft]);
 
   // Flush pending saves on unmount
   useEffect(() => {
@@ -129,103 +169,210 @@ export function EssayEditor({ id, initialTitle, initialContent }: Props) {
     scheduleSave({ title: e.target.value });
   };
 
-  const wordColor =
-    words > WORD_COUNT_LIMIT ? "text-red-600" : words >= WORD_COUNT_TARGET ? "text-amber-600" : "text-emerald-600";
+  const handlePublish = async () => {
+    setPublishing(true);
+    setPublishError(null);
+    await flushPending();
+    const result = await publishEssayAction(id);
+    setPublishing(false);
+    if ("error" in result) {
+      setPublishError(result.error);
+      return;
+    }
+    setStatus("published");
+    setPublishedAt(result.publishedAt);
+  };
 
-  const statusLabel =
+  const handleUnpublish = async () => {
+    setPublishing(true);
+    setPublishError(null);
+    const result = await unpublishEssayAction(id);
+    setPublishing(false);
+    if ("error" in result) {
+      setPublishError(result.error);
+      return;
+    }
+    setStatus("draft");
+    setPublishedAt(null);
+  };
+
+  const wordColor =
+    words > WORD_COUNT_LIMIT ? "text-red-800" : words >= WORD_COUNT_TARGET ? "text-[#B74134]" : "text-stone-400";
+
+  const progressWidth = Math.min((words / WORD_COUNT_LIMIT) * 100, 100);
+  const progressColor =
+    words > WORD_COUNT_LIMIT ? "#991b1b" : words >= WORD_COUNT_TARGET ? "#B74134" : "#a8a29e";
+
+  const saveLabel =
     saveStatus === "saving"
       ? "Saving..."
       : saveStatus === "saved"
         ? "Saved"
         : "Unsaved changes";
 
-  const statusColor =
+  const saveColor =
     saveStatus === "saved"
-      ? "text-emerald-600"
+      ? "text-stone-400"
       : saveStatus === "saving"
-        ? "text-zinc-400"
-        : "text-amber-600";
+        ? "text-stone-400"
+        : "text-amber-800";
 
   return (
-    <div className="mx-auto max-w-2xl">
-      {/* Title */}
+    <div className="mx-auto max-w-2xl animate-fade-up">
+      {/* Title — borderless, blends into page */}
       <input
         type="text"
         value={title}
         onChange={handleTitleChange}
         placeholder="Untitled essay"
-        className="w-full border-none bg-transparent font-serif text-3xl font-bold tracking-tight text-black placeholder:text-zinc-300 focus:outline-none"
+        disabled={!isDraft}
+        className="w-full border-0 bg-transparent px-0 py-2 font-serif text-4xl font-semibold tracking-tight text-stone-900 placeholder:text-stone-300 focus:outline-none disabled:cursor-default disabled:opacity-100"
         maxLength={200}
       />
 
-      {/* Status bar */}
-      <div className="mt-3 mb-4 flex items-center justify-between text-sm">
+      {/* Status bar — quiet metadata line */}
+      <div className="mt-2 flex items-center gap-3 text-sm font-medium">
+        {isDraft ? (
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+            Draft
+          </span>
+        ) : (
+          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+            Published
+          </span>
+        )}
         <span className={wordColor}>
-          {words} / {WORD_COUNT_LIMIT} words
+          {words} words
         </span>
-        <span className={statusColor}>{statusLabel}</span>
+        <span className="text-stone-300">&middot;</span>
+        {isDraft ? (
+          <span className={saveColor}>{saveLabel}</span>
+        ) : (
+          publishedAt && (
+            <span className="text-stone-400">
+              Published {formatPublishedDate(new Date(publishedAt))}
+            </span>
+          )
+        )}
       </div>
 
-      {/* Toolbar */}
-      <div className="mb-2 flex flex-wrap gap-1 border-b border-zinc-200 pb-2">
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          active={editor.isActive("bold")}
-        >
-          B
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          active={editor.isActive("italic")}
-        >
-          I
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() =>
-            editor.chain().focus().toggleHeading({ level: 2 }).run()
-          }
-          active={editor.isActive("heading", { level: 2 })}
-        >
-          H2
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() =>
-            editor.chain().focus().toggleHeading({ level: 3 }).run()
-          }
-          active={editor.isActive("heading", { level: 3 })}
-        >
-          H3
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          active={editor.isActive("bulletList")}
-        >
-          List
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          active={editor.isActive("orderedList")}
-        >
-          1. List
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          active={editor.isActive("blockquote")}
-        >
-          Quote
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleCode().run()}
-          active={editor.isActive("code")}
-        >
-          Code
-        </ToolbarButton>
+      {/* Word progress bar — signature interaction */}
+      <div className="mt-3 mb-6 h-0.5 w-full overflow-hidden rounded-full bg-stone-100">
+        <div
+          className="h-full rounded-full transition-all duration-700 ease-out"
+          style={{
+            width: `${String(progressWidth)}%`,
+            backgroundColor: progressColor,
+          }}
+        />
       </div>
 
-      {/* Editor */}
-      <div className="min-h-[400px] rounded-lg border-2 border-zinc-200 bg-white p-6 shadow-sm transition-colors focus-within:border-[#B44C43]">
-        <EditorContent editor={editor} />
+      {/* Error feedback */}
+      {publishError && (
+        <div className="mb-4 rounded border-2 border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-800">
+          {publishError}
+        </div>
+      )}
+
+      {/* Action bar — publish/unpublish + view link */}
+      <div className="mb-8 flex items-center gap-3">
+        {isDraft ? (
+          <button
+            type="button"
+            disabled={words === 0 || publishing}
+            onClick={() => void handlePublish()}
+            className="border-2 border-emerald-700 bg-emerald-700 px-4 py-1.5 text-sm font-bold text-white shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:bg-emerald-800 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+          >
+            {publishing ? "Publishing..." : "Publish"}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled={publishing}
+              onClick={() => void handleUnpublish()}
+              className="border-2 border-stone-300 bg-white px-4 py-1.5 text-sm font-bold text-stone-600 shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:border-stone-900 hover:text-stone-900 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+            >
+              {publishing ? "Unpublishing..." : "Unpublish"}
+            </button>
+            <Link
+              href={`/essay/${id}`}
+              className="text-sm font-semibold text-emerald-700 hover:text-emerald-900"
+            >
+              View public page &rarr;
+            </Link>
+          </>
+        )}
       </div>
+
+      {/* Toolbar — neobrutalist buttons (hidden when published) */}
+      {editor ? (
+        <>
+          {isDraft && (
+            <div className="mb-6 flex flex-wrap gap-2">
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                active={editor.isActive("bold")}
+              >
+                B
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleItalic().run()}
+                active={editor.isActive("italic")}
+              >
+                I
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().toggleHeading({ level: 2 }).run()
+                }
+                active={editor.isActive("heading", { level: 2 })}
+              >
+                H2
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() =>
+                  editor.chain().focus().toggleHeading({ level: 3 }).run()
+                }
+                active={editor.isActive("heading", { level: 3 })}
+              >
+                H3
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                active={editor.isActive("bulletList")}
+              >
+                List
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                active={editor.isActive("orderedList")}
+              >
+                1.
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                active={editor.isActive("blockquote")}
+              >
+                &ldquo;
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleCode().run()}
+                active={editor.isActive("code")}
+              >
+                {"<>"}
+              </ToolbarButton>
+            </div>
+          )}
+
+          {/* Editor — invisible container, content speaks */}
+          <div className="min-h-[500px]">
+            <EditorContent editor={editor} />
+          </div>
+        </>
+      ) : (
+        <div className="min-h-[500px]" />
+      )}
     </div>
   );
 }

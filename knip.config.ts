@@ -9,7 +9,7 @@ const config: KnipConfig = {
   ],
   project: ["src/**/*.{ts,tsx}"],
   ignore: ["test/**"],
-  ignoreDependencies: ["tailwindcss", "playwright"],
+  ignoreDependencies: ["tailwindcss"],
 };
 
 export default config;

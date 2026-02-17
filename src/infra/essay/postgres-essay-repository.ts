@@ -2,7 +2,8 @@ import { eq, and, desc } from "drizzle-orm";
 import { db } from "../db/client";
 import { essay } from "../db/schema";
 import type { EssayRepository } from "../../domain/essay/repository";
-import type { Essay, TipTapDoc } from "../../domain/essay/essay";
+import type { Essay } from "../../domain/essay/essay";
+import { TipTapDocSchema } from "../../domain/essay/schemas";
 import { essayId, userId } from "../../domain/types/branded";
 import type { EssayId } from "../../domain/types/branded";
 import type { UserId } from "../../domain/types/branded";
@@ -18,11 +19,13 @@ function toDomain(row: EssayRow): Essay | null {
   const eid = essayId(row.id);
   const uid = userId(row.userId);
   if (isErr(eid) || isErr(uid)) return null;
+  const contentResult = TipTapDocSchema.safeParse(row.content);
+  if (!contentResult.success) return null;
   return {
     id: eid.value,
     userId: uid.value,
     title: row.title,
-    content: row.content as TipTapDoc,
+    content: contentResult.data,
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -122,6 +125,40 @@ export const postgresEssayRepository: EssayRepository = {
     }
   },
 
+  async findPublishedById(
+    id: EssayId,
+  ): Promise<Result<Essay, NotFoundError | PersistenceError>> {
+    try {
+      const rows = await db
+        .select()
+        .from(essay)
+        .where(and(eq(essay.id, id), eq(essay.status, "published")))
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        return err({
+          kind: "NotFoundError",
+          entity: "Essay",
+          id: id as string,
+        });
+      }
+      const domain = toDomain(row);
+      if (!domain) {
+        return err({
+          kind: "PersistenceError",
+          message: "Failed to parse essay from database",
+        });
+      }
+      return ok(domain);
+    } catch (cause: unknown) {
+      return err({
+        kind: "PersistenceError",
+        message: "Failed to find published essay",
+        cause,
+      });
+    }
+  },
+
   async listByUser(
     userId: UserId,
   ): Promise<Result<readonly Essay[], PersistenceError>> {
@@ -134,7 +171,13 @@ export const postgresEssayRepository: EssayRepository = {
       const essays: Essay[] = [];
       for (const row of rows) {
         const domain = toDomain(row);
-        if (domain) essays.push(domain);
+        if (!domain) {
+          return err({
+            kind: "PersistenceError",
+            message: "Failed to parse essay list from database",
+          });
+        }
+        essays.push(domain);
       }
       return ok(essays);
     } catch (cause: unknown) {

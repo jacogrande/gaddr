@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   createDraft,
   updateDraft,
+  publishEssay,
+  unpublishEssay,
   wordCount,
 } from "../../../src/domain/essay/operations";
 import { isOk, isErr } from "../../../src/domain/types/result";
@@ -91,6 +93,137 @@ describe("updateDraft", () => {
       expect(result.value.title).toBe("Original");
       expect(result.value.content).toEqual({ type: "doc" });
       expect(result.value.updatedAt).toBe(LATER);
+    }
+  });
+});
+
+// ── publishEssay ──
+
+describe("publishEssay", () => {
+  const PUBLISH_TIME = new Date("2026-01-15T13:00:00Z");
+
+  test("succeeds with valid content", () => {
+    const draft = makeDraft({
+      title: "My Essay",
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Some real content here" }] }],
+      },
+    });
+    const result = publishEssay(draft, PUBLISH_TIME);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.status).toBe("published");
+      expect(result.value.publishedAt).toBe(PUBLISH_TIME);
+      expect(result.value.updatedAt).toBe(PUBLISH_TIME);
+    }
+  });
+
+  test("fails on empty doc", () => {
+    const draft = makeDraft({ content: { type: "doc" } });
+    const result = publishEssay(draft, PUBLISH_TIME);
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.kind).toBe("empty_content");
+    }
+  });
+
+  test("fails on doc with empty paragraph", () => {
+    const draft = makeDraft({
+      content: { type: "doc", content: [{ type: "paragraph" }] },
+    });
+    const result = publishEssay(draft, PUBLISH_TIME);
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.kind).toBe("empty_content");
+    }
+  });
+
+  test("fails on already-published essay", () => {
+    const published = makeDraft({
+      status: "published",
+      publishedAt: NOW,
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Content" }] }],
+      },
+    });
+    const result = publishEssay(published, PUBLISH_TIME);
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.kind).toBe("already_published");
+    }
+  });
+
+  test("preserves id, userId, title, content, createdAt", () => {
+    const content: TipTapDoc = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
+    };
+    const draft = makeDraft({ title: "Keep This", content });
+    const result = publishEssay(draft, PUBLISH_TIME);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.id).toBe(TEST_ESSAY_ID);
+      expect(result.value.userId).toBe(TEST_USER_ID);
+      expect(result.value.title).toBe("Keep This");
+      expect(result.value.content).toEqual(content);
+      expect(result.value.createdAt).toBe(NOW);
+    }
+  });
+});
+
+// ── unpublishEssay ──
+
+describe("unpublishEssay", () => {
+  const UNPUBLISH_TIME = new Date("2026-01-15T14:00:00Z");
+
+  test("succeeds from published", () => {
+    const published = makeDraft({
+      status: "published",
+      publishedAt: NOW,
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Content" }] }],
+      },
+    });
+    const result = unpublishEssay(published, UNPUBLISH_TIME);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.status).toBe("draft");
+      expect(result.value.publishedAt).toBeNull();
+      expect(result.value.updatedAt).toBe(UNPUBLISH_TIME);
+    }
+  });
+
+  test("fails from draft", () => {
+    const draft = makeDraft();
+    const result = unpublishEssay(draft, UNPUBLISH_TIME);
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.kind).toBe("already_draft");
+    }
+  });
+
+  test("preserves id, userId, title, content, createdAt", () => {
+    const content: TipTapDoc = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
+    };
+    const published = makeDraft({
+      status: "published",
+      publishedAt: NOW,
+      title: "Keep This",
+      content,
+    });
+    const result = unpublishEssay(published, UNPUBLISH_TIME);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.id).toBe(TEST_ESSAY_ID);
+      expect(result.value.userId).toBe(TEST_USER_ID);
+      expect(result.value.title).toBe("Keep This");
+      expect(result.value.content).toEqual(content);
+      expect(result.value.createdAt).toBe(NOW);
     }
   });
 });

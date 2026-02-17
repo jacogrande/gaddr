@@ -3,7 +3,11 @@
 import type { Essay, TipTapDoc, TipTapNode } from "./essay";
 import type { EssayId } from "../types/branded";
 import type { UserId } from "../types/branded";
-import type { ValidationError } from "../types/errors";
+import type {
+  PublishError,
+  UnpublishError,
+  ValidationError,
+} from "../types/errors";
 import type { Result } from "../types/result";
 import { ok, err } from "../types/result";
 
@@ -71,6 +75,43 @@ function extractText(node: TipTapNode): string {
   }
   return "";
 }
+
+// ── Publish / Unpublish transitions ──
+
+export function publishEssay(
+  essay: Essay,
+  now: Date,
+): Result<Essay, PublishError> {
+  if (essay.status === "published") {
+    return err({ kind: "already_published" });
+  }
+  if (wordCount(essay.content) === 0) {
+    return err({ kind: "empty_content" });
+  }
+  return ok({
+    ...essay,
+    status: "published",
+    updatedAt: now,
+    publishedAt: now,
+  });
+}
+
+export function unpublishEssay(
+  essay: Essay,
+  now: Date,
+): Result<Essay, UnpublishError> {
+  if (essay.status === "draft") {
+    return err({ kind: "already_draft" });
+  }
+  return ok({
+    ...essay,
+    status: "draft",
+    updatedAt: now,
+    publishedAt: null,
+  });
+}
+
+// ── Word counting ──
 
 export function wordCount(doc: TipTapDoc): number {
   const text = doc.content

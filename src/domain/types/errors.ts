@@ -28,9 +28,17 @@ export type AuthError = {
   readonly message: string;
 };
 
+export type PublishError =
+  | { readonly kind: "empty_content" }
+  | { readonly kind: "already_published" };
+
+export type UnpublishError = { readonly kind: "already_draft" };
+
 export type DomainError =
   | NotFoundError
   | UnauthorizedError
   | ValidationError
   | PersistenceError
-  | AuthError;
+  | AuthError
+  | PublishError
+  | UnpublishError;
