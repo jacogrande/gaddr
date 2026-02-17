@@ -4,16 +4,20 @@ import { redirect } from "next/navigation";
 import { requireSession } from "../../../infra/auth/require-session";
 import { postgresEssayRepository } from "../../../infra/essay/postgres-essay-repository";
 import { postgresEvidenceCardRepository } from "../../../infra/evidence/postgres-evidence-card-repository";
-import { essayId, userId, evidenceCardId, claimEvidenceLinkId } from "../../../domain/types/branded";
+import { essayId, userId, evidenceCardId, claimEvidenceLinkId, essayVersionId } from "../../../domain/types/branded";
 import type { PublishError, UnpublishError, UpdateError } from "../../../domain/types/errors";
 import { isErr } from "../../../domain/types/result";
-import { createDraft, updateDraft, publishEssay, unpublishEssay } from "../../../domain/essay/operations";
+import { createDraft, updateDraft, publishEssay, unpublishEssay, wordCount } from "../../../domain/essay/operations";
 import { UpdateEssayInputSchema } from "../../../domain/essay/schemas";
 import { AttachEvidenceInputSchema } from "../../../domain/evidence/schemas";
 import { createClaimEvidenceLink } from "../../../domain/evidence/operations";
+import { createVersionSnapshot } from "../../../domain/essay/version-operations";
+import { postgresEssayVersionRepository } from "../../../infra/essay/postgres-essay-version-repository";
+import { savePublishWithVersion } from "../../../infra/essay/publish-transaction";
 
 const repo = postgresEssayRepository;
 const evidenceRepo = postgresEvidenceCardRepository;
+const versionRepo = postgresEssayVersionRepository;
 
 export async function createDraftAction(): Promise<void> {
   const session = await requireSession();
@@ -132,17 +136,39 @@ export async function publishEssayAction(
     return { error: found.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
   }
 
-  const published = publishEssay(found.value, new Date());
+  const now = new Date();
+  const published = publishEssay(found.value, now);
   if (isErr(published)) {
     return { error: publishErrorMessage(published.error) };
   }
 
-  const saved = await repo.save(published.value);
-  if (isErr(saved)) {
+  // Create version snapshot
+  const versionCount = await versionRepo.countByEssay(eid.value);
+  if (isErr(versionCount)) {
+    return { error: "Failed to count versions" };
+  }
+  const nextVersion = versionCount.value + 1;
+
+  const rawVersionId = crypto.randomUUID();
+  const vid = essayVersionId(rawVersionId);
+  if (isErr(vid)) {
+    return { error: "Failed to generate version ID" };
+  }
+
+  const snapshot = createVersionSnapshot({
+    id: vid.value,
+    essay: published.value,
+    versionNumber: nextVersion,
+    now,
+  });
+
+  // Atomic: save both essay and version snapshot in a single transaction
+  const txResult = await savePublishWithVersion(published.value, snapshot);
+  if (isErr(txResult)) {
     return { error: "Failed to publish essay" };
   }
 
-  const pa = saved.value.publishedAt;
+  const pa = txResult.value.essay.publishedAt;
   if (!pa) {
     return { error: "Failed to publish essay" };
   }
@@ -344,5 +370,102 @@ export async function listEssayEvidenceAction(
         stance: link.card.stance,
       },
     })),
+  };
+}
+
+// ── Version history actions ──
+
+export type VersionSummary = {
+  id: string;
+  versionNumber: number;
+  title: string;
+  publishedAt: string;
+  wordCount: number;
+};
+
+export async function listVersionsAction(
+  rawEssayId: string,
+): Promise<{ versions: VersionSummary[] } | { error: string }> {
+  const session = await requireSession();
+  if (isErr(session)) {
+    return { error: "Not authenticated" };
+  }
+
+  const eid = essayId(rawEssayId);
+  if (isErr(eid)) {
+    return { error: "Invalid essay ID" };
+  }
+
+  const uid = userId(session.value.userId);
+  if (isErr(uid)) {
+    return { error: "Invalid user ID" };
+  }
+
+  const versionsResult = await versionRepo.listByEssay(eid.value, uid.value);
+  if (isErr(versionsResult)) {
+    return { error: "Failed to load versions" };
+  }
+
+  return {
+    versions: versionsResult.value.map((v) => ({
+      id: v.id,
+      versionNumber: v.versionNumber,
+      title: v.title,
+      publishedAt: v.publishedAt.toISOString(),
+      wordCount: wordCount(v.content),
+    })),
+  };
+}
+
+import type { TipTapDoc } from "../../../domain/essay/essay";
+
+export type VersionDetail = VersionSummary & {
+  content: TipTapDoc;
+};
+
+export async function getVersionAction(
+  rawEssayId: string,
+  rawVersionId: string,
+): Promise<{ version: VersionDetail } | { error: string }> {
+  const session = await requireSession();
+  if (isErr(session)) {
+    return { error: "Not authenticated" };
+  }
+
+  const eid = essayId(rawEssayId);
+  if (isErr(eid)) {
+    return { error: "Invalid essay ID" };
+  }
+
+  const uid = userId(session.value.userId);
+  if (isErr(uid)) {
+    return { error: "Invalid user ID" };
+  }
+
+  const vid = essayVersionId(rawVersionId);
+  if (isErr(vid)) {
+    return { error: "Invalid version ID" };
+  }
+
+  const versionResult = await versionRepo.findById(vid.value, uid.value);
+  if (isErr(versionResult)) {
+    return { error: versionResult.error.kind === "NotFoundError" ? "Version not found" : "Database error" };
+  }
+
+  const v = versionResult.value;
+  // Verify the version belongs to the requested essay (use normalized eid, not raw input)
+  if (v.essayId !== eid.value) {
+    return { error: "Version not found" };
+  }
+
+  return {
+    version: {
+      id: v.id,
+      versionNumber: v.versionNumber,
+      title: v.title,
+      publishedAt: v.publishedAt.toISOString(),
+      wordCount: wordCount(v.content),
+      content: v.content,
+    },
   };
 }

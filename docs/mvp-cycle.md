@@ -13,6 +13,7 @@ Break the MVP into small sprints, each ending with a manually testable deliverab
 Provisioning, deployment pipeline, database connection, and any remaining tooling. Details TBD — leaving this open for additional infra decisions.
 
 Expected items:
+
 - Next.js App Router bootstrapped and deploying to Vercel
 - Railway Postgres provisioned, `DATABASE_URL` wired to Vercel env vars
 - Drizzle ORM installed + configured (client, migration scripts)
@@ -38,16 +39,19 @@ Expected items:
 Get users into the app. Everything behind auth from the start.
 
 ### Domain
+
 - `Result<T, E>` type with `ok()`, `err()`, `pipe`, `flatMap`
 - Branded types: `UserId`, `EssayId`
 - Domain error union: `NotFoundError`, `UnauthorizedError`, `ValidationError`, `PersistenceError`
 
 ### Infra
+
 - Better Auth config: Google + GitHub OAuth providers
 - DB-backed sessions in Railway Postgres (Better Auth tables via CLI migrate)
 - `requireSession()` helper: extracts session, returns `Result<Session, AuthError>`
 
 ### App
+
 - Auth API route (`/api/auth/[...all]`)
 - Next.js middleware protecting `/(protected)/*` routes
 - Sign-in page with OAuth buttons
@@ -55,10 +59,12 @@ Get users into the app. Everything behind auth from the start.
 - Dashboard stub page (placeholder — just "Welcome, {name}")
 
 ### Tests
+
 - Unit: `Result` utilities (pipe, flatMap, mapError with ok/error values)
 - Unit: branded type constructors (valid inputs succeed, invalid return errors)
 
 ### Testable
+
 Sign in with Google or GitHub. Land on a protected dashboard showing your name. Sign out. Try accessing `/editor` while signed out — redirected to sign-in.
 
 ### Implementation Notes
@@ -81,6 +87,7 @@ Sign in with Google or GitHub. Land on a protected dashboard showing your name. 
 The core writing surface. Create, save, and list drafts.
 
 ### Domain
+
 - Full `Essay` type: id, userId, title, content (JSON — TipTap document), status, timestamps
 - State machine: `createDraft()` smart constructor
 - `updateDraft()`: validates title/content, returns `Result`
@@ -89,18 +96,21 @@ The core writing surface. Create, save, and list drafts.
 - `wordCount()`: pure function that counts words from TipTap JSON document
 
 ### Tests
+
 - Unit: `createDraft()` produces valid draft with correct defaults
 - Unit: `updateDraft()` rejects empty content when title is set, handles word count edge cases
 - Unit: Zod schema validation (missing fields, overflow, edge cases)
 - Unit: `wordCount()` extracts text from TipTap JSON and counts correctly
 
 ### Infra
+
 - Drizzle `essays` table: id (UUID), user_id, title, content (jsonb — TipTap document), status, created_at, updated_at, published_at
 - Migration script
 - `PostgresEssayRepository` implementing the port
 - Install `@tiptap/react`, `@tiptap/starter-kit`, `@tiptap/pm`
 
 ### App
+
 - `/editor` page: TipTap rich text editor + title input, auto-save or explicit save button
 - `/editor/[id]` page: load existing draft, hydrate TipTap from stored JSON
 - TipTap config: starter kit (bold, italic, headings, lists, blockquote, code), word count display, 800-word limit indicator
@@ -109,6 +119,7 @@ The core writing surface. Create, save, and list drafts.
 - `/dashboard` (or `/essays`): list user's essays with status badges, link to edit
 
 ### Testable
+
 Sign in. Click "New Essay." Type a title and some rich text (bold, lists, headings). Save. Navigate to your essay list. See the draft listed. Click it to resume editing — formatting preserved. Changes persist.
 
 ---
@@ -118,21 +129,25 @@ Sign in. Click "New Essay." Type a title and some rich text (bold, lists, headin
 Close the loop: drafts become readable public pages.
 
 ### Domain
+
 - `publishEssay()`: draft with non-empty content -> published, sets `publishedAt`
 - `unpublishEssay()`: published -> draft
 - Validation: cannot publish empty content, cannot publish already-published essay
 - `PublishError` variants: `empty_content`, `already_published`, `not_found`
 
 ### Tests
+
 - Unit: publish succeeds with valid content, fails on empty
 - Unit: unpublish succeeds from published, fails from draft
 - Unit: state transition returns correct error variants
 
 ### Infra
+
 - `publish` / `unpublish` repository methods (update status + timestamps)
 - `findPublishedById()` method (no auth required, returns `Result`)
 
 ### App
+
 - "Publish" button in editor (disabled if content empty)
 - "Unpublish" button for published essays
 - Status indicator in editor (Draft / Published)
@@ -140,6 +155,7 @@ Close the loop: drafts become readable public pages.
 - Public page returns 404 for drafts or missing essays
 
 ### Testable
+
 Write a draft with formatting (headings, bold, lists). Click "Publish." See status change to "Published." Open the public URL in an incognito window. Read the essay with formatting intact. Go back and unpublish. Incognito refresh shows 404.
 
 ### Implementation Notes
@@ -163,6 +179,7 @@ Write a draft with formatting (headings, bold, lists). Click "Publish." See stat
 The product's core differentiator. LLM coaching with no-ghostwriting enforcement.
 
 ### Domain
+
 - `CoachReview` type: inline comments, issue list, rubric scores
 - `InlineComment`: anchor (TipTap node position range), problem, why, question, suggestedAction
 - `ReviewIssue`: tag, severity, description, suggestedAction
@@ -173,6 +190,7 @@ The product's core differentiator. LLM coaching with no-ghostwriting enforcement
 - `ReviewError` union: `llm_timeout`, `ghostwriting_detected`, `validation_failed`, `unauthorized`
 
 ### Tests
+
 - Unit: `enforceAuthorshipConstraint` accepts valid coaching artifacts
 - Unit: `enforceAuthorshipConstraint` rejects responses with replacement prose
 - Unit: `ReviewResponse` schema validates correct structure, rejects malformed
@@ -180,12 +198,14 @@ The product's core differentiator. LLM coaching with no-ghostwriting enforcement
 - Unit: composed pipeline with known inputs -> expected outputs
 
 ### Infra
+
 - LLM client (Anthropic SDK)
 - Prompt template for coach review (system prompt enforcing no-ghostwriting, structured JSON output)
 - `LlmReviewAdapter` implementing `ReviewPort`
 - Zod parsing of LLM response with fallback on parse failure
 
 ### App
+
 - `POST /api/review` route handler (extracts plain text from TipTap JSON for LLM prompt)
 - "Get Feedback" button in editor
 - Feedback panel: renders inline comments as TipTap decorations (highlights) anchored to text ranges
@@ -194,6 +214,7 @@ The product's core differentiator. LLM coaching with no-ghostwriting enforcement
 - Error handling: timeout -> show message, validation failure -> show message
 
 ### Testable
+
 Write a 200+ word essay with formatting. Click "Get Feedback." Wait for LLM response. See inline comments highlighted in the TipTap editor pinned to parts of your essay. See an issue list with priorities. Verify no "here's a rewritten version" appears anywhere.
 
 ### Implementation Notes
@@ -218,6 +239,7 @@ Write a 200+ word essay with formatting. Click "Get Feedback." Wait for LLM resp
 Build the evidence library and claim-evidence linking.
 
 ### Domain
+
 - `EvidenceCard` type: id, userId, sourceUrl, sourceTitle, quoteSnippet, userSummary, caveats, stance (supports/complicates/contradicts), claimConnections
 - Smart constructor with validation (must have source, must have quote or summary)
 - `EvidenceCardRepository` port
@@ -226,17 +248,20 @@ Build the evidence library and claim-evidence linking.
 - `ClaimEvidenceLink` type
 
 ### Tests
+
 - Unit: evidence card constructor validates required fields
 - Unit: stance enum enforced
 - Unit: citation mismatch detection (unsupported claims flagged, matched claims pass)
 - Unit: Zod schema edge cases
 
 ### Infra
+
 - `evidence_cards` table + migration
 - `claim_evidence_links` table + migration
 - `PostgresEvidenceRepository` implementing the port
 
 ### App
+
 - `/library` page: list all user's evidence cards, create new, edit, delete
 - Evidence card form: source URL, title, quote, summary, caveats, stance selector
 - In TipTap editor: "Attach Evidence" flow — select from library, link to selected text/paragraph via custom TipTap mark or node attribute
@@ -244,6 +269,7 @@ Build the evidence library and claim-evidence linking.
 - Citation mismatch warnings displayed in editor sidebar
 
 ### Testable
+
 Create an evidence card in the library (paste a URL, add a quote). Open an essay. Select a claim in the TipTap editor, attach the evidence card. See the attachment indicator inline. Remove it. See the citation warning if a claim has no evidence.
 
 ### Implementation Notes
@@ -273,22 +299,39 @@ Create an evidence card in the library (paste a URL, add a quote). Open an essay
 
 ---
 
-## Sprint 6: Evidence on Public Pages
+## Sprint 6: Evidence on Public Pages [DONE]
 
 Make the published essay credible and shareable with visible evidence.
 
 ### Domain
+
 - Published essay view model: essay + ordered evidence cards per claim
 - Evidence display logic (which cards to show, ordering)
 
 ### App
+
 - Public essay page: render TipTap JSON to HTML with evidence marks resolved to expandable cards
 - Evidence card render: source link, quote, stance badge, caveats
 - Collapsed by default, expand on click
 - Share-friendly metadata (og:title, og:description)
 
 ### Testable
+
 Publish an essay with attached evidence. Open the public URL. See evidence cards collapsed under claims. Click to expand — see source, quote, stance. Share the URL — preview shows title and description.
+
+### Implementation Notes
+
+- **Replaced `dangerouslySetInnerHTML` with a custom React renderer** (`src/app/essay/[id]/essay-renderer.tsx`): Server component that walks the `TipTapDoc` node tree directly and maps each node to React elements. Handles all StarterKit block types (paragraph, heading h2/h3/h4, bulletList, orderedList, listItem, blockquote, codeBlock, horizontalRule) and marks (bold, italic, code, strike, link, evidenceAttachment). This enables interleaving interactive client components (evidence cards) between prose blocks — something `dangerouslySetInnerHTML` couldn't do.
+- **DB links are the single source of truth for evidence display.** The renderer builds a `knownLinkIds` set from DB-provided evidence data. Embedded `evidenceAttachment` marks in the TipTap JSON only render highlighted spans if their `linkId` matches a known DB link. This prevents stale marks (from deleted links) from showing orphaned highlights without corresponding cards.
+- **Evidence card inline component** (`src/app/essay/[id]/evidence-card-inline.tsx`): `"use client"` component with expand/collapse toggle. Collapsed state shows a compact button with stance badge + source title. Expanded state shows a neobrutalist card (`border-l-4`, `shadow-[3px_3px_0px_#2C2416]`) with source link, claim context quote, blockquote snippet, user summary, and caveats. Stance-colored throughout (emerald/amber/red for supports/complicates/contradicts).
+- **Domain view model** (`src/domain/evidence/public-view.ts`): `buildPublishedEssayView()` takes essay title, TipTap doc, and claim-evidence links. Filters orphaned links (negative `anchorBlockIndex` or beyond block count), groups by block index into `EvidenceByBlock` (a `Record<number, PublicEvidenceAttachment[]>`), and returns counts for the metadata line. Pure function, no side effects.
+- **OG metadata extraction** (`src/domain/essay/og-metadata.ts`): `extractOgDescription()` reuses `extractEssayText()` from operations, truncates at 200 chars on a word boundary with `...`. Falls back to a word-count description if the doc is empty.
+- **Public evidence repository method** (`findPublishedEvidenceByEssay`): New unauthenticated query on `EvidenceCardRepository` port. Implementation joins `claimEvidenceLink` → `evidenceCard` → `essay`, filtering by `essayId`, `essay.status = 'published'`, and `claimEvidenceLink.userId = essay.userId` (cross-user guard). Deterministic ordering by `(anchorBlockIndex, createdAt, id)`.
+- **Enhanced public page** (`src/app/essay/[id]/page.tsx`): Evidence fetch uses `cache()` alongside the existing essay fetch and gracefully degrades — if evidence fetch fails, the page renders without evidence. Added "N sources cited" to the date/word-count metadata line using `pluralize()`. `generateMetadata()` now includes `og:title`, `og:description`, `og:type: "article"`, `og:siteName`, and `twitter:card: "summary"`.
+- **Shared URL validation** (`src/domain/types/url.ts`): Extracted `isSafeUrl()` as a single source of truth, used by evidence operations (domain), essay renderer, and evidence card inline (app layer) for defence-in-depth URL sanitization.
+- **Removed dead code**: Deleted `src/infra/essay/render-essay-html.ts` and removed the `@tiptap/html` dependency — both became unused after the React renderer replaced `dangerouslySetInnerHTML`.
+- **CSS additions** (`src/app/globals.css`): Base `.evidence-mark` styles (cursor, border-radius, padding, transition), `.tiptap s` (strikethrough), `.tiptap hr` (horizontal rule with stone-300 border).
+- **12 new tests** across 2 new test files: `public-view.test.ts` (7 tests covering grouping, empty input, ordering, orphan filtering, no-content docs) and `og-metadata.test.ts` (5 tests covering empty doc, extraction, truncation, multi-paragraph, mixed blocks). Total test suite: 167 tests.
 
 ---
 
@@ -297,26 +340,31 @@ Publish an essay with attached evidence. Open the public URL. See evidence cards
 Revision is the product's learning mechanism. Make it visible.
 
 ### Domain
+
 - `EssayVersion` type: id, essayId, versionNumber, title, content (TipTap JSON), publishedAt
 - `createVersionSnapshot()`: captures current TipTap document state before overwrite
 - `diffVersions()`: pure function, takes two TipTap JSON documents, returns structured changes (added/removed/modified blocks)
 
 ### Tests
+
 - Unit: version snapshot captures all fields
 - Unit: diff logic (identical = no changes, additions, deletions, modifications)
 
 ### Infra
+
 - `essay_versions` table + migration (immutable rows)
 - Snapshot creation on each publish
 - `listVersions()` repository method
 
 ### App
+
 - Version history panel in editor sidebar (list of versions with dates)
 - Click a version to view it (read-only TipTap render via `generateHTML()`)
 - Diff view: highlight what changed between TipTap documents (block-level additions/deletions/modifications)
 - Badge on published page: "Revised N times"
 
 ### Testable
+
 Publish an essay with formatting. Edit and republish. Open version history. See both versions listed. Click the old version — see the original with formatting. View the diff — changes highlighted at block level. Public page shows "Revised 1 time."
 
 ---
@@ -326,11 +374,13 @@ Publish an essay with formatting. Edit and republish. Open version history. See 
 Prove everything works together. Catch regressions.
 
 ### Setup
+
 - Playwright config (against Vercel preview or local dev)
 - Test database seeding strategy
 - axe-core integration for accessibility audits
 
 ### E2E Specs
+
 - `auth.spec.ts`: OAuth sign-in, session persistence, sign-out, unauthorized redirect
 - `write-and-publish.spec.ts`: create draft -> edit -> publish -> verify public page
 - `coach-review.spec.ts`: write essay -> request review -> feedback displayed -> no ghostwriting in output
@@ -338,16 +388,19 @@ Prove everything works together. Catch regressions.
 - `revision.spec.ts`: publish -> edit -> republish -> version history visible
 
 ### Error States
+
 - LLM timeout: partial feedback or clear timeout message
 - Validation failure: clear error message, no data loss
 - Auth session expiry: redirect to sign-in, preserve URL for return
 
 ### Observability
+
 - Sentry error boundaries wired up
 - Server Action errors reported
 - `/api/review` timing logged
 
 ### Testable
+
 Run `bunx playwright test` — all specs green. Manually: disconnect network during review -> see timeout message. Let session expire -> redirected to sign-in -> sign in -> return to where you were.
 
 ---

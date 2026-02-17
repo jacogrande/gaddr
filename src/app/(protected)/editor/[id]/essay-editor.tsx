@@ -17,11 +17,12 @@ import { CitationWarnings } from "./citation-warnings";
 import { useEvidenceLinks } from "./use-evidence-links";
 import { findTextPosition } from "./prosemirror-utils";
 import { EvidenceMark } from "../extensions/evidence-mark";
+import { VersionHistoryPanel } from "./version-history-panel";
 import type { TipTapDoc } from "../../../../domain/essay/essay";
 import type { EvidenceLinkData, EvidenceCardSummary } from "../../evidence-types";
 
 type SaveStatus = "saved" | "saving" | "unsaved";
-type SidePanel = "none" | "feedback" | "evidence-picker";
+type SidePanel = "none" | "feedback" | "evidence-picker" | "history";
 
 type Props = {
   id: string;
@@ -31,6 +32,7 @@ type Props = {
   initialPublishedAt: string | null;
   initialLinks?: EvidenceLinkData[];
   evidenceCards?: EvidenceCardSummary[];
+  initialVersionCount?: number;
 };
 
 function ToolbarButton({
@@ -71,6 +73,7 @@ export function EssayEditor({
   initialPublishedAt,
   initialLinks = [],
   evidenceCards = [],
+  initialVersionCount = 0,
 }: Props) {
   const [title, setTitle] = useState(initialTitle);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
@@ -81,6 +84,7 @@ export function EssayEditor({
   const [publishError, setPublishError] = useState<string | null>(null);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [sidePanel, setSidePanel] = useState<SidePanel>("none");
+  const [versionCount, setVersionCount] = useState(initialVersionCount);
   const [currentDoc, setCurrentDoc] = useState<TipTapDoc>(initialContent);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<{ title?: string; content?: TipTapDoc } | null>(null);
@@ -234,6 +238,7 @@ export function EssayEditor({
     }
     setStatus("published");
     setPublishedAt(result.publishedAt);
+    setVersionCount((c) => c + 1);
   };
 
   const handleUnpublish = async () => {
@@ -257,6 +262,10 @@ export function EssayEditor({
       setSidePanel("evidence-picker");
       evidence.openPicker();
     }
+  };
+
+  const handleHistory = () => {
+    setSidePanel(sidePanel === "history" ? "none" : "history");
   };
 
   const handlePickCard = useCallback(
@@ -345,7 +354,8 @@ export function EssayEditor({
 
   const showFeedback = sidePanel === "feedback" && review.status !== "idle";
   const showPicker = sidePanel === "evidence-picker";
-  const hasSidePanel = showFeedback || showPicker;
+  const showHistory = sidePanel === "history";
+  const hasSidePanel = showFeedback || showPicker || showHistory;
 
   return (
     <div className={`mx-auto animate-fade-up ${hasSidePanel ? "flex max-w-6xl gap-8" : "max-w-2xl"}`}>
@@ -468,6 +478,19 @@ export function EssayEditor({
               </Link>
             </>
           )}
+          {versionCount > 0 && (
+            <button
+              type="button"
+              onClick={handleHistory}
+              className={`border-2 px-4 py-1.5 text-sm font-bold shadow-[3px_3px_0px_#2C2416] transition-all duration-150 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] ${
+                showHistory
+                  ? "border-stone-900 bg-stone-900 text-white"
+                  : "border-stone-300 bg-white text-stone-600 hover:border-stone-900 hover:text-stone-900"
+              }`}
+            >
+              History
+            </button>
+          )}
         </div>
 
         {/* Toolbar — neobrutalist buttons (hidden when published) */}
@@ -565,6 +588,15 @@ export function EssayEditor({
           cards={evidenceCards}
           onPick={handlePickCard}
           onClose={() => { setSidePanel("none"); evidence.closePicker(); }}
+        />
+      )}
+
+      {/* Version history — right column on desktop */}
+      {showHistory && (
+        <VersionHistoryPanel
+          essayId={id}
+          currentDoc={currentDoc}
+          onDismiss={() => { setSidePanel("none"); }}
         />
       )}
     </div>

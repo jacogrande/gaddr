@@ -16,6 +16,9 @@ export type EvidenceCardId = string & { readonly [brand]: "EvidenceCardId" };
 export type ClaimEvidenceLinkId = string & {
   readonly [brand]: "ClaimEvidenceLinkId";
 };
+export type EssayVersionId = string & {
+  readonly [brand]: "EssayVersionId";
+};
 
 // ── Validation ──
 
@@ -75,4 +78,11 @@ export function claimEvidenceLinkId(
   raw: string,
 ): Result<ClaimEvidenceLinkId, ValidationError> {
   return validateUuid<ClaimEvidenceLinkId>(raw, "claimEvidenceLinkId");
+}
+
+// EssayVersionId: requires UUID v4 (we control generation)
+export function essayVersionId(
+  raw: string,
+): Result<EssayVersionId, ValidationError> {
+  return validateUuid<EssayVersionId>(raw, "essayVersionId");
 }

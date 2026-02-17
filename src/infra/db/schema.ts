@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, jsonb, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, jsonb, integer, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 // ── Better Auth tables ──
 
@@ -68,6 +68,32 @@ export const essay = pgTable("essay", {
   updatedAt: timestamp("updated_at").notNull(),
   publishedAt: timestamp("published_at"),
 });
+
+// ── Version history (Sprint 7) ──
+
+export const essayVersion = pgTable(
+  "essay_version",
+  {
+    id: text("id").primaryKey(),
+    essayId: text("essay_id")
+      .notNull()
+      .references(() => essay.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    versionNumber: integer("version_number").notNull(),
+    title: text("title").notNull(),
+    content: jsonb("content").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("essay_version_essay_id_version_number_unique").on(
+      t.essayId,
+      t.versionNumber,
+    ),
+    index("essay_version_essay_id_idx").on(t.essayId),
+  ],
+);
 
 // ── Evidence tables (Sprint 5) ──
 

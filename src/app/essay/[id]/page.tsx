@@ -11,6 +11,7 @@ import { isErr } from "../../../domain/types/result";
 import type { EssayId } from "../../../domain/types/branded";
 import { postgresEssayRepository } from "../../../infra/essay/postgres-essay-repository";
 import { postgresEvidenceCardRepository } from "../../../infra/evidence/postgres-evidence-card-repository";
+import { postgresEssayVersionRepository } from "../../../infra/essay/postgres-essay-version-repository";
 import { EssayRenderer } from "./essay-renderer";
 
 type Params = Promise<{ id: string }>;
@@ -21,6 +22,10 @@ const getPublishedEssay = cache((id: EssayId) =>
 
 const getPublishedEvidence = cache((id: EssayId) =>
   postgresEvidenceCardRepository.findPublishedEvidenceByEssay(id),
+);
+
+const getVersionCount = cache((id: EssayId) =>
+  postgresEssayVersionRepository.countByEssay(id),
 );
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
@@ -73,9 +78,13 @@ export default async function PublicEssayPage({ params }: { params: Params }) {
   const essay = result.value;
   const words = wordCount(essay.content);
 
-  // Gracefully degrade — if evidence fetch fails, render without evidence
-  const evidenceResult = await getPublishedEvidence(eid.value);
+  // Gracefully degrade — if evidence/version fetch fails, render without them
+  const [evidenceResult, versionCountResult] = await Promise.all([
+    getPublishedEvidence(eid.value),
+    getVersionCount(eid.value),
+  ]);
   const links = isErr(evidenceResult) ? [] : evidenceResult.value;
+  const revisionCount = isErr(versionCountResult) ? 0 : versionCountResult.value;
 
   const view = buildPublishedEssayView({
     title: essay.title,
@@ -109,6 +118,12 @@ export default async function PublicEssayPage({ params }: { params: Params }) {
             <>
               <span>&middot;</span>
               <span>{pluralize(view.evidenceCount, "source", "sources")} cited</span>
+            </>
+          ) : null}
+          {revisionCount >= 2 ? (
+            <>
+              <span>&middot;</span>
+              <span>Revised {pluralize(revisionCount - 1, "time", "times")}</span>
             </>
           ) : null}
         </div>

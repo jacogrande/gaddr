@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireSession } from "../../../../infra/auth/require-session";
 import { postgresEssayRepository } from "../../../../infra/essay/postgres-essay-repository";
 import { postgresEvidenceCardRepository } from "../../../../infra/evidence/postgres-evidence-card-repository";
+import { postgresEssayVersionRepository } from "../../../../infra/essay/postgres-essay-version-repository";
 import { essayId, userId } from "../../../../domain/types/branded";
 import { isErr } from "../../../../domain/types/result";
 import { EssayEditor } from "./essay-editor";
@@ -37,9 +38,12 @@ export default async function EditorPage({ params }: { params: Params }) {
 
   const essay = result.value;
 
-  // Load evidence links and user's evidence cards for the picker
-  const linksResult = await postgresEvidenceCardRepository.findLinksWithCardsByEssay(eid.value, uid.value);
-  const cardsResult = await postgresEvidenceCardRepository.listByUser(uid.value);
+  // Load evidence links, evidence cards, and version count in parallel
+  const [linksResult, cardsResult, versionCountResult] = await Promise.all([
+    postgresEvidenceCardRepository.findLinksWithCardsByEssay(eid.value, uid.value),
+    postgresEvidenceCardRepository.listByUser(uid.value),
+    postgresEssayVersionRepository.countByEssay(eid.value),
+  ]);
 
   const initialLinks = isErr(linksResult)
     ? []
@@ -66,6 +70,8 @@ export default async function EditorPage({ params }: { params: Params }) {
         stance: card.stance,
       }));
 
+  const versionCount = isErr(versionCountResult) ? 0 : versionCountResult.value;
+
   return (
     <EssayEditor
       id={essay.id}
@@ -75,6 +81,7 @@ export default async function EditorPage({ params }: { params: Params }) {
       initialPublishedAt={essay.publishedAt?.toISOString() ?? null}
       initialLinks={initialLinks}
       evidenceCards={evidenceCards}
+      initialVersionCount={versionCount}
     />
   );
 }

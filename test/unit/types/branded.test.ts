@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { userId, essayId, evidenceCardId, claimEvidenceLinkId } from "../../../src/domain/types/branded";
+import { userId, essayId, evidenceCardId, claimEvidenceLinkId, essayVersionId } from "../../../src/domain/types/branded";
 import { isOk, isErr } from "../../../src/domain/types/result";
 
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
@@ -114,6 +114,34 @@ describe("claimEvidenceLinkId", () => {
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {
       expect(result.error.field).toBe("claimEvidenceLinkId");
+    }
+  });
+});
+
+describe("essayVersionId", () => {
+  test("accepts valid UUID v4", () => {
+    const result = essayVersionId(VALID_UUID);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value as string).toBe(VALID_UUID);
+    }
+  });
+
+  test("rejects empty string", () => {
+    const result = essayVersionId("");
+    expect(isErr(result)).toBe(true);
+  });
+
+  test("rejects non-UUID string", () => {
+    const result = essayVersionId("not-a-uuid");
+    expect(isErr(result)).toBe(true);
+  });
+
+  test("rejects UUID v1", () => {
+    const result = essayVersionId("550e8400-e29b-11d4-a716-446655440000");
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.error.field).toBe("essayVersionId");
     }
   });
 });
