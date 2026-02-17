@@ -69,8 +69,7 @@ describe("updateDraft", () => {
     const result = updateDraft(published, { title: "New Title", now: LATER });
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {
-      expect(result.error.kind).toBe("ValidationError");
-      expect(result.error.field).toBe("status");
+      expect(result.error.kind).toBe("NotDraft");
     }
   });
 
@@ -81,7 +80,6 @@ describe("updateDraft", () => {
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {
       expect(result.error.kind).toBe("ValidationError");
-      expect(result.error.field).toBe("title");
     }
   });
 
@@ -124,7 +122,7 @@ describe("publishEssay", () => {
     const result = publishEssay(draft, PUBLISH_TIME);
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {
-      expect(result.error.kind).toBe("empty_content");
+      expect(result.error.kind).toBe("EmptyContent");
     }
   });
 
@@ -135,7 +133,7 @@ describe("publishEssay", () => {
     const result = publishEssay(draft, PUBLISH_TIME);
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {
-      expect(result.error.kind).toBe("empty_content");
+      expect(result.error.kind).toBe("EmptyContent");
     }
   });
 
@@ -151,7 +149,7 @@ describe("publishEssay", () => {
     const result = publishEssay(published, PUBLISH_TIME);
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {
-      expect(result.error.kind).toBe("already_published");
+      expect(result.error.kind).toBe("AlreadyPublished");
     }
   });
 
@@ -201,7 +199,7 @@ describe("unpublishEssay", () => {
     const result = unpublishEssay(draft, UNPUBLISH_TIME);
     expect(isErr(result)).toBe(true);
     if (isErr(result)) {
-      expect(result.error.kind).toBe("already_draft");
+      expect(result.error.kind).toBe("AlreadyDraft");
     }
   });
 

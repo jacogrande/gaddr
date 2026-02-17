@@ -15,13 +15,20 @@ import { ok, err, isErr } from "../../domain/types/result";
 
 type EssayRow = typeof essay.$inferSelect;
 
-function toDomain(row: EssayRow): Essay | null {
+function toDomain(row: EssayRow): Result<Essay, PersistenceError> {
   const eid = essayId(row.id);
+  if (isErr(eid)) {
+    return err({ kind: "PersistenceError", message: `Invalid essay ID in row: ${row.id}` });
+  }
   const uid = userId(row.userId);
-  if (isErr(eid) || isErr(uid)) return null;
+  if (isErr(uid)) {
+    return err({ kind: "PersistenceError", message: `Invalid user ID in row: ${row.userId}` });
+  }
   const contentResult = TipTapDocSchema.safeParse(row.content);
-  if (!contentResult.success) return null;
-  return {
+  if (!contentResult.success) {
+    return err({ kind: "PersistenceError", message: `Invalid TipTap content in essay ${row.id}` });
+  }
+  return ok({
     id: eid.value,
     userId: uid.value,
     title: row.title,
@@ -30,7 +37,7 @@ function toDomain(row: EssayRow): Essay | null {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     publishedAt: row.publishedAt,
-  };
+  });
 }
 
 function toRow(e: Essay) {
@@ -73,14 +80,7 @@ export const postgresEssayRepository: EssayRepository = {
           message: "Insert returned no rows",
         });
       }
-      const domain = toDomain(saved);
-      if (!domain) {
-        return err({
-          kind: "PersistenceError",
-          message: "Failed to parse saved essay from database",
-        });
-      }
-      return ok(domain);
+      return toDomain(saved);
     } catch (cause: unknown) {
       return err({
         kind: "PersistenceError",
@@ -108,14 +108,7 @@ export const postgresEssayRepository: EssayRepository = {
           id: id as string,
         });
       }
-      const domain = toDomain(row);
-      if (!domain) {
-        return err({
-          kind: "PersistenceError",
-          message: "Failed to parse essay from database",
-        });
-      }
-      return ok(domain);
+      return toDomain(row);
     } catch (cause: unknown) {
       return err({
         kind: "PersistenceError",
@@ -142,14 +135,7 @@ export const postgresEssayRepository: EssayRepository = {
           id: id as string,
         });
       }
-      const domain = toDomain(row);
-      if (!domain) {
-        return err({
-          kind: "PersistenceError",
-          message: "Failed to parse essay from database",
-        });
-      }
-      return ok(domain);
+      return toDomain(row);
     } catch (cause: unknown) {
       return err({
         kind: "PersistenceError",
@@ -170,14 +156,9 @@ export const postgresEssayRepository: EssayRepository = {
         .orderBy(desc(essay.updatedAt));
       const essays: Essay[] = [];
       for (const row of rows) {
-        const domain = toDomain(row);
-        if (!domain) {
-          return err({
-            kind: "PersistenceError",
-            message: "Failed to parse essay list from database",
-          });
-        }
-        essays.push(domain);
+        const result = toDomain(row);
+        if (isErr(result)) return result;
+        essays.push(result.value);
       }
       return ok(essays);
     } catch (cause: unknown) {

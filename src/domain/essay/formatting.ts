@@ -1,8 +1,13 @@
-// Pure display formatting for essays — no side effects, no Date.now()
+// Pure display formatting for essays — no side effects, no Date.now(), no locale-dependent APIs
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
 
 /**
  * Human-readable relative time (e.g., "just now", "5m ago", "2d ago").
- * Pure: requires `now` as parameter.
+ * Pure: requires `now` as parameter, no locale-dependent calls.
  */
 export function relativeTime(date: Date, now: Date): string {
   const diffMs = now.getTime() - date.getTime();
@@ -15,16 +20,20 @@ export function relativeTime(date: Date, now: Date): string {
   if (diffMin < 60) return `${String(diffMin)}m ago`;
   if (diffHr < 24) return `${String(diffHr)}h ago`;
   if (diffDay < 30) return `${String(diffDay)}d ago`;
-  return date.toLocaleDateString();
+  return formatDate(date);
 }
 
 /**
- * Format a published date for public display (e.g., "January 15, 2026").
+ * Format a date as "January 15, 2026". Pure: uses UTC accessors and
+ * a static month table — no locale or timezone dependency.
  */
 export function formatPublishedDate(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return formatDate(date);
+}
+
+function formatDate(date: Date): string {
+  const month = MONTHS[date.getUTCMonth()];
+  const day = date.getUTCDate();
+  const year = date.getUTCFullYear();
+  return `${String(month)} ${String(day)}, ${String(year)}`;
 }

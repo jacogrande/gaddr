@@ -6,6 +6,7 @@ import type { UserId } from "../types/branded";
 import type {
   PublishError,
   UnpublishError,
+  UpdateError,
   ValidationError,
 } from "../types/errors";
 import type { Result } from "../types/result";
@@ -35,13 +36,9 @@ export function createDraft(params: {
 export function updateDraft(
   essay: Essay,
   update: { title?: string; content?: TipTapDoc; now: Date },
-): Result<Essay, ValidationError> {
+): Result<Essay, UpdateError | ValidationError> {
   if (essay.status !== "draft") {
-    return err({
-      kind: "ValidationError",
-      message: "Can only update essays in draft status",
-      field: "status",
-    });
+    return err({ kind: "NotDraft" });
   }
 
   if (update.title !== undefined && update.title.length > MAX_TITLE_LENGTH) {
@@ -83,10 +80,10 @@ export function publishEssay(
   now: Date,
 ): Result<Essay, PublishError> {
   if (essay.status === "published") {
-    return err({ kind: "already_published" });
+    return err({ kind: "AlreadyPublished" });
   }
   if (wordCount(essay.content) === 0) {
-    return err({ kind: "empty_content" });
+    return err({ kind: "EmptyContent" });
   }
   return ok({
     ...essay,
@@ -101,7 +98,7 @@ export function unpublishEssay(
   now: Date,
 ): Result<Essay, UnpublishError> {
   if (essay.status === "draft") {
-    return err({ kind: "already_draft" });
+    return err({ kind: "AlreadyDraft" });
   }
   return ok({
     ...essay,

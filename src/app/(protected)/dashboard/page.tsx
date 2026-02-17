@@ -70,12 +70,14 @@ export default async function DashboardPage({
   }
 
   const result = await postgresEssayRepository.listByUser(uid.value);
+  const listError = isErr(result) ? "Failed to load essays. Please try refreshing." : null;
   const essays = isErr(result) ? [] : result.value;
   const now = new Date();
 
   return (
     <div className="animate-fade-up">
       {error && <ErrorBanner message={error} />}
+      {listError && <ErrorBanner message={listError} />}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-serif text-3xl font-semibold tracking-tight text-stone-900">

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "../../../infra/auth/require-session";
 import { postgresEssayRepository } from "../../../infra/essay/postgres-essay-repository";
 import { essayId, userId } from "../../../domain/types/branded";
-import type { PublishError, UnpublishError } from "../../../domain/types/errors";
+import type { PublishError, UnpublishError, UpdateError } from "../../../domain/types/errors";
 import { isErr } from "../../../domain/types/result";
 import { createDraft, updateDraft, publishEssay, unpublishEssay } from "../../../domain/essay/operations";
 import { UpdateEssayInputSchema } from "../../../domain/essay/schemas";
@@ -72,7 +72,7 @@ export async function updateDraftAction(
     now: new Date(),
   });
   if (isErr(updated)) {
-    return { error: updated.error.message };
+    return { error: updateErrorMessage(updated.error) };
   }
 
   const saved = await repo.save(updated.value);
@@ -85,15 +85,24 @@ export async function updateDraftAction(
 
 function publishErrorMessage(error: PublishError): string {
   switch (error.kind) {
-    case "empty_content":
+    case "EmptyContent":
       return "Cannot publish an empty essay";
-    case "already_published":
+    case "AlreadyPublished":
       return "Essay is already published";
   }
 }
 
 function unpublishErrorMessage(_error: UnpublishError): string {
   return "Essay is already a draft";
+}
+
+function updateErrorMessage(error: UpdateError | { kind: "ValidationError"; message: string }): string {
+  switch (error.kind) {
+    case "NotDraft":
+      return "Can only update essays in draft status";
+    case "ValidationError":
+      return error.message;
+  }
 }
 
 export async function publishEssayAction(
