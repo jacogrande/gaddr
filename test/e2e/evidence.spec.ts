@@ -1,6 +1,6 @@
 import { test, expect } from "playwright/test";
 
-test.describe("Evidence Cards", () => {
+test.describe.serial("Evidence Cards", () => {
   let cardTitle: string;
 
   test("create evidence card in library", async ({ page }) => {

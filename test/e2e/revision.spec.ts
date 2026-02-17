@@ -1,6 +1,6 @@
 import { test, expect } from "playwright/test";
 
-test.describe("Revision History", () => {
+test.describe.serial("Revision History", () => {
   let essayId: string;
 
   test("publish initial version", async ({ page }) => {

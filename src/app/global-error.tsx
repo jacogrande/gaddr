@@ -11,7 +11,10 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    // Skip client-side capture for server-originated errors (already reported via reportError)
+    if (!error.digest) {
+      Sentry.captureException(error);
+    }
   }, [error]);
 
   return (
@@ -21,6 +24,8 @@ export default function GlobalError({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Something went wrong</title>
       </head>
+      {/* Inline styles required — Tailwind unavailable at global-error level.
+          Mirrors design-kit tokens: bg #FAFAF8, shadow 4px_4px_0_0_#000, brand-red #8B2500, text #57534e */}
       <body
         style={{
           display: "flex",

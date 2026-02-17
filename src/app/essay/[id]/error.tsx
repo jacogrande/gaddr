@@ -11,7 +11,10 @@ export default function EssayError({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    // Skip client-side capture for server-originated errors (already reported via reportError)
+    if (!error.digest) {
+      Sentry.captureException(error);
+    }
   }, [error]);
 
   return (

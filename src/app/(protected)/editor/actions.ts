@@ -144,6 +144,7 @@ export async function publishEssayAction(
 
   const versionCount = await versionRepo.countByEssay(eid.value);
   if (isErr(versionCount)) {
+    reportError(versionCount.error, { action: "publishEssay.countVersions", userId: uid.value, essayId: eid.value });
     return { error: "Failed to count versions" };
   }
 
@@ -330,6 +331,9 @@ export async function detachEvidenceAction(
 
   const deleteResult = await evidenceRepo.deleteLink(lid.value, eid.value, uid.value);
   if (isErr(deleteResult)) {
+    if (deleteResult.error.kind !== "NotFoundError") {
+      reportError(deleteResult.error, { action: "detachEvidence", userId: uid.value, essayId: eid.value });
+    }
     return { error: deleteResult.error.kind === "NotFoundError" ? "Link not found" : "Database error" };
   }
 
@@ -356,6 +360,7 @@ export async function listEssayEvidenceAction(
 
   const linksResult = await evidenceRepo.findLinksWithCardsByEssay(eid.value, uid.value);
   if (isErr(linksResult)) {
+    reportError(linksResult.error, { action: "listEssayEvidence", userId: uid.value, essayId: eid.value });
     return { error: "Failed to load evidence links" };
   }
 
@@ -409,6 +414,7 @@ export async function listVersionsAction(
 
   const versionsResult = await versionRepo.listByEssay(eid.value, uid.value);
   if (isErr(versionsResult)) {
+    reportError(versionsResult.error, { action: "listVersions", userId: uid.value, essayId: eid.value });
     return { error: "Failed to load versions" };
   }
 
@@ -449,6 +455,9 @@ export async function getVersionAction(
 
   const versionResult = await versionRepo.findById(vid.value, uid.value);
   if (isErr(versionResult)) {
+    if (versionResult.error.kind !== "NotFoundError") {
+      reportError(versionResult.error, { action: "getVersion", userId: uid.value, essayId: eid.value });
+    }
     return { error: versionResult.error.kind === "NotFoundError" ? "Version not found" : "Database error" };
   }
 

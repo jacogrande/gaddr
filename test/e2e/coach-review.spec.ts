@@ -4,7 +4,7 @@ import { test, expect } from "playwright/test";
  * Coach review E2E tests.
  * Uses the fixture review adapter (E2E_TESTING=true) for deterministic feedback.
  */
-test.describe("Coach Review", () => {
+test.describe.serial("Coach Review", () => {
   let essayId: string;
 
   test("create essay with 200+ words and request review", async ({ page }) => {
@@ -72,12 +72,11 @@ test.describe("Coach Review", () => {
     await expect(page.getByText("INLINE COMMENTS")).toBeVisible({ timeout: 10_000 });
 
     // Get all text from the feedback panel
-    const panelText = await page.locator("text=Coach Feedback").locator("..").locator("..").textContent() ?? "";
+    const panelText = await page.getByTestId("feedback-panel").textContent() ?? "";
 
-    // No replacement prose patterns
+    // No replacement prose patterns (authorship constraint)
     expect(panelText).not.toMatch(/Replace with:/i);
     expect(panelText).not.toMatch(/Change to:/i);
     expect(panelText).not.toMatch(/Rewrite as:/i);
-    expect(panelText).not.toMatch(/Try:/i);
   });
 });

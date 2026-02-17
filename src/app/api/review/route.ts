@@ -66,26 +66,29 @@ export async function POST(request: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      await Sentry.startSpan(
-        { name: "review.stream", op: "llm.stream" },
-        async () => {
-          try {
-            for await (const event of events) {
+      try {
+        await Sentry.startSpan(
+          { name: "review.stream", op: "llm.stream" },
+          async () => {
+            try {
+              for await (const event of events) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+                );
+              }
+            } catch (streamError: unknown) {
+              reportError(streamError, { action: "review.stream", userId: uid.value, essayId: eid.value });
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "error", message: "Stream failed" })}\n\n`,
+                ),
               );
             }
-          } catch (streamError: unknown) {
-            reportError(streamError, { action: "review.stream", userId: uid.value, essayId: eid.value });
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "error", message: "Stream failed" })}\n\n`,
-              ),
-            );
-          }
-        },
-      );
-      controller.close();
+          },
+        );
+      } finally {
+        controller.close();
+      }
     },
   });
 

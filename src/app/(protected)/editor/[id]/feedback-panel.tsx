@@ -83,7 +83,7 @@ export function FeedbackPanel({
   const isLoading = status === "loading";
 
   return (
-    <div className="border-2 border-stone-200 bg-white shadow-[4px_4px_0px_#2C2416] p-5 animate-fade-up">
+    <div data-testid="feedback-panel" className="border-2 border-stone-200 bg-white shadow-[4px_4px_0px_#2C2416] p-5 animate-fade-up">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-serif text-lg font-semibold text-stone-900">

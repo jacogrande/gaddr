@@ -39,10 +39,10 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     // User may already exist — treat as idempotent success
     const message =
-      error instanceof Error ? error.message : String(error);
-    if (message.includes("already") || message.includes("exists")) {
+      error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    if (message.includes("already") || message.includes("exists") || message.includes("duplicate")) {
       return NextResponse.json({ ok: true });
     }
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
   }
 }
