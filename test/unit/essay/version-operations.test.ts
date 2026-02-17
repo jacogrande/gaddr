@@ -5,6 +5,7 @@ import {
 } from "../../../src/domain/essay/version-operations";
 import type { Essay, TipTapDoc, TipTapNode } from "../../../src/domain/essay/essay";
 import type { EssayId, EssayVersionId, UserId } from "../../../src/domain/types/branded";
+import { isOk, isErr } from "../../../src/domain/types/result";
 
 const TEST_ESSAY_ID = "550e8400-e29b-41d4-a716-446655440000" as EssayId;
 const TEST_VERSION_ID = "660e8400-e29b-41d4-a716-446655440001" as EssayVersionId;
@@ -44,13 +45,16 @@ function doc(...blocks: TipTapNode[]): TipTapDoc {
 describe("createVersionSnapshot", () => {
   test("captures all essay fields correctly", () => {
     const essay = makePublishedEssay();
-    const version = createVersionSnapshot({
+    const result = createVersionSnapshot({
       id: TEST_VERSION_ID,
       essay,
       versionNumber: 1,
       now: LATER,
     });
 
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const version = result.value;
     expect(version.id).toBe(TEST_VERSION_ID);
     expect(version.essayId).toBe(TEST_ESSAY_ID);
     expect(version.userId).toBe(TEST_USER_ID);
@@ -63,15 +67,17 @@ describe("createVersionSnapshot", () => {
   test("sets versionNumber and publishedAt from params", () => {
     const essay = makePublishedEssay();
     const ts = new Date("2026-02-01T00:00:00Z");
-    const version = createVersionSnapshot({
+    const result = createVersionSnapshot({
       id: TEST_VERSION_ID,
       essay,
       versionNumber: 5,
       now: ts,
     });
 
-    expect(version.versionNumber).toBe(5);
-    expect(version.publishedAt).toBe(ts);
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.versionNumber).toBe(5);
+    expect(result.value.publishedAt).toBe(ts);
   });
 
   test("content is a faithful copy of the essay TipTap doc", () => {
@@ -88,14 +94,39 @@ describe("createVersionSnapshot", () => {
       ],
     };
     const essay = makePublishedEssay({ content: richContent });
-    const version = createVersionSnapshot({
+    const result = createVersionSnapshot({
       id: TEST_VERSION_ID,
       essay,
       versionNumber: 1,
       now: NOW,
     });
 
-    expect(version.content).toEqual(richContent);
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.content).toEqual(richContent);
+  });
+
+  test("rejects non-positive version number", () => {
+    const essay = makePublishedEssay();
+
+    const zero = createVersionSnapshot({
+      id: TEST_VERSION_ID,
+      essay,
+      versionNumber: 0,
+      now: NOW,
+    });
+    expect(isErr(zero)).toBe(true);
+    if (isErr(zero)) {
+      expect(zero.error.kind).toBe("ValidationError");
+    }
+
+    const negative = createVersionSnapshot({
+      id: TEST_VERSION_ID,
+      essay,
+      versionNumber: -1,
+      now: NOW,
+    });
+    expect(isErr(negative)).toBe(true);
   });
 });
 

@@ -7,11 +7,11 @@ import { postgresEvidenceCardRepository } from "../../../infra/evidence/postgres
 import { essayId, userId, evidenceCardId, claimEvidenceLinkId, essayVersionId } from "../../../domain/types/branded";
 import type { PublishError, UnpublishError, UpdateError } from "../../../domain/types/errors";
 import { isErr } from "../../../domain/types/result";
-import { createDraft, updateDraft, publishEssay, unpublishEssay, wordCount } from "../../../domain/essay/operations";
+import { createDraft, updateDraft, unpublishEssay, wordCount } from "../../../domain/essay/operations";
+import { preparePublishWithVersion } from "../../../domain/essay/publish-pipeline";
 import { UpdateEssayInputSchema } from "../../../domain/essay/schemas";
 import { AttachEvidenceInputSchema } from "../../../domain/evidence/schemas";
 import { createClaimEvidenceLink } from "../../../domain/evidence/operations";
-import { createVersionSnapshot } from "../../../domain/essay/version-operations";
 import { postgresEssayVersionRepository } from "../../../infra/essay/postgres-essay-version-repository";
 import { savePublishWithVersion } from "../../../infra/essay/publish-transaction";
 
@@ -91,12 +91,14 @@ export async function updateDraftAction(
   return { success: true };
 }
 
-function publishErrorMessage(error: PublishError): string {
+function publishErrorMessage(error: PublishError | { kind: "ValidationError"; message: string }): string {
   switch (error.kind) {
     case "EmptyContent":
       return "Cannot publish an empty essay";
     case "AlreadyPublished":
       return "Essay is already published";
+    case "ValidationError":
+      return error.message;
   }
 }
 
@@ -136,18 +138,10 @@ export async function publishEssayAction(
     return { error: found.error.kind === "NotFoundError" ? "Essay not found" : "Database error" };
   }
 
-  const now = new Date();
-  const published = publishEssay(found.value, now);
-  if (isErr(published)) {
-    return { error: publishErrorMessage(published.error) };
-  }
-
-  // Create version snapshot
   const versionCount = await versionRepo.countByEssay(eid.value);
   if (isErr(versionCount)) {
     return { error: "Failed to count versions" };
   }
-  const nextVersion = versionCount.value + 1;
 
   const rawVersionId = crypto.randomUUID();
   const vid = essayVersionId(rawVersionId);
@@ -155,15 +149,18 @@ export async function publishEssayAction(
     return { error: "Failed to generate version ID" };
   }
 
-  const snapshot = createVersionSnapshot({
-    id: vid.value,
-    essay: published.value,
-    versionNumber: nextVersion,
+  const now = new Date();
+  const prepared = preparePublishWithVersion({
+    essay: found.value,
+    versionId: vid.value,
+    currentVersionCount: versionCount.value,
     now,
   });
+  if (isErr(prepared)) {
+    return { error: publishErrorMessage(prepared.error) };
+  }
 
-  // Atomic: save both essay and version snapshot in a single transaction
-  const txResult = await savePublishWithVersion(published.value, snapshot);
+  const txResult = await savePublishWithVersion(prepared.value.published, prepared.value.snapshot);
   if (isErr(txResult)) {
     return { error: "Failed to publish essay" };
   }

@@ -3,6 +3,7 @@ import { essay, essayVersion } from "../db/schema";
 import { eq } from "drizzle-orm";
 import type { Essay } from "../../domain/essay/essay";
 import type { EssayVersion } from "../../domain/essay/version";
+import type { SavePublishWithVersion } from "../../domain/essay/publish-pipeline";
 import type { PersistenceError } from "../../domain/types/errors";
 import type { Result } from "../../domain/types/result";
 import { ok, err } from "../../domain/types/result";
@@ -11,7 +12,7 @@ import { ok, err } from "../../domain/types/result";
  * Atomically saves a published essay and its version snapshot in a single
  * DB transaction. If either write fails, both are rolled back.
  */
-export async function savePublishWithVersion(
+export const savePublishWithVersion: SavePublishWithVersion = async function savePublishWithVersion(
   publishedEssay: Essay,
   version: EssayVersion,
 ): Promise<Result<{ essay: Essay; version: EssayVersion }, PersistenceError>> {
@@ -58,4 +59,4 @@ export async function savePublishWithVersion(
   } catch (cause: unknown) {
     return err({ kind: "PersistenceError", message: "Failed to publish essay with version snapshot", cause });
   }
-}
+};

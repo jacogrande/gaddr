@@ -3,6 +3,9 @@
 import type { EssayVersion } from "./version";
 import type { Essay, TipTapDoc, TipTapNode } from "./essay";
 import type { EssayVersionId } from "../types/branded";
+import type { ValidationError } from "../types/errors";
+import type { Result } from "../types/result";
+import { ok, err } from "../types/result";
 
 // ── Snapshot creation ──
 
@@ -11,8 +14,16 @@ export function createVersionSnapshot(params: {
   essay: Essay;
   versionNumber: number;
   now: Date;
-}): EssayVersion {
-  return {
+}): Result<EssayVersion, ValidationError> {
+  if (params.versionNumber < 1) {
+    return err({
+      kind: "ValidationError",
+      message: "Version number must be at least 1",
+      field: "versionNumber",
+    });
+  }
+
+  return ok({
     id: params.id,
     essayId: params.essay.id,
     userId: params.essay.userId,
@@ -20,7 +31,7 @@ export function createVersionSnapshot(params: {
     title: params.essay.title,
     content: params.essay.content,
     publishedAt: params.now,
-  };
+  });
 }
 
 // ── Block-level diffing ──
@@ -82,6 +93,14 @@ function lcs(a: readonly string[], b: readonly string[]): readonly [number, numb
   return pairs;
 }
 
+/**
+ * Block-level diff between two TipTap documents using LCS.
+ *
+ * Complexity: O(n * m) time and space where n and m are block counts.
+ * Acceptable for micro-essays (typically 5–20 blocks). The caller
+ * (`VersionHistoryPanel`) wraps this in `useMemo` to avoid redundant
+ * recomputation on re-renders.
+ */
 export function diffVersions(
   before: TipTapDoc,
   after: TipTapDoc,

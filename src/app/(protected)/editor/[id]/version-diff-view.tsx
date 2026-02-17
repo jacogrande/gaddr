@@ -2,7 +2,7 @@
 
 import type { BlockDiff } from "../../../../domain/essay/version-operations";
 import type { TipTapNode } from "../../../../domain/essay/essay";
-import { renderBlockNode, extractBlockText } from "./version-block-renderer";
+import { renderBlockNode, extractBlockText } from "../../../../app/_shared/tiptap-renderer";
 
 type Props = {
   diffs: readonly BlockDiff[];

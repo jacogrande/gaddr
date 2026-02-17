@@ -7,7 +7,7 @@ import type { VersionSummary, VersionDetail } from "../actions";
 import { VersionDiffView } from "./version-diff-view";
 import type { TipTapDoc } from "../../../../domain/essay/essay";
 import { diffVersions } from "../../../../domain/essay/version-operations";
-import { renderBlockNode } from "./version-block-renderer";
+import { renderBlockNode } from "../../../../app/_shared/tiptap-renderer";
 
 type Props = {
   essayId: string;
