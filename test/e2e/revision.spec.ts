@@ -18,19 +18,20 @@ test.describe.serial("Revision History", () => {
       { delay: 5 },
     );
 
-    await expect(page.getByText("Saved")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("0 words")).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 8_000 });
 
     const publishButton = page.getByRole("button", { name: "Publish" });
-    await expect(publishButton).toBeEnabled();
+    await expect(publishButton).toBeEnabled({ timeout: 15000 });
     await publishButton.click();
 
-    await expect(page.getByText("Published")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Published", { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 
   test("edit and republish creates new version", async ({ page }) => {
     test.skip(!essayId, "Requires essay from previous test");
     await page.goto(`/editor/${essayId}`);
-    await expect(page.getByText("Published")).toBeVisible();
+    await expect(page.getByText("Published", { exact: true })).toBeVisible();
 
     // Unpublish first to edit
     await page.getByRole("button", { name: "Unpublish" }).click();
@@ -45,20 +46,20 @@ test.describe.serial("Revision History", () => {
       { delay: 5 },
     );
 
-    await expect(page.getByText("Saved")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 8_000 });
 
     // Republish
     const publishButton = page.getByRole("button", { name: "Publish" });
-    await expect(publishButton).toBeEnabled();
+    await expect(publishButton).toBeEnabled({ timeout: 15000 });
     await publishButton.click();
 
-    await expect(page.getByText("Published")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Published", { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 
   test("version history panel shows both versions", async ({ page }) => {
     test.skip(!essayId, "Requires essay from previous test");
     await page.goto(`/editor/${essayId}`);
-    await expect(page.getByText("Published")).toBeVisible();
+    await expect(page.getByText("Published", { exact: true })).toBeVisible();
 
     // History button should be visible (we have versions)
     const historyButton = page.getByRole("button", { name: "History" });

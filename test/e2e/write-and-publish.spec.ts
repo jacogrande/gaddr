@@ -35,11 +35,11 @@ test.describe.serial("Write and Publish flow", () => {
       { delay: 10 },
     );
 
-    // Wait for autosave
-    await expect(page.getByText("Saved")).toBeVisible({ timeout: 5000 });
+    // Wait for content to be in the editor (word count updates immediately)
+    await expect(page.getByText("0 words")).not.toBeVisible({ timeout: 5000 });
 
-    // Word count should be non-zero
-    await expect(page.getByText("0 words")).not.toBeVisible();
+    // Wait for autosave to complete (exact match avoids matching initial "Saved" state)
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 8000 });
   });
 
   test("publish button is disabled when content is empty", async ({ page }) => {
@@ -59,13 +59,13 @@ test.describe.serial("Write and Publish flow", () => {
     // Wait for editor to load with content
     await expect(page.getByText("Draft")).toBeVisible();
 
-    // Click publish
+    // Wait for publish button to become enabled (content + title loaded from DB)
     const publishButton = page.getByRole("button", { name: "Publish" });
-    await expect(publishButton).toBeEnabled();
+    await expect(publishButton).toBeEnabled({ timeout: 15000 });
     await publishButton.click();
 
-    // Wait for status to change
-    await expect(page.getByText("Published")).toBeVisible({ timeout: 5000 });
+    // Wait for status to change (exact match avoids "Published February..." date text)
+    await expect(page.getByText("Published", { exact: true })).toBeVisible({ timeout: 5000 });
 
     // Toolbar should be hidden (read-only mode)
     await expect(page.getByTestId("editor-toolbar")).not.toBeVisible();
@@ -91,7 +91,7 @@ test.describe.serial("Write and Publish flow", () => {
     await expect(content).toContainText("test essay");
 
     // Word count and published date should be visible
-    await expect(page.getByText("words")).toBeVisible();
+    await expect(page.getByText(/\d+ words/)).toBeVisible();
 
     // Microblogger nav link should be present
     await expect(page.getByRole("link", { name: "Microblogger" })).toBeVisible();
@@ -102,7 +102,7 @@ test.describe.serial("Write and Publish flow", () => {
     await page.goto(`/editor/${essayId}`);
 
     // Should be published
-    await expect(page.getByText("Published")).toBeVisible();
+    await expect(page.getByText("Published", { exact: true })).toBeVisible();
 
     // Click unpublish
     await page.getByRole("button", { name: "Unpublish" }).click();
@@ -111,7 +111,7 @@ test.describe.serial("Write and Publish flow", () => {
     await expect(page.getByText("Draft")).toBeVisible({ timeout: 5000 });
 
     // Toolbar should reappear
-    await expect(page.getByRole("button", { name: "B" })).toBeVisible();
+    await expect(page.getByTestId("editor-toolbar")).toBeVisible();
 
     // Title input should be enabled
     const titleInput = page.getByPlaceholder("Untitled essay");

@@ -20,9 +20,9 @@ test.describe.serial("Evidence Cards", () => {
     // Submit
     await page.getByRole("button", { name: "Add Card" }).click();
 
-    // Card should appear in the library list
+    // Card should appear in the library list with "Supports" badge
     await expect(page.getByText(cardTitle)).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText("Supports")).toBeVisible();
+    await expect(page.getByText("Supports").first()).toBeVisible();
   });
 
   test("attach evidence to essay claim", async ({ page }) => {
@@ -40,11 +40,11 @@ test.describe.serial("Evidence Cards", () => {
       "This is an important claim that needs evidence to support it properly.",
       { delay: 5 },
     );
-    await expect(page.getByText("Saved")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 8_000 });
 
     // Select text in the editor to enable "Attach Evidence"
     await editor.click();
-    await page.keyboard.press("Control+a");
+    await page.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+a`);
 
     // Click "Attach Evidence"
     const attachButton = page.getByRole("button", { name: "Attach Evidence" });
@@ -58,8 +58,8 @@ test.describe.serial("Evidence Cards", () => {
     await expect(page.getByText(cardTitle)).toBeVisible({ timeout: 5_000 });
     await page.getByText(cardTitle).click();
 
-    // Should show the evidence is now linked (card appears in essay context)
-    await expect(page.getByText("Supports")).toBeVisible({ timeout: 5_000 });
+    // Should show the evidence is now linked
+    await expect(page.getByText("Supports").first()).toBeVisible({ timeout: 5_000 });
   });
 
   test("evidence visible on published page", async ({ page }) => {
@@ -76,15 +76,16 @@ test.describe.serial("Evidence Cards", () => {
     await page.goto("/library");
     await expect(page.getByText(cardTitle)).toBeVisible({ timeout: 5_000 });
 
-    // Click delete on the card
-    const card = page.locator("article").filter({ hasText: cardTitle });
-    await card.getByRole("button", { name: "Delete" }).click();
+    // Click delete on the card (find card root via heading's ancestor with card class)
+    const heading = page.getByRole("heading", { name: cardTitle });
+    await heading.locator("xpath=ancestor::div[contains(@class, 'border-t-4')]").getByRole("button", { name: "Delete" }).click();
 
-    // Confirm deletion
-    await expect(page.getByText("Delete Evidence Card")).toBeVisible();
-    await page.getByRole("button", { name: "Delete" }).nth(1).click();
+    // Confirm deletion (scope to the modal dialog overlay)
+    const modal = page.locator(".fixed.inset-0");
+    await expect(modal.getByText("Delete Evidence Card")).toBeVisible();
+    await modal.getByRole("button", { name: "Delete" }).click();
 
-    // Card should disappear
-    await expect(page.getByText(cardTitle)).not.toBeVisible({ timeout: 5_000 });
+    // Card heading should disappear from the list
+    await expect(page.getByRole("heading", { name: cardTitle })).not.toBeVisible({ timeout: 5_000 });
   });
 });

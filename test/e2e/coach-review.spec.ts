@@ -25,8 +25,8 @@ test.describe.serial("Coach Review", () => {
     ).join(" ");
     await editor.pressSequentially(words, { delay: 2 });
 
-    // Wait for autosave
-    await expect(page.getByText("Saved")).toBeVisible({ timeout: 10_000 });
+    // Wait for autosave (exact match to avoid matching initial "Saved" before content changes)
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 10_000 });
 
     // Click "Get Feedback"
     const feedbackButton = page.getByRole("button", { name: "Get Feedback" });
@@ -55,9 +55,10 @@ test.describe.serial("Coach Review", () => {
     // Should show rubric section (fixture has 5 scores)
     await expect(page.getByText("RUBRIC")).toBeVisible({ timeout: 10_000 });
 
-    // Verify at least one rubric dimension is scored
-    await expect(page.getByText("Clarity")).toBeVisible();
-    await expect(page.getByText("Evidence")).toBeVisible();
+    // Verify at least one rubric dimension is scored (scope to feedback panel)
+    const panel = page.getByTestId("feedback-panel");
+    await expect(panel.getByText("Clarity")).toBeVisible();
+    await expect(panel.getByText(/Evidence/)).toBeVisible();
   });
 
   test("feedback contains no ghostwriting patterns", async ({ page }) => {
