@@ -15,7 +15,10 @@ import {
   emptyReviewBlock,
   emptySourceBlock,
 } from "../../../domain/assistant/conversation";
-import { AssistantEventSchema } from "../../../domain/assistant/schemas";
+import {
+  AssistantEventSchema,
+  StoredConversationSchema,
+} from "../../../domain/assistant/schemas";
 import type { AssistantMode, HistoryEntry } from "../../../domain/assistant/port";
 
 type AssistantStatus = "idle" | "loading" | "done" | "error";
@@ -42,25 +45,16 @@ function loadFromStorage(essayId: string): Conversation | null {
   try {
     const raw = sessionStorage.getItem(storageKey(essayId));
     if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const obj = parsed as Record<string, unknown>;
-    if (typeof obj.essayId !== "string" || !Array.isArray(obj.messages)) return null;
-    // Validate message shapes defensively — sessionStorage could contain stale data
-    const messages = (obj.messages as unknown[]).filter((m): m is ChatMessage => {
-      if (typeof m !== "object" || m === null) return false;
-      const msg = m as Record<string, unknown>;
-      if (msg.role === "user") return typeof msg.content === "string" && typeof msg.id === "string";
-      if (msg.role === "assistant") return Array.isArray(msg.blocks) && typeof msg.id === "string";
-      return false;
-    });
-    return { essayId: obj.essayId, messages };
+    const json: unknown = JSON.parse(raw);
+    const result = StoredConversationSchema.safeParse(json);
+    if (!result.success) return null;
+    return result.data as Conversation;
   } catch {
     return null;
   }
 }
 
-function toApiHistory(messages: ChatMessage[]): HistoryEntry[] {
+function toApiHistory(messages: readonly ChatMessage[]): HistoryEntry[] {
   return messages.map((msg) => {
     if (msg.role === "user") {
       return { role: "user" as const, content: msg.content };
@@ -92,10 +86,8 @@ function parseErrorResponse(text: string): string {
   return text || "Request failed";
 }
 
-let messageIdCounter = 0;
 function nextMessageId(): string {
-  messageIdCounter += 1;
-  return `msg-${String(Date.now())}-${String(messageIdCounter)}`;
+  return `msg-${crypto.randomUUID()}`;
 }
 
 export function useAssistant(essayId: string) {

@@ -3,20 +3,14 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ReviewPort, ReviewRequest } from "../../domain/review/port";
 import type { ReviewEvent } from "../../domain/review/review";
-import {
-  InlineCommentSchema,
-  ReviewIssueSchema,
-  SocraticQuestionSchema,
-  RubricScoreSchema,
-} from "../../domain/review/schemas";
 import { validateArtifact } from "../../domain/review/constraints";
 import { isErr } from "../../domain/types/result";
 import { anthropic } from "./client";
+import { LLM_MODEL } from "./config";
 import { REVIEW_SYSTEM_PROMPT } from "./prompts/review-system-prompt";
 import { reviewTools } from "./tools/review-tools";
+import { parseReviewToolCall } from "./tools/parse-tool-call";
 import { reportError } from "../observability/report-error";
-
-const MODEL = process.env["LLM_MODEL"] ?? "claude-sonnet-4-5-20250929";
 const MAX_ITERATIONS = 10;
 
 function buildUserPrompt(request: ReviewRequest): string {
@@ -36,36 +30,6 @@ Provide your coaching feedback using the tools in the specified order: inline co
 
 type ToolResult = Anthropic.ToolResultBlockParam;
 
-function parseToolCall(
-  name: string,
-  input: unknown,
-): ReviewEvent | null {
-  switch (name) {
-    case "add_inline_comment": {
-      const parsed = InlineCommentSchema.safeParse(input);
-      if (!parsed.success) return null;
-      return { type: "inline_comment", data: parsed.data };
-    }
-    case "add_issue": {
-      const parsed = ReviewIssueSchema.safeParse(input);
-      if (!parsed.success) return null;
-      return { type: "issue", data: parsed.data };
-    }
-    case "ask_question": {
-      const parsed = SocraticQuestionSchema.safeParse(input);
-      if (!parsed.success) return null;
-      return { type: "question", data: parsed.data };
-    }
-    case "score_rubric": {
-      const parsed = RubricScoreSchema.safeParse(input);
-      if (!parsed.success) return null;
-      return { type: "rubric_score", data: parsed.data };
-    }
-    default:
-      return null;
-  }
-}
-
 async function* reviewGenerator(
   request: ReviewRequest,
 ): AsyncIterable<ReviewEvent> {
@@ -77,7 +41,7 @@ async function* reviewGenerator(
     let response: Anthropic.Message;
     try {
       response = await anthropic.messages.create({
-        model: MODEL,
+        model: LLM_MODEL,
         max_tokens: 4096,
         system: REVIEW_SYSTEM_PROMPT,
         tools: reviewTools,
@@ -95,7 +59,7 @@ async function* reviewGenerator(
     for (const block of response.content) {
       if (block.type !== "tool_use") continue;
 
-      const event = parseToolCall(block.name, block.input);
+      const event = parseReviewToolCall(block.name, block.input);
 
       if (!event) {
         reportError(new Error(`Invalid tool input for ${block.name}: ${JSON.stringify(block.input)}`), {

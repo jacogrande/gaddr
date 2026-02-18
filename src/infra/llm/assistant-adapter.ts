@@ -3,24 +3,18 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AssistantPort, AssistantRequest } from "../../domain/assistant/port";
 import type { AssistantEvent } from "../../domain/assistant/assistant";
-import {
-  InlineCommentSchema,
-  ReviewIssueSchema,
-  SocraticQuestionSchema,
-  RubricScoreSchema,
-} from "../../domain/review/schemas";
 import { SourceSuggestionSchema } from "../../domain/assistant/schemas";
 import { validateAssistantEvent } from "../../domain/assistant/constraints";
 import { isErr } from "../../domain/types/result";
 import { anthropic } from "./client";
+import { LLM_MODEL } from "./config";
 import {
   ASSISTANT_SYSTEM_PROMPT,
   FULL_REVIEW_USER_PREFIX,
 } from "./prompts/assistant-system-prompt";
 import { assistantTools, webSearchTool } from "./tools/assistant-tools";
+import { parseReviewToolCall } from "./tools/parse-tool-call";
 import { reportError } from "../observability/report-error";
-
-const MODEL = process.env["LLM_MODEL"] ?? "claude-sonnet-4-5-20250929";
 const MAX_ITERATIONS = 15;
 
 function buildEssayContext(request: AssistantRequest): string {
@@ -67,27 +61,12 @@ function parseToolCall(
   name: string,
   input: unknown,
 ): AssistantEvent | null {
+  // Delegate review tools to shared parser
+  const reviewEvent = parseReviewToolCall(name, input);
+  if (reviewEvent) return reviewEvent;
+
+  // Assistant-specific tools
   switch (name) {
-    case "add_inline_comment": {
-      const parsed = InlineCommentSchema.safeParse(input);
-      if (!parsed.success) return null;
-      return { type: "inline_comment", data: parsed.data };
-    }
-    case "add_issue": {
-      const parsed = ReviewIssueSchema.safeParse(input);
-      if (!parsed.success) return null;
-      return { type: "issue", data: parsed.data };
-    }
-    case "ask_question": {
-      const parsed = SocraticQuestionSchema.safeParse(input);
-      if (!parsed.success) return null;
-      return { type: "question", data: parsed.data };
-    }
-    case "score_rubric": {
-      const parsed = RubricScoreSchema.safeParse(input);
-      if (!parsed.success) return null;
-      return { type: "rubric_score", data: parsed.data };
-    }
     case "suggest_source": {
       const parsed = SourceSuggestionSchema.safeParse(input);
       if (!parsed.success) return null;
@@ -111,7 +90,7 @@ async function* assistantGenerator(
     let response: Anthropic.Message;
     try {
       response = await anthropic.messages.create({
-        model: MODEL,
+        model: LLM_MODEL,
         max_tokens: 4096,
         system: ASSISTANT_SYSTEM_PROMPT,
         tools: [...assistantTools, webSearchTool],

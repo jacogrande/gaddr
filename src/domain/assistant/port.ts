@@ -14,7 +14,7 @@ export type AssistantRequest = {
   readonly essayTitle: string;
   readonly wordCount: number;
   readonly userMessage: string;
-  readonly conversationHistory: HistoryEntry[];
+  readonly conversationHistory: readonly HistoryEntry[];
   readonly mode: AssistantMode;
 };
 

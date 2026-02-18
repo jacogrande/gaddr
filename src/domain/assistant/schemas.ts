@@ -48,3 +48,49 @@ export const ChatRequestSchema = z.object({
   ).max(50),
   mode: z.enum(["chat", "full_review"]),
 });
+
+// ── SessionStorage validation ──
+
+const TextBlockStorageSchema = z.object({
+  kind: z.literal("text"),
+  text: z.string(),
+});
+
+const ReviewBlockStorageSchema = z.object({
+  kind: z.literal("review"),
+  comments: z.array(InlineCommentSchema),
+  issues: z.array(ReviewIssueSchema),
+  questions: z.array(SocraticQuestionSchema),
+  scores: z.array(RubricScoreSchema),
+});
+
+const SourceBlockStorageSchema = z.object({
+  kind: z.literal("source"),
+  sources: z.array(SourceSuggestionSchema),
+});
+
+const ContentBlockStorageSchema = z.discriminatedUnion("kind", [
+  TextBlockStorageSchema,
+  ReviewBlockStorageSchema,
+  SourceBlockStorageSchema,
+]);
+
+export const StoredConversationSchema = z.object({
+  essayId: z.string(),
+  messages: z.array(
+    z.discriminatedUnion("role", [
+      z.object({
+        role: z.literal("user"),
+        id: z.string(),
+        content: z.string(),
+        timestamp: z.number(),
+      }),
+      z.object({
+        role: z.literal("assistant"),
+        id: z.string(),
+        blocks: z.array(ContentBlockStorageSchema),
+        timestamp: z.number(),
+      }),
+    ]),
+  ),
+});

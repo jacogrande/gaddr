@@ -10,7 +10,7 @@ import {
 } from "../../../domain/assistant/pipeline";
 import { essayId, userId } from "../../../domain/types/branded";
 import { isErr } from "../../../domain/types/result";
-import * as Sentry from "@sentry/nextjs";
+import { streamSSE } from "../../../infra/http/stream-sse";
 import { reportError } from "../../../infra/observability/report-error";
 import { isE2ETesting } from "../../../infra/env";
 
@@ -74,60 +74,10 @@ export async function POST(request: Request) {
   const rawEvents = adapter.chat(assistantRequest.value);
   const events = validateAssistantStream(rawEvents, parsed.data.mode);
 
-  const STREAM_TIMEOUT_MS = 120_000;
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      try {
-        await Sentry.startSpan(
-          { name: "assistant.stream", op: "llm.stream" },
-          async () => {
-            try {
-              const deadline = Date.now() + STREAM_TIMEOUT_MS;
-              for await (const event of events) {
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
-                );
-                if (Date.now() > deadline) {
-                  reportError(new Error("Assistant stream timed out"), {
-                    action: "assistant.timeout",
-                    userId: uid.value,
-                    essayId: eid.value,
-                  });
-                  controller.enqueue(
-                    encoder.encode(
-                      `data: ${JSON.stringify({ type: "error", message: "Assistant timed out. Please try again." })}\n\n`,
-                    ),
-                  );
-                  break;
-                }
-              }
-            } catch (streamError: unknown) {
-              reportError(streamError, {
-                action: "assistant.stream",
-                userId: uid.value,
-                essayId: eid.value,
-              });
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "error", message: "Stream failed" })}\n\n`,
-                ),
-              );
-            }
-          },
-        );
-      } finally {
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
+  return streamSSE(events, {
+    spanName: "assistant.stream",
+    timeoutMs: 120_000,
+    timeoutMessage: "Assistant timed out. Please try again.",
+    errorContext: { userId: uid.value, essayId: eid.value },
   });
 }

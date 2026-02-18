@@ -10,7 +10,7 @@ import {
 } from "../../../domain/review/pipeline";
 import { essayId, userId } from "../../../domain/types/branded";
 import { isErr } from "../../../domain/types/result";
-import * as Sentry from "@sentry/nextjs";
+import { streamSSE } from "../../../infra/http/stream-sse";
 import { reportError } from "../../../infra/observability/report-error";
 import { isE2ETesting } from "../../../infra/env";
 
@@ -63,52 +63,10 @@ export async function POST(request: Request) {
   const rawEvents = adapter.review(reviewRequest.value);
   const events = validateReviewStream(rawEvents);
 
-  const STREAM_TIMEOUT_MS = 60_000;
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      try {
-        await Sentry.startSpan(
-          { name: "review.stream", op: "llm.stream" },
-          async () => {
-            try {
-              const deadline = Date.now() + STREAM_TIMEOUT_MS;
-              for await (const event of events) {
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
-                );
-                if (Date.now() > deadline) {
-                  reportError(new Error("Review stream timed out"), { action: "review.timeout", userId: uid.value, essayId: eid.value });
-                  controller.enqueue(
-                    encoder.encode(
-                      `data: ${JSON.stringify({ type: "error", message: "Review timed out. Please try again." })}\n\n`,
-                    ),
-                  );
-                  break;
-                }
-              }
-            } catch (streamError: unknown) {
-              reportError(streamError, { action: "review.stream", userId: uid.value, essayId: eid.value });
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "error", message: "Stream failed" })}\n\n`,
-                ),
-              );
-            }
-          },
-        );
-      } finally {
-        controller.close();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
+  return streamSSE(events, {
+    spanName: "review.stream",
+    timeoutMs: 60_000,
+    timeoutMessage: "Review timed out. Please try again.",
+    errorContext: { userId: uid.value, essayId: eid.value },
   });
 }

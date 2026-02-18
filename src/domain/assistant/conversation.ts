@@ -42,7 +42,7 @@ export type UserMessage = {
 export type AssistantMessage = {
   readonly role: "assistant";
   readonly id: string;
-  readonly blocks: AssistantContentBlock[];
+  readonly blocks: readonly AssistantContentBlock[];
   readonly timestamp: number;
 };
 
@@ -52,7 +52,7 @@ export type ChatMessage = UserMessage | AssistantMessage;
 
 export type Conversation = {
   readonly essayId: string;
-  readonly messages: ChatMessage[];
+  readonly messages: readonly ChatMessage[];
 };
 
 // ── Operations ──
