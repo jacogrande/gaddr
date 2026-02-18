@@ -173,13 +173,22 @@ export const postgresEssayRepository: EssayRepository = {
 
   async listByUser(
     userId: UserId,
+    options?: { limit?: number; offset?: number },
   ): Promise<Result<readonly Essay[], PersistenceError>> {
     try {
-      const rows = await db
+      let query = db
         .select()
         .from(essay)
         .where(eq(essay.userId, userId))
-        .orderBy(desc(essay.updatedAt));
+        .orderBy(desc(essay.updatedAt))
+        .$dynamic();
+      if (options?.limit !== undefined) {
+        query = query.limit(options.limit);
+      }
+      if (options?.offset !== undefined) {
+        query = query.offset(options.offset);
+      }
+      const rows = await query;
       const essays: Essay[] = [];
       for (const row of rows) {
         const result = toDomain(row);

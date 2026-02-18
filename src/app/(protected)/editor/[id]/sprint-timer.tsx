@@ -100,14 +100,14 @@ export function SprintTimer() {
         <button
           type="button"
           onClick={start}
-          className="text-sm font-medium text-stone-400 hover:text-stone-600 transition-colors"
+          className="text-sm font-medium text-stone-500 hover:text-stone-600 transition-colors"
         >
           Start sprint timer ({formatTime(duration)})
         </button>
         <select
           value={duration}
           onChange={(e) => { handleDurationChange(Number(e.target.value)); }}
-          className="border-0 bg-transparent text-xs text-stone-400 focus:outline-none cursor-pointer"
+          className="border-0 bg-transparent text-xs text-stone-500 focus:outline-none cursor-pointer"
         >
           <option value={300}>5 min</option>
           <option value={600}>10 min</option>
@@ -133,7 +133,7 @@ export function SprintTimer() {
           <button
             type="button"
             onClick={pause}
-            className="text-xs font-medium text-stone-400 hover:text-stone-600 transition-colors"
+            className="text-xs font-medium text-stone-500 hover:text-stone-600 transition-colors"
           >
             Pause
           </button>
@@ -141,7 +141,7 @@ export function SprintTimer() {
           <button
             type="button"
             onClick={start}
-            className="text-xs font-medium text-stone-400 hover:text-stone-600 transition-colors"
+            className="text-xs font-medium text-stone-500 hover:text-stone-600 transition-colors"
           >
             Resume
           </button>
@@ -149,7 +149,7 @@ export function SprintTimer() {
         <button
           type="button"
           onClick={reset}
-          className="text-xs font-medium text-stone-400 hover:text-stone-600 transition-colors"
+          className="text-xs font-medium text-stone-500 hover:text-stone-600 transition-colors"
         >
           Reset
         </button>

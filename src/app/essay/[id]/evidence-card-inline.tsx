@@ -53,7 +53,7 @@ export function EvidenceCardInline({
       <button
         type="button"
         onClick={() => { setExpanded(true); }}
-        className="mt-1 mb-3 flex items-center gap-2 rounded-sm border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-500 transition-colors hover:border-stone-400 hover:text-stone-700"
+        className="mt-1 mb-3 flex items-center gap-2 rounded-sm border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 transition-colors hover:border-stone-400 hover:text-stone-700"
       >
         <span className={`inline-block rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase ${colors.badge}`}>
           {colors.label}
@@ -85,7 +85,7 @@ export function EvidenceCardInline({
         <button
           type="button"
           onClick={() => { setExpanded(false); }}
-          className="shrink-0 text-stone-400 hover:text-stone-700"
+          className="shrink-0 text-stone-500 hover:text-stone-700"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
@@ -93,7 +93,7 @@ export function EvidenceCardInline({
         </button>
       </div>
 
-      <p className="mt-2 text-xs text-stone-400">
+      <p className="mt-2 text-xs text-stone-500">
         re: &ldquo;{claimText}&rdquo;
       </p>
 
@@ -108,7 +108,7 @@ export function EvidenceCardInline({
       ) : null}
 
       {caveats ? (
-        <p className="mt-2 text-xs text-stone-500">
+        <p className="mt-2 text-xs text-stone-600">
           <span className="font-semibold">Caveats:</span> {caveats}
         </p>
       ) : null}

@@ -72,7 +72,7 @@ export function EvidenceCardList({
           <p className="font-serif text-xl font-semibold text-stone-300">
             No evidence cards yet.
           </p>
-          <p className="mt-2 text-sm text-stone-400">
+          <p className="mt-2 text-sm text-stone-500">
             Click &ldquo;Add Evidence&rdquo; to start building your evidence library.
           </p>
         </div>
@@ -98,7 +98,7 @@ export function EvidenceCardList({
                       </span>
                     </div>
                     {card.quoteSnippet && (
-                      <p className="mt-2 line-clamp-2 text-sm italic text-stone-500">
+                      <p className="mt-2 line-clamp-2 text-sm italic text-stone-600">
                         &ldquo;{card.quoteSnippet}&rdquo;
                       </p>
                     )}
@@ -111,7 +111,7 @@ export function EvidenceCardList({
                       href={card.sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-2 inline-block text-xs font-medium text-stone-400 hover:text-[#B74134]"
+                      className="mt-2 inline-block text-xs font-medium text-stone-500 hover:text-[#B74134]"
                     >
                       {card.sourceUrl}
                     </a>
@@ -120,7 +120,7 @@ export function EvidenceCardList({
                     <button
                       type="button"
                       onClick={() => { setModal({ mode: "edit", cardId: card.id }); }}
-                      className="border-2 border-stone-300 bg-white px-3 py-1 text-xs font-bold text-stone-500 shadow-[2px_2px_0px_#2C2416] transition-all duration-150 hover:border-stone-900 hover:text-stone-900 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416]"
+                      className="border-2 border-stone-300 bg-white px-3 py-1 text-xs font-bold text-stone-600 shadow-[2px_2px_0px_#2C2416] transition-all duration-150 hover:border-stone-900 hover:text-stone-900 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416]"
                     >
                       Edit
                     </button>

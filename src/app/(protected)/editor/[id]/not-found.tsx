@@ -6,7 +6,7 @@ export default function EditorNotFound() {
       <h1 className="font-serif text-3xl font-semibold tracking-tight text-stone-900">
         Essay not found
       </h1>
-      <p className="mt-3 text-stone-500">
+      <p className="mt-3 text-stone-600">
         This essay doesn&apos;t exist or you don&apos;t have access to it.
       </p>
       <Link

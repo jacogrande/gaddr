@@ -44,7 +44,7 @@ export default async function LibraryPage() {
           <h1 className="font-serif text-3xl font-semibold tracking-tight text-stone-900">
             Evidence Library
           </h1>
-          <p className="mt-1 text-stone-500">
+          <p className="mt-1 text-stone-600">
             Collect sources, quotes, and evidence to support your essays.
           </p>
         </div>

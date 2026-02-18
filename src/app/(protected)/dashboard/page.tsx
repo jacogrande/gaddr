@@ -42,7 +42,7 @@ function EssayCard({ essay, now }: { essay: Essay; now: Date }) {
             <h3 className="truncate font-serif text-lg font-semibold text-stone-900 transition-colors duration-200 group-hover:text-[#B74134]">
               {essay.title || "Untitled"}
             </h3>
-            <p className="mt-1 text-sm text-stone-500 font-medium">
+            <p className="mt-1 text-sm text-stone-600 font-medium">
               {words} words &middot; {relativeTime(essay.updatedAt, now)}
             </p>
           </div>
@@ -63,8 +63,12 @@ export default async function DashboardPage({
 }: {
   searchParams: SearchParams;
 }) {
+  const PAGE_SIZE = 20;
   const params = await searchParams;
   const error = params.error === "create-failed" ? "Failed to create essay. Please try again." : null;
+  const page = Math.max(1, Number(params.page) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
+
   // Layout already redirects unauthenticated users. This call is for userId extraction; the guard is defense-in-depth.
   const session = await requireSession();
   if (isErr(session)) {
@@ -76,12 +80,17 @@ export default async function DashboardPage({
     redirect("/sign-in");
   }
 
-  const result = await postgresEssayRepository.listByUser(uid.value);
+  const result = await postgresEssayRepository.listByUser(uid.value, {
+    limit: PAGE_SIZE + 1,
+    offset,
+  });
   if (isErr(result)) {
     reportError(result.error, { action: "dashboard.listByUser", userId: uid.value });
   }
   const listError = isErr(result) ? "Failed to load essays. Please try refreshing." : null;
-  const essays = isErr(result) ? [] : result.value;
+  const allEssays = isErr(result) ? [] : result.value;
+  const hasMore = allEssays.length > PAGE_SIZE;
+  const essays = hasMore ? allEssays.slice(0, PAGE_SIZE) : allEssays;
   const now = new Date();
 
   return (
@@ -93,7 +102,7 @@ export default async function DashboardPage({
           <h1 className="font-serif text-3xl font-semibold tracking-tight text-stone-900">
             Dashboard
           </h1>
-          <p className="mt-1 text-stone-500">
+          <p className="mt-1 text-stone-600">
             Your micro-essay studio. Start writing or revisit a draft.
           </p>
         </div>
@@ -107,21 +116,48 @@ export default async function DashboardPage({
         </form>
       </div>
 
-      {essays.length === 0 ? (
+      {essays.length === 0 && page === 1 ? (
         <div className="mt-16 text-center">
           <p className="font-serif text-xl font-semibold text-stone-300">No essays yet.</p>
-          <p className="mt-2 text-sm text-stone-400">
+          <p className="mt-2 text-sm text-stone-500">
             Click &ldquo;New Essay&rdquo; to start your first micro-essay.
           </p>
         </div>
       ) : (
-        <div className="mt-8 space-y-4 stagger">
-          {essays.map((essay) => (
-            <div key={essay.id} className="animate-fade-up">
-              <EssayCard essay={essay} now={now} />
+        <>
+          <div className="mt-8 space-y-4 stagger">
+            {essays.map((essay) => (
+              <div key={essay.id} className="animate-fade-up">
+                <EssayCard essay={essay} now={now} />
+              </div>
+            ))}
+          </div>
+
+          {(page > 1 || hasMore) && (
+            <div className="mt-8 flex items-center justify-between">
+              {page > 1 ? (
+                <Link
+                  href={page === 2 ? "/dashboard" : `/dashboard?page=${String(page - 1)}`}
+                  className="text-sm font-semibold text-stone-600 hover:text-stone-900"
+                >
+                  &larr; Newer
+                </Link>
+              ) : (
+                <span />
+              )}
+              {hasMore ? (
+                <Link
+                  href={`/dashboard?page=${String(page + 1)}`}
+                  className="text-sm font-semibold text-stone-600 hover:text-stone-900"
+                >
+                  Older &rarr;
+                </Link>
+              ) : (
+                <span />
+              )}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

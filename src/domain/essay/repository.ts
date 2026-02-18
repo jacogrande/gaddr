@@ -17,6 +17,7 @@ export type EssayRepository = {
   ): Promise<Result<Essay, NotFoundError | PersistenceError>>;
   listByUser(
     userId: UserId,
+    options?: { limit?: number; offset?: number },
   ): Promise<Result<readonly Essay[], PersistenceError>>;
   listPublishedByUser(
     userId: UserId,

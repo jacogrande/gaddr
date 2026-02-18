@@ -108,7 +108,7 @@ export default async function PublicEssayPage({ params }: { params: Params }) {
           {essay.title || "Untitled"}
         </h1>
 
-        <div className="mt-4 flex items-center gap-3 text-sm text-stone-400">
+        <div className="mt-4 flex items-center gap-3 text-sm text-stone-500">
           <span>{words} words</span>
           <span>&middot;</span>
           <span>

@@ -59,7 +59,7 @@ function ToolbarButton({
       className={`border-2 px-2.5 py-1 text-sm font-bold transition-all duration-150 ${
         active
           ? "border-[#B74134] bg-[#B74134] text-white shadow-[3px_3px_0px_#2C2416]"
-          : "border-stone-300 bg-white text-stone-500 shadow-[2px_2px_0px_#2C2416] hover:border-stone-900 hover:text-stone-900 hover:shadow-[3px_3px_0px_#2C2416]"
+          : "border-stone-300 bg-white text-stone-600 shadow-[2px_2px_0px_#2C2416] hover:border-stone-900 hover:text-stone-900 hover:shadow-[3px_3px_0px_#2C2416]"
       } active:shadow-[1px_1px_0px_#2C2416] active:translate-x-[1px] active:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-50`}
     >
       {children}
@@ -346,7 +346,7 @@ export function EssayEditor({
   }, [editor]);
 
   const wordColor =
-    words > WORD_COUNT_LIMIT ? "text-red-800" : words >= WORD_COUNT_TARGET ? "text-[#B74134]" : "text-stone-400";
+    words > WORD_COUNT_LIMIT ? "text-red-800" : words >= WORD_COUNT_TARGET ? "text-[#B74134]" : "text-stone-500";
 
   const progressWidth = Math.min((words / WORD_COUNT_LIMIT) * 100, 100);
   const progressColor =
@@ -363,9 +363,9 @@ export function EssayEditor({
 
   const saveColor =
     saveStatus === "saved"
-      ? "text-stone-400"
+      ? "text-stone-500"
       : saveStatus === "saving"
-        ? "text-stone-400"
+        ? "text-stone-500"
         : "text-amber-800";
 
   const showFeedback = sidePanel === "feedback" && review.status !== "idle";
@@ -384,7 +384,7 @@ export function EssayEditor({
           onChange={handleTitleChange}
           placeholder="Untitled essay"
           disabled={!isDraft}
-          className="w-full border-0 bg-transparent px-0 py-2 font-serif text-4xl font-semibold tracking-tight text-stone-900 placeholder:text-stone-300 focus:outline-none disabled:cursor-default disabled:opacity-100"
+          className="w-full border-0 bg-transparent px-0 py-2 font-serif text-2xl sm:text-4xl font-semibold tracking-tight text-stone-900 placeholder:text-stone-300 focus:outline-none disabled:cursor-default disabled:opacity-100"
           maxLength={200}
         />
 
@@ -407,7 +407,7 @@ export function EssayEditor({
             <span className={saveColor}>{saveLabel}</span>
           ) : (
             publishedAt && (
-              <span className="text-stone-400">
+              <span className="text-stone-500">
                 Published {formatPublishedDate(new Date(publishedAt))}
               </span>
             )
@@ -504,7 +504,7 @@ export function EssayEditor({
                     () => { /* clipboard permission denied — button stays as "Copy link" */ },
                   );
                 }}
-                className="text-sm font-semibold text-stone-500 hover:text-stone-900"
+                className="text-sm font-semibold text-stone-600 hover:text-stone-900"
               >
                 {copied ? "Copied!" : "Copy link"}
               </button>

@@ -7,7 +7,7 @@ export default function PortfolioNotFound() {
         <h1 className="font-serif text-3xl font-semibold tracking-tight text-stone-900">
           User not found
         </h1>
-        <p className="mt-3 text-stone-500">
+        <p className="mt-3 text-stone-600">
           This portfolio doesn&apos;t exist.
         </p>
         <Link

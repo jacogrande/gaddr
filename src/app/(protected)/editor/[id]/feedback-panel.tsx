@@ -92,7 +92,7 @@ export function FeedbackPanel({
         <button
           type="button"
           onClick={onDismiss}
-          className="text-stone-400 hover:text-stone-600 text-sm font-medium"
+          className="text-stone-500 hover:text-stone-600 text-sm font-medium"
         >
           Dismiss
         </button>
@@ -120,7 +120,7 @@ export function FeedbackPanel({
       {/* Inline Comments */}
       {comments.length > 0 && (
         <section className="mb-5">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500 mb-3">
             Inline Comments
           </h3>
           <div className="space-y-3">
@@ -138,7 +138,7 @@ export function FeedbackPanel({
                   <span className="font-semibold">Problem:</span>{" "}
                   {comment.problem}
                 </p>
-                <p className="text-sm text-stone-500 mb-1">
+                <p className="text-sm text-stone-600 mb-1">
                   <span className="font-semibold">Why it matters:</span>{" "}
                   {comment.why}
                 </p>
@@ -158,7 +158,7 @@ export function FeedbackPanel({
       {/* Issues */}
       {issues.length > 0 && (
         <section className="mb-5">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500 mb-3">
             Issues
           </h3>
           <div className="space-y-2">
@@ -170,7 +170,7 @@ export function FeedbackPanel({
                   >
                     {issue.severity}
                   </span>
-                  <span className="text-xs font-medium text-stone-400">
+                  <span className="text-xs font-medium text-stone-500">
                     {TAG_LABELS[issue.tag] ?? issue.tag}
                   </span>
                 </div>
@@ -190,7 +190,7 @@ export function FeedbackPanel({
       {/* Socratic Questions */}
       {questions.length > 0 && (
         <section className="mb-5">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500 mb-3">
             Questions to Consider
           </h3>
           <div className="space-y-2">
@@ -199,7 +199,7 @@ export function FeedbackPanel({
                 <p className="text-sm font-medium text-stone-800 italic">
                   {q.question}
                 </p>
-                <p className="text-xs text-stone-500 mt-1">{q.context}</p>
+                <p className="text-xs text-stone-600 mt-1">{q.context}</p>
               </div>
             ))}
           </div>
@@ -209,7 +209,7 @@ export function FeedbackPanel({
       {/* Rubric Scores */}
       {scores.length > 0 && (
         <section className="mb-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500 mb-3">
             Rubric
           </h3>
           <div className="space-y-2">
@@ -222,7 +222,7 @@ export function FeedbackPanel({
                   <p className="text-sm font-semibold text-stone-800 capitalize">
                     {TAG_LABELS[s.dimension] ?? s.dimension}
                   </p>
-                  <p className="text-xs text-stone-500 truncate">
+                  <p className="text-xs text-stone-600 truncate">
                     {s.rationale}
                   </p>
                 </div>
@@ -235,7 +235,7 @@ export function FeedbackPanel({
 
       {/* Loading indicator when streaming */}
       {isLoading && hasContent && (
-        <div className="flex items-center gap-2 text-sm text-stone-400 mt-3">
+        <div className="flex items-center gap-2 text-sm text-stone-500 mt-3">
           <div className="h-1.5 w-1.5 rounded-full bg-[#B74134] animate-pulse" />
           Analyzing...
         </div>

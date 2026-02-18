@@ -164,7 +164,7 @@ export function EvidenceCardForm({ card, onClose, onSaved }: Props) {
                   className={`flex-1 border-2 px-3 py-2 text-sm font-bold transition-all duration-150 ${
                     stance === option.value
                       ? `${option.color} shadow-[3px_3px_0px_#2C2416]`
-                      : "border-stone-200 bg-white text-stone-400 hover:border-stone-400"
+                      : "border-stone-200 bg-white text-stone-500 hover:border-stone-400"
                   }`}
                 >
                   {option.label}

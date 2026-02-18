@@ -8,7 +8,7 @@ export default function Home() {
         <h1 className="font-serif text-6xl font-semibold tracking-tight text-stone-900 md:text-7xl">
           Microblogger
         </h1>
-        <p className="mx-auto mt-6 max-w-md text-lg leading-relaxed text-stone-500">
+        <p className="mx-auto mt-6 max-w-md text-lg leading-relaxed text-stone-600">
           Write short, evidence-backed micro-essays.
           <br />
           Get coaching, not ghostwriting.

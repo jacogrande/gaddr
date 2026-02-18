@@ -48,7 +48,7 @@ function EssayCard({ essay }: { essay: Essay }) {
       <h3 className="font-serif text-lg font-semibold text-stone-900">
         {essay.title || "Untitled"}
       </h3>
-      <p className="mt-1 text-sm text-stone-500 font-medium">
+      <p className="mt-1 text-sm text-stone-600 font-medium">
         {words} words
         {essay.publishedAt ? (
           <>
@@ -101,7 +101,7 @@ export default async function PortfolioPage({ params }: { params: Params }) {
         </h1>
 
         {essays.length === 0 ? (
-          <p className="mt-8 text-stone-400">
+          <p className="mt-8 text-stone-500">
             No published essays yet.
           </p>
         ) : (
