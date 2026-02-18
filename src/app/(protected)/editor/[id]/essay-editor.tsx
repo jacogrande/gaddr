@@ -11,8 +11,8 @@ import { TipTapDocSchema } from "../../../../domain/essay/schemas";
 import { checkCitationMismatches } from "../../../../domain/evidence/citation-mismatch";
 import { updateDraftAction, publishEssayAction, unpublishEssayAction } from "../actions";
 import { NOT_DRAFT_ERROR } from "../error-codes";
-import { useReview } from "../use-review";
-import { FeedbackPanel } from "./feedback-panel";
+import { useAssistant } from "../use-assistant";
+import { AssistantPanel } from "./assistant-panel";
 import { EvidencePicker } from "./evidence-picker";
 import { CitationWarnings } from "./citation-warnings";
 import { useEvidenceLinks } from "./use-evidence-links";
@@ -24,7 +24,7 @@ import type { TipTapDoc } from "../../../../domain/essay/essay";
 import type { EvidenceLinkData, EvidenceCardSummary } from "../../evidence-types";
 
 type SaveStatus = "saved" | "saving" | "unsaved";
-type SidePanel = "none" | "feedback" | "evidence-picker" | "history";
+type SidePanel = "none" | "assistant" | "evidence-picker" | "history";
 
 type Props = {
   id: string;
@@ -95,13 +95,13 @@ export function EssayEditor({
   const queueRef = useRef<Promise<void>>(Promise.resolve());
 
   const isDraft = status === "draft";
-  const review = useReview(id);
+  const assistant = useAssistant(id);
   const evidence = useEvidenceLinks(id, initialLinks);
 
-  // Auto-open feedback panel if review was hydrated from sessionStorage
+  // Auto-open assistant panel if conversation was hydrated from sessionStorage
   useEffect(() => {
-    if (review.status === "done" || review.status === "error") {
-      setSidePanel((prev) => prev === "none" ? "feedback" : prev);
+    if (assistant.conversation.messages.length > 0) {
+      setSidePanel((prev) => prev === "none" ? "assistant" : prev);
     }
     // Only run on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,9 +167,13 @@ export function EssayEditor({
   }, [save]);
 
   const handleGetFeedback = useCallback(() => {
-    setSidePanel("feedback");
-    void flushPending().then(() => review.requestReview(id));
-  }, [flushPending, review, id]);
+    setSidePanel("assistant");
+    void flushPending().then(() => assistant.sendMessage("", "full_review"));
+  }, [flushPending, assistant]);
+
+  const handleOpenCoach = useCallback(() => {
+    setSidePanel("assistant");
+  }, []);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -368,10 +372,10 @@ export function EssayEditor({
         ? "text-stone-500"
         : "text-amber-800";
 
-  const showFeedback = sidePanel === "feedback" && review.status !== "idle";
+  const showAssistant = sidePanel === "assistant";
   const showPicker = sidePanel === "evidence-picker";
   const showHistory = sidePanel === "history";
-  const hasSidePanel = showFeedback || showPicker || showHistory;
+  const hasSidePanel = showAssistant || showPicker || showHistory;
 
   return (
     <div className={`mx-auto animate-fade-up ${hasSidePanel ? "flex max-w-6xl gap-8" : "max-w-2xl"}`}>
@@ -457,11 +461,23 @@ export function EssayEditor({
               </button>
               <button
                 type="button"
-                disabled={words === 0 || review.status === "loading" || publishing}
+                disabled={words === 0 || assistant.status === "loading" || publishing}
                 onClick={() => { handleGetFeedback(); }}
                 className="border-2 border-[#B74134] bg-white px-4 py-1.5 text-sm font-bold text-[#B74134] shadow-[3px_3px_0px_#2C2416] transition-all duration-150 hover:bg-[#B74134] hover:text-white active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
-                {review.status === "loading" ? "Reviewing..." : "Get Feedback"}
+                {assistant.status === "loading" ? "Reviewing..." : "Get Feedback"}
+              </button>
+              <button
+                type="button"
+                disabled={publishing}
+                onClick={handleOpenCoach}
+                className={`border-2 px-4 py-1.5 text-sm font-bold shadow-[3px_3px_0px_#2C2416] transition-all duration-150 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#2C2416] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none ${
+                  sidePanel === "assistant"
+                    ? "border-[#B74134] bg-[#B74134] text-white"
+                    : "border-stone-300 bg-white text-stone-600 hover:border-stone-900 hover:text-stone-900"
+                }`}
+              >
+                Coach
               </button>
               <button
                 type="button"
@@ -598,20 +614,18 @@ export function EssayEditor({
         )}
       </div>
 
-      {/* Feedback panel — right column on desktop */}
-      {showFeedback && (
+      {/* Assistant panel — right column on desktop */}
+      {showAssistant && (
         <div className="w-full lg:w-[380px] flex-shrink-0">
           <div className="lg:sticky lg:top-8">
-            <FeedbackPanel
-              status={review.status}
-              comments={review.comments}
-              issues={review.issues}
-              questions={review.questions}
-              scores={review.scores}
-              errorMessage={review.errorMessage}
+            <AssistantPanel
+              conversation={assistant.conversation}
+              status={assistant.status}
+              errorMessage={assistant.errorMessage}
+              onSendMessage={(msg, mode) => { void assistant.sendMessage(msg, mode); }}
               onCommentClick={handleCommentClick}
-              onDismiss={() => { review.dismiss(); setSidePanel("none"); }}
-              onRetry={() => { handleGetFeedback(); }}
+              onClear={assistant.clearConversation}
+              onDismiss={() => { setSidePanel("none"); }}
             />
           </div>
         </div>
