@@ -5,13 +5,15 @@ import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { wordCount, canPublish, WORD_COUNT_TARGET, WORD_COUNT_LIMIT } from "../../../../domain/essay/operations";
+import { wordCount, extractEssayText, canPublish, WORD_COUNT_TARGET, WORD_COUNT_LIMIT } from "../../../../domain/essay/operations";
 import { formatPublishedDate } from "../../../../domain/essay/formatting";
 import { TipTapDocSchema } from "../../../../domain/essay/schemas";
 import { checkCitationMismatches } from "../../../../domain/evidence/citation-mismatch";
 import { updateDraftAction, publishEssayAction, unpublishEssayAction } from "../actions";
 import { NOT_DRAFT_ERROR } from "../error-codes";
 import { useAssistant } from "../use-assistant";
+import { useClaimDetector } from "../use-claim-detector";
+import { useCoachingNotes } from "../use-coaching-notes";
 import { AssistantPanel } from "./assistant-panel";
 import { EvidencePicker } from "./evidence-picker";
 import { CitationWarnings } from "./citation-warnings";
@@ -96,7 +98,20 @@ export function EssayEditor({
 
   const isDraft = status === "draft";
   const assistant = useAssistant(id);
+  const claimDetector = useClaimDetector(id);
+  const coaching = useCoachingNotes(id);
   const evidence = useEvidenceLinks(id, initialLinks);
+
+  // Cascade: when claim detection completes with results, trigger coaching.
+  // Intentionally excludes coaching, currentDoc, and isDraft from deps:
+  // coaching.requestCoaching deduplicates by text internally,
+  // and currentDoc always reflects the latest content at trigger time.
+  useEffect(() => {
+    if (claimDetector.status === "done" && claimDetector.claims.length > 0 && isDraft) {
+      void coaching.requestCoaching(extractEssayText(currentDoc), claimDetector.claims);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claimDetector.status, claimDetector.claims]);
 
   // Auto-open assistant panel if conversation was hydrated from sessionStorage
   useEffect(() => {
@@ -188,9 +203,13 @@ export function EssayEditor({
     onUpdate: ({ editor: e }) => {
       const parsed = TipTapDocSchema.safeParse(e.getJSON());
       if (!parsed.success) return;
-      setWords(wordCount(parsed.data));
+      const wc = wordCount(parsed.data);
+      setWords(wc);
       setCurrentDoc(parsed.data);
       scheduleSave({ content: parsed.data });
+      if (isDraft) {
+        claimDetector.scheduleDetection(extractEssayText(parsed.data));
+      }
     },
     editorProps: {
       attributes: {
@@ -622,8 +641,13 @@ export function EssayEditor({
               conversation={assistant.conversation}
               status={assistant.status}
               errorMessage={assistant.errorMessage}
+              claims={claimDetector.claims}
+              claimStatus={claimDetector.status}
+              coachingNotes={coaching.notes}
+              coachingStatus={coaching.status}
               onSendMessage={(msg, mode) => { void assistant.sendMessage(msg, mode); }}
               onCommentClick={handleCommentClick}
+              onDismissNote={coaching.dismissNote}
               onClear={assistant.clearConversation}
               onDismiss={() => { setSidePanel("none"); }}
             />

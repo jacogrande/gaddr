@@ -1,117 +1,162 @@
-# Review Report — Assistant Chatbot
+# Phase 2 Coaching Notes — Code Review
 
-**Date**: 2026-02-18
-**Branch**: main (uncommitted)
-**Commits Reviewed**: Working tree changes (14 new files, 2 modified, 2 deleted)
+## Review Date
+2026-02-18
 
-## Verification Results
+## Checks Run
+- bun test test/unit/coaching/ test/unit/claims/ test/contract/coaching-parsing.test.ts → 59 pass, 0 fail
+- bun run typecheck → clean (no errors)
+- bun run lint → 4 pre-existing errors in test/e2e/visual-screenshots.spec.ts (unrelated); new code is clean
+- bun run knip → clean (no dead exports)
 
-| Check | Status | Details |
-|-------|--------|---------|
-| Tests | PASS | 266 tests, 472 assertions, 57ms |
-| Types | PASS | `tsc --noEmit` clean |
-| Lint | PASS | ESLint clean (only pre-existing visual-screenshots.spec.ts errors) |
-| Knip | PASS | No dead code detected |
+---
 
-## Change Summary
+## Summary
+Phase 2 implements proactive coaching notes cleanly. The domain/infra/app layer split is respected,
+all domain code is pure, tests are thorough, and the cascade trigger (claims → coaching) works
+correctly. Five issues warrant attention: one HIGH (missing unmount cleanup in useCoachingNotes),
+one HIGH (stale-closure eslint-disable-next-line), two MEDIUMs (essay text unbounded, notesByClaim
+key lookup is case-sensitive), and several LOWs.
 
-Converted the one-shot "Get Feedback" review button into a full conversational assistant supporting:
-1. **Full review** (via button) — same structured artifacts rendered inside a chat panel
-2. **Chat** — ask questions about the essay, get coaching text responses
-3. **Research** — ask the assistant to search the web and suggest evidence sources
+---
 
-### New Files
+## Findings
 
-| File | Layer | Purpose |
-|---|---|---|
-| `domain/assistant/assistant.ts` | Domain | `AssistantEvent` discriminated union (10 variants) |
-| `domain/assistant/conversation.ts` | Domain | Chat message model, content blocks (`TextBlock`, `ReviewBlock`, `SourceBlock`) |
-| `domain/assistant/port.ts` | Domain | `AssistantPort` adapter interface |
-| `domain/assistant/schemas.ts` | Domain | Zod schemas for API input and event validation |
-| `domain/assistant/constraints.ts` | Domain | Authorship enforcement: per-event + accumulated text ghostwriting detection |
-| `domain/assistant/pipeline.ts` | Domain | Request validation, stream-level authorship + rubric completeness checks |
-| `infra/llm/tools/assistant-tools.ts` | Infra | Review tools + `suggest_source` + Anthropic `web_search_20250305` |
-| `infra/llm/prompts/assistant-system-prompt.ts` | Infra | System prompt for chat/review/research modes |
-| `infra/llm/assistant-adapter.ts` | Infra | Agentic loop (15 iterations, web search, text + tool_use parsing) |
-| `infra/llm/fixture-assistant-adapter.ts` | Infra | Deterministic E2E fixtures for review/chat/research |
-| `app/api/assistant/route.ts` | App | SSE endpoint (120s timeout, Sentry span) |
-| `app/(protected)/editor/use-assistant.ts` | App | React hook: conversation state, SSE consumption, sessionStorage |
-| `app/(protected)/editor/[id]/assistant-panel.tsx` | App | Chat UI with message bubbles, content block rendering, input area |
+### HIGH-1
+File: src/app/(protected)/editor/use-coaching-notes.ts
+Lines: all (missing useEffect return)
+Issue: useCoachingNotes has no unmount cleanup. If the component unmounts during an in-flight request,
+abortRef.current is never called — the fetch will resolve against a dead component, and the state
+setters will fire into the void (harmless but wasteful). In contrast, useClaimDetector (line 87–91)
+correctly returns a cleanup function from useEffect.
+Fix: Add a cleanup useEffect:
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, []);
 
-### Modified Files
+---
 
-| File | Change |
-|---|---|
-| `essay-editor.tsx` | Swapped `useReview`→`useAssistant`, `FeedbackPanel`→`AssistantPanel`, added "Coach" button |
-| `test/e2e/coach-review.spec.ts` | Updated selectors, added chat + research flow tests |
+### HIGH-2
+File: src/app/(protected)/editor/[id]/essay-editor.tsx
+Lines: 106–111
+Issue: The coaching cascade useEffect suppresses the exhaustive-deps lint rule. The deps array is
+[claimDetector.status, claimDetector.claims] but the body also reads isDraft, currentDoc, and
+coaching.requestCoaching. The eslint-disable is intentional (to avoid re-triggering on every
+keystroke), but isDraft is a primitive (boolean) and safe to include. If isDraft flips to false
+(user publishes mid-session), the check inside the effect guards correctly, but the suppression
+masks this. The real risk is currentDoc: extractEssayText(currentDoc) reads the *current* value of
+the doc when claims arrive, which is the correct doc version since it's always up-to-date in state.
+This is a legitimate intentional pattern, but the suppression comment should be more precise.
+Suggestion: Replace the blanket suppression with a targeted comment explaining *why* coaching and
+currentDoc are excluded — the claim text was already extracted when detection fired, so the doc
+snapshot at coaching time is intentionally the current one, not the detection-time snapshot.
 
-### Deleted Files
+---
 
-| File | Reason |
-|---|---|
-| `feedback-panel.tsx` | Superseded by `assistant-panel.tsx` |
-| `use-review.ts` | Superseded by `use-assistant.ts` |
+### MEDIUM-1
+File: src/domain/coaching/schemas.ts and src/app/api/coaching/generate/route.ts
+Lines: schemas.ts:20, route.ts:26
+Issue: essayText is validated only with z.string().min(1) — there is no upper bound. A malicious
+(or buggy) client could POST several hundred KB of text. The existing claim detection schema has the
+same gap, so this is consistent, but the coaching route is new and an opportunity to close it.
+Domain constraint: essays are capped at 800 words (~5 KB). A reasonable server-side max would be
+z.string().min(1).max(10000) characters.
+Suggestion: Add .max(10000) to both essayText fields in CoachingRequestApiSchema and
+ClaimDetectRequestSchema, or validate against WORD_COUNT_LIMIT in the pipeline function.
 
-## Code Review Findings
+---
 
-### Critical Issues (Fixed)
+### MEDIUM-2
+File: src/app/(protected)/editor/[id]/assistant-panel.tsx
+Lines: 480–488 (notesByClaim), 556
+Issue: The notesByClaim Map is keyed on note.claimQuotedText (the exact string from the LLM), and
+looked up by claim.quotedText (the exact string from the claim detector). These must match exactly
+for notes to appear. The prompt instructs the model to copy verbatim, and validateCoachingResult
+filters notes whose claimQuotedText doesn't match (case-insensitive normalization). However, the
+passing of notes to ClaimView uses a case-sensitive Map lookup, so if the LLM returns
+"global temperatures have risen" and the claim has "Global temperatures have risen", the note
+silently disappears from the UI even though it passed the domain validation filter. The domain
+filter normalizes for *filtering* but stores the original-case string — so the Map lookup can miss.
+Suggestion: Either (a) normalize claimQuotedText in validateCoachingResult to match the original
+claim's casing, or (b) build the notesByClaim Map with normalized keys and look up with
+note.claimQuotedText.trim().toLowerCase(). Option (b) matches the dedup pattern already in place.
 
-**1. Stale closure in `use-assistant.ts`** — `sendMessage` captured `state.conversation.messages` via closure, causing stale history to be sent to the API on rapid interactions.
-**Fix**: Added `conversationRef` that mirrors state, read from ref instead of closure. Removed `state.conversation.messages` from dependency array.
+---
 
-**2. `flushText()`/`flushSources()` called inside `setState` updater** — These closures mutate outer-scope `let` variables, which is unsafe inside React's functional updater (can be called multiple times in concurrent mode).
-**Fix**: Replaced with a `receivedTerminalEvent` flag. Flush + finalize happens outside `setState` after the reader loop ends.
+### LOW-1
+File: src/infra/llm/fixture-coaching-adapter.ts
+Lines: 30–33
+Issue: The fixture adapter uses setTimeout(150ms) to simulate latency. This is fine for E2E, but
+the delay is hardcoded with no comment explaining the intent. The fixture claim detection adapter
+should be checked for consistency.
+Suggestion: Extract to a constant (FIXTURE_LATENCY_MS = 150) or add a comment.
 
-### High Issues (Fixed)
+---
 
-**3. `checkTextForGhostwriting` was dead code** — Defined and tested but never called in the server-side pipeline. LLM could stream ghostwritten prose via `text_delta` events unchecked.
-**Fix**: Pipeline now accumulates `text_delta` text and calls `checkTextForGhostwriting()` at `done` event time.
+### LOW-2
+File: src/domain/coaching/pipeline.ts
+Lines: 10, 44–68 (MAX_COACHING_NOTES = 5)
+Issue: The prompt says "Return 1-5 notes total" and the pipeline enforces MAX_COACHING_NOTES = 5.
+These are in sync — good. However, prepareCoachingRequest does not enforce any max on the number
+of claims sent to the LLM. If the claim detector surfaces 10 claims (MAX_CLAIMS = 10) and all are
+sent to the coaching adapter, the prompt context grows. This isn't a bug but could be noted.
+Suggestion: Consider capping claims sent to the coaching adapter at, say, 5 (the same as the
+max notes), to keep the prompt focused and reduce token spend.
 
-**4. `server_tool_use` handling could push empty user turn** — When only server-managed tools (web search) fired, `toolResults` was empty but still pushed as a user message, which could confuse the API.
-**Fix**: Only push user turn when `toolResults` has entries. Track `hasServerToolUse` flag for documentation.
+---
 
-**5. Raw JSON error text shown to user** — Server returns `{"error":"..."}` but the hook displayed the raw JSON string.
-**Fix**: Added `parseErrorResponse()` that extracts the `error` field from JSON responses.
+### LOW-3
+File: src/app/(protected)/editor/[id]/assistant-panel.tsx
+Lines: 239–246
+Issue: CoachingNoteView keys are index-based (`note-${i}`). If notes are dismissed and the array
+shrinks, React will reuse the same index for a different note, potentially causing stale animation
+or keying bugs. Since CoachingNote objects don't have stable IDs, consider keying on
+coachingNoteKey(note) (the normalized text+category string) instead.
 
-### Medium Issues (Fixed)
+---
 
-**6. `javascript:` URLs could pass `z.url()` in `SourceSuggestionSchema`** — Zod's `z.url()` accepts any valid URL scheme.
-**Fix**: Added `.refine()` requiring `http://` or `https://` scheme.
+### LOW-4
+File: src/infra/llm/coaching-adapter.ts
+Lines: 27
+Issue: max_tokens is set to 1024. With up to 10 claims × 2-sentence notes ≈ ~500 tokens of output,
+1024 is probably fine. The claim detection adapter uses 2048 — the comment there explains the
+generous headroom. A brief comment here would help future readers understand the sizing rationale.
 
-**7. No per-entry size limit on conversation history** — `ChatRequestSchema` limited array length but not entry content length.
-**Fix**: Added `.max(10_000)` on history entry content strings.
+---
 
-**8. React duplicate key risk** — Used `quotedText`, `question`, `url` as list keys which could collide.
-**Fix**: Switched to index-based keys (`comment-${i}`, `issue-${i}`, etc.).
+### LOW-5
+File: src/app/(protected)/editor/use-coaching-notes.ts
+Lines: 57–59
+Issue: dismissedKeysRef is cleared on every successful requestCoaching call. This means if a user
+dismisses a note and then the coaching refires with the same essay text, the note won't come back
+(because lastCoachedTextRef guards against re-requesting). But if the essay text changes (which is
+what triggers a new coaching run), dismissed notes from the prior session are cleared, which is the
+intended behavior per the comment. This logic is correct, but it's subtle — a test covering this
+scenario would be valuable.
 
-**9. `ReviewBlock` arrays not readonly** — Inconsistent with domain convention.
-**Fix**: Changed to `readonly InlineComment[]`, etc.
-
-**10. Unsafe sessionStorage cast** — `obj.messages as ChatMessage[]` without shape validation.
-**Fix**: Added per-message shape validation in `loadFromStorage`.
-
-### Remaining Low Priority (Not Fixed — Acceptable)
-
-- **Duplicated `MODEL` constant** between `review-adapter.ts` and `assistant-adapter.ts` — Both read from `LLM_MODEL` env var. Extract to shared config if it drifts.
-- **All tools exposed in chat mode** — Review tools available even in chat. Could gate by mode for cleaner UX, but the model handles this reasonably.
-- **Token growth from repeated `full_review`** — Each "Get Feedback" click adds the full essay context to history. Could truncate older review entries, but sessionStorage is ephemeral so this self-limits.
-- **Comment click E2E test missing** — The `onCommentClick` → ProseMirror selection integration is untested in E2E. Existing pattern from the review flow; can add later.
+---
 
 ## Positive Observations
+- Domain purity is perfect: coaching.ts, port.ts, and pipeline.ts have no framework imports, no
+  throw statements, no Date/Math.random/fetch/console calls. All return Result<T,E>.
+- The cascade design (claims done → trigger coaching) is clean and correctly guarded with isDraft.
+- validateCoachingResult provides meaningful defense-in-depth: it re-filters after the LLM responds,
+  so even if the model hallucinates a claim reference, it is silently dropped.
+- coachingNoteKey is exported and reused in the client hook for dismiss logic — consistent dedup key
+  across layers.
+- The fixture adapter's FIXTURE_RESULT uses the exact quotedTexts from the fixture claim adapter,
+  so E2E tests will see populated coaching notes without any coordination risk.
+- Route handler pattern is identical to the claims route: auth check, ownership check, LLM call,
+  error reporting. Clean and predictable.
+- Test coverage is solid: pipeline.test.ts covers all filter/dedup/cap edge cases. The contract test
+  covers the full pipeline from raw LLM text to validated domain objects.
+- TypeScript passes clean. Knip reports no dead exports.
 
-- **Clean architectural layering**: Domain layer has zero framework imports, all types use `readonly`, no `throw`, `Result<T, E>` throughout. ESLint domain purity rules pass.
-- **Pattern consistency**: Assistant adapter mirrors the battle-tested review adapter pattern (same iteration guard, tool result accumulation, Sentry spans).
-- **Fixture self-validation**: `fixture-assistant-adapter.ts` validates its own fixtures against authorship constraints at module load time — constraint changes break fixtures immediately.
-- **Abort controller correctly prevents race conditions** between concurrent SSE streams.
-- **Defense-in-depth authorship enforcement**: Constraints checked at adapter level (tool result rejection → model retry), pipeline level (stream filtering), and accumulated text level (ghostwriting detection).
-- **37 new tests** covering constraints (14), pipeline (13), and conversation operations (6), plus updated E2E with chat and research flows.
-
-## Verdict: PASS
-
-All automated checks pass. All critical, high, and medium-security issues identified in the review have been fixed and verified. The 4 remaining low-priority items are documented design notes, not defects.
-
-### Next Steps
-
-1. Commit the assistant chatbot changes
-2. Manual verification: `bun run dev` → open editor → "Coach" button opens chat → type question → get response → "Get Feedback" → full review renders in chat → check source suggestions
-3. Run E2E tests with `E2E_TESTING=true` once server is available
+## Questions
+- Is there a plan to add an integration/E2E test verifying that coaching notes appear in the
+  assistant panel after claim detection? The fixture adapter setup would support this.
+- For the notesByClaim key mismatch (MEDIUM-2): was the intent to rely entirely on
+  validateCoachingResult to guarantee exact string matches, making the Map lookup safe? If so, the
+  domain filter should normalize claimQuotedText to the original claim's casing before returning.
