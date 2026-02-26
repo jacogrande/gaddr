@@ -332,7 +332,7 @@ export function MinimalEditor() {
     setCommandPaletteQuery("");
     setCommandPaletteActiveIndex(0);
     window.setTimeout(() => {
-      editor?.commands.focus("end");
+      editor?.commands.focus();
     }, 0);
   }, [editor]);
 
