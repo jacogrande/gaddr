@@ -20,7 +20,7 @@ export default async function ProtectedLayout({
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Link href="/editor" className="text-lg font-semibold text-gray-900">
-            Microblogger
+            gaddr
           </Link>
           <SignOutButton />
         </div>

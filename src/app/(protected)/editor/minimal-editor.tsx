@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 
-const STORAGE_KEY = "microblogger:minimal-editor";
+const STORAGE_KEY = "gaddr:minimal-editor";
 
 function emptyDoc(): JSONContent {
   return { type: "doc", content: [{ type: "paragraph" }] };

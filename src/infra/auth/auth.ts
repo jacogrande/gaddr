@@ -20,7 +20,7 @@ if (process.env.GITHUB_CLIENT_ID && !process.env.GITHUB_CLIENT_SECRET) {
 }
 
 export const auth = betterAuth({
-  appName: "Microblogger",
+  appName: "gaddr",
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {

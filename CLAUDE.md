@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Microblogger is a "Micro-Essay Continuous Learning Studio" — a SaaS platform where users write short (200-800 word) evidence-backed micro-essays and receive LLM coaching (never ghostwriting). Users build a "thinking portfolio" with version history, claim-evidence linking, and structured peer feedback.
+gaddr is a "Micro-Essay Continuous Learning Studio" — a SaaS platform where users write short (200-800 word) evidence-backed micro-essays and receive LLM coaching (never ghostwriting). Users build a "thinking portfolio" with version history, claim-evidence linking, and structured peer feedback.
 
 ## Tech Stack
 

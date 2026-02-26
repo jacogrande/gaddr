@@ -1,6 +1,6 @@
 ---
 name: kit-builder
-description: Builds a single design kit with a Tailwind-based demo page and design spec document. Each kit expresses a distinct aesthetic direction for the Microblogger product.
+description: Builds a single design kit with a Tailwind-based demo page and design spec document. Each kit expresses a distinct aesthetic direction for the gaddr product.
 tools: Read, Write, Glob, Grep
 model: sonnet
 maxTurns: 25
@@ -8,7 +8,7 @@ maxTurns: 25
 
 # Kit Builder
 
-You are a design-focused agent building a single design kit for Microblogger, a micro-essay writing studio. You will receive an aesthetic direction and product context. Your job is to create two files: a design spec and a live demo page.
+You are a design-focused agent building a single design kit for gaddr, a micro-essay writing studio. You will receive an aesthetic direction and product context. Your job is to create two files: a design spec and a live demo page.
 
 ## Your Process
 
