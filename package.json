@@ -8,6 +8,9 @@
     "lint": "eslint src/ --no-error-on-unmatched-pattern",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun run lint",
+    "test:unit": "bun test test/unit",
+    "test:e2e": "E2E_BYPASS_AUTH=true playwright test",
+    "test:e2e:auth": "E2E_BYPASS_AUTH=false playwright test test/e2e/auth.pw.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -17,6 +20,7 @@
   "devDependencies": {
     "@eslint/js": "^9",
     "@next/eslint-plugin-next": "^16.1.6",
+    "@playwright/test": "^1.56.1",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

@@ -22,6 +22,7 @@ jobs:
     if: ${{ vars.E2E_ENABLED == 'true' }}
     env:
       E2E_TESTING: "true"
+      E2E_BYPASS_AUTH: "true"
       BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
       BETTER_AUTH_URL: http://localhost:8080
       DATABASE_URL: ${{ secrets.E2E_DATABASE_URL }}

@@ -8,6 +8,17 @@ import Underline from "@tiptap/extension-underline";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
 import { StandardHotkeys } from "./standard-hotkeys-extension";
+import {
+  collectExitingModifierKeys,
+  createModifierOrderingState,
+  eventMatchesHotkey,
+  filterCommandsByQuery,
+  listCommandHotkeyEntries,
+  mergeDisplayModifiers,
+  orderModifierBadges,
+  type DisplayModifierBadge,
+  type ModifierBadge,
+} from "../../../domain/editor/interaction-core";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
 const IDLE_SAVE_TIMEOUT_MS = 1200;
@@ -29,15 +40,6 @@ type SaveHandle =
       id: number;
     };
 
-type ModifierBadge = {
-  key: string;
-  label: string;
-};
-
-type DisplayModifierBadge = ModifierBadge & {
-  exiting: boolean;
-};
-
 const MODIFIER_BADGES: Array<{
   key: string;
   label: string;
@@ -51,34 +53,6 @@ const MODIFIER_BADGES: Array<{
   { key: "codeBlock", label: "{ }", isActive: (editor) => editor.isActive("codeBlock") },
   { key: "blockquote", label: "Q", isActive: (editor) => editor.isActive("blockquote") },
 ];
-
-function eventMatchesHotkey(event: KeyboardEvent, hotkey: string): boolean {
-  const parts = hotkey.split("-").map((part) => part.toLowerCase());
-  const requiresMod = parts.includes("mod");
-  const requiresShift = parts.includes("shift");
-  const requiresAlt = parts.includes("alt");
-  const baseKey = parts.find((part) => part !== "mod" && part !== "shift" && part !== "alt");
-
-  if (!baseKey) {
-    return false;
-  }
-
-  const hasMod = event.metaKey || event.ctrlKey;
-
-  if (hasMod !== requiresMod) {
-    return false;
-  }
-
-  if (event.shiftKey !== requiresShift) {
-    return false;
-  }
-
-  if (event.altKey !== requiresAlt) {
-    return false;
-  }
-
-  return event.key.toLowerCase() === baseKey;
-}
 
 function emptyDoc(): JSONContent {
   return { type: "doc", content: [{ type: "paragraph" }] };
@@ -112,8 +86,7 @@ export function MinimalEditor() {
   const [commandPaletteActiveIndex, setCommandPaletteActiveIndex] = useState(0);
   const [isMacLike, setIsMacLike] = useState(false);
   const activeModifiersSignatureRef = useRef("");
-  const modifierActivationOrderRef = useRef<Record<string, number>>({});
-  const modifierActivationCounterRef = useRef(0);
+  const modifierOrderingStateRef = useRef(createModifierOrderingState());
   const modifierExitTimersRef = useRef<Map<string, number>>(new Map());
   const pendingPersistRef = useRef(false);
   const saveHandleRef = useRef<SaveHandle | null>(null);
@@ -188,98 +161,30 @@ export function MinimalEditor() {
   }, [persistNow]);
 
   const filteredPaletteCommands = useMemo(() => {
-    const query = commandPaletteQuery.trim().toLowerCase();
-
-    if (!query) {
-      return EDITOR_MODIFIER_COMMANDS;
-    }
-
-    return EDITOR_MODIFIER_COMMANDS.map((command) => {
-      const label = command.label.toLowerCase();
-      const id = command.id.toLowerCase();
-      const hotkeys = command.hotkeys.join(" ").toLowerCase();
-
-      if (label.startsWith(query)) {
-        return { command, rank: 0 };
-      }
-
-      if (id.startsWith(query)) {
-        return { command, rank: 1 };
-      }
-
-      const labelIndex = label.indexOf(query);
-      if (labelIndex >= 0) {
-        return { command, rank: 10 + labelIndex };
-      }
-
-      const idIndex = id.indexOf(query);
-      if (idIndex >= 0) {
-        return { command, rank: 30 + idIndex };
-      }
-
-      const hotkeyIndex = hotkeys.indexOf(query);
-      if (hotkeyIndex >= 0) {
-        return { command, rank: 50 + hotkeyIndex };
-      }
-
-      return null;
-    })
-      .filter((entry): entry is { command: EditorCommand; rank: number } => entry !== null)
-      .sort((left, right) => {
-        if (left.rank !== right.rank) {
-          return left.rank - right.rank;
-        }
-
-        return left.command.label.localeCompare(right.command.label);
-      })
-      .map((entry) => entry.command);
+    return filterCommandsByQuery(EDITOR_MODIFIER_COMMANDS, commandPaletteQuery);
   }, [commandPaletteQuery]);
 
   const commandHotkeyEntries = useMemo(
-    () =>
-      EDITOR_MODIFIER_COMMANDS.flatMap((command) =>
-        command.hotkeys.map((hotkey) => ({
-          command,
-          hotkey,
-        })),
-      ),
+    () => listCommandHotkeyEntries(EDITOR_MODIFIER_COMMANDS),
     [],
   );
 
   const syncActiveModifiers = useCallback((current: TiptapEditor) => {
-    const next = current.isFocused ? MODIFIER_BADGES.filter((badge) => badge.isActive(current)) : [];
-    const activeKeys = new Set(next.map((badge) => badge.key));
-
-    for (const badge of next) {
-      if (modifierActivationOrderRef.current[badge.key] !== undefined) {
-        continue;
-      }
-
-      modifierActivationCounterRef.current += 1;
-      modifierActivationOrderRef.current[badge.key] = modifierActivationCounterRef.current;
-    }
-
-    modifierActivationOrderRef.current = Object.fromEntries(
-      Object.entries(modifierActivationOrderRef.current).filter(([key]) => activeKeys.has(key)),
-    );
-
-    if (next.length === 0) {
-      modifierActivationCounterRef.current = 0;
-    }
-
-    const ordered = [...next].sort((left, right) => {
-      const leftOrder = modifierActivationOrderRef.current[left.key] ?? Number.MAX_SAFE_INTEGER;
-      const rightOrder = modifierActivationOrderRef.current[right.key] ?? Number.MAX_SAFE_INTEGER;
-      return leftOrder - rightOrder;
-    });
-    const signature = ordered.map((badge) => badge.key).join("|");
+    const activeBadges = current.isFocused
+      ? MODIFIER_BADGES.filter((badge) => badge.isActive(current)).map((badge) => ({
+          key: badge.key,
+          label: badge.label,
+        }))
+      : [];
+    const { orderedBadges, signature, nextState } = orderModifierBadges(activeBadges, modifierOrderingStateRef.current);
+    modifierOrderingStateRef.current = nextState;
 
     if (signature === activeModifiersSignatureRef.current) {
       return;
     }
 
     activeModifiersSignatureRef.current = signature;
-    setActiveModifiers(ordered.map((badge) => ({ key: badge.key, label: badge.label })));
+    setActiveModifiers(orderedBadges);
   }, []);
 
   const formatHotkey = useCallback(
@@ -493,35 +398,12 @@ export function MinimalEditor() {
 
   useEffect(() => {
     setDisplayModifiers((previous) => {
-      const activeByKey = new Map(activeModifiers.map((modifier) => [modifier.key, modifier] as const));
-      const seen = new Set<string>();
-      const next: DisplayModifierBadge[] = [];
-
-      for (const modifier of previous) {
-        const active = activeByKey.get(modifier.key);
-        if (active) {
-          next.push({ ...active, exiting: false });
-          seen.add(modifier.key);
-          continue;
-        }
-
-        next.push({ ...modifier, exiting: true });
-      }
-
-      for (const modifier of activeModifiers) {
-        if (seen.has(modifier.key)) {
-          continue;
-        }
-
-        next.push({ ...modifier, exiting: false });
-      }
-
-      return next;
+      return mergeDisplayModifiers(previous, activeModifiers);
     });
   }, [activeModifiers]);
 
   useEffect(() => {
-    const exitingKeys = new Set(displayModifiers.filter((modifier) => modifier.exiting).map((modifier) => modifier.key));
+    const exitingKeys = new Set(collectExitingModifierKeys(displayModifiers));
 
     for (const key of exitingKeys) {
       if (modifierExitTimersRef.current.has(key)) {
@@ -578,7 +460,7 @@ export function MinimalEditor() {
   }
 
   return (
-    <div className="relative h-full">
+    <div className="relative h-full" data-testid="editor-shell">
       {displayModifiers.length > 0 ? (
         <div className="gaddr-modifier-stack pointer-events-none fixed left-4 top-4 z-50 flex flex-col gap-1.5">
           {displayModifiers.map((modifier, index) => (
@@ -613,6 +495,7 @@ export function MinimalEditor() {
             aria-modal="true"
             role="dialog"
             aria-label="Editor command palette"
+            data-testid="command-palette"
             className="gaddr-command-palette w-full max-w-xl rounded-xl border border-[#cfb187]/70 bg-[#f5e8d5]/95 p-2 shadow-[0_30px_70px_rgba(45,27,8,0.25)]"
           >
             <div className="border-b border-[#cfb187]/70 px-3 pb-2 pt-1 text-xs tracking-[0.14em] text-[#8d6b46]">
@@ -624,6 +507,7 @@ export function MinimalEditor() {
                 autoFocus
                 value={commandPaletteQuery}
                 placeholder="Search commands"
+                data-testid="command-palette-input"
                 className="w-full rounded-lg border border-[#c9ab81]/80 bg-[#f7ebda] px-3 py-2 text-sm text-[#5b4327] outline-none placeholder:text-[#9d7d57] focus:border-[#b68d59] focus:ring-2 focus:ring-[#b68d59]/30"
                 onChange={(event) => {
                   setCommandPaletteQuery(event.target.value);
@@ -641,6 +525,7 @@ export function MinimalEditor() {
                     <button
                       key={command.id}
                       type="button"
+                      data-testid={`command-${command.id}`}
                       className={`gaddr-command-row flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
                         commandIsSelected
                           ? "bg-[#e2c9a3]/95 text-[#452c14]"
@@ -676,7 +561,9 @@ export function MinimalEditor() {
           </div>
         </div>
       ) : null}
-      <EditorContent editor={editor} />
+      <div data-testid="editor-content">
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }

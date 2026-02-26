@@ -5,12 +5,20 @@ const SESSION_COOKIES = [
   "better-auth.session_token",
   "__Secure-better-auth.session_token",
 ];
+const E2E_BYPASS_AUTH_ENABLED =
+  process.env.E2E_TESTING === "true" &&
+  process.env.NODE_ENV !== "production" &&
+  process.env.E2E_BYPASS_AUTH === "true";
 
 function hasSessionCookie(request: NextRequest): boolean {
   return SESSION_COOKIES.some((name) => request.cookies.has(name));
 }
 
 export function middleware(request: NextRequest) {
+  if (E2E_BYPASS_AUTH_ENABLED) {
+    return NextResponse.next();
+  }
+
   const { pathname } = request.nextUrl;
   const isAuthenticated = hasSessionCookie(request);
 

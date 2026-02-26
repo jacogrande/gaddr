@@ -179,3 +179,7 @@ next-env.d.ts
 
 # Sentry
 .sentryclirc
+
+# Playwright
+playwright-report/
+test-results/
