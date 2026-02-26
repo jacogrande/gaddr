@@ -1,4 +1,3 @@
-import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -15,8 +14,8 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' https://lh3.googleusercontent.com data:",
               "font-src 'self'",
-              "connect-src 'self' https://*.ingest.sentry.io",
-              "frame-ancestors 'none'",
+              "connect-src 'self'",
+              "frame-ancestors 'none'"
             ].join("; "),
           },
           { key: "X-Frame-Options", value: "DENY" },
@@ -36,8 +35,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  silent: !process.env.CI,
-});
+export default nextConfig;

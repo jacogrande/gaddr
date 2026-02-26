@@ -7,21 +7,16 @@ export function SignOutButton() {
   const router = useRouter();
 
   const handleSignOut = () => {
-    void authClient.signOut().then(
-      () => {
-        router.push("/sign-in");
-      },
-      () => {
-        router.push("/sign-in");
-      },
-    );
+    void authClient.signOut().finally(() => {
+      router.push("/sign-in");
+    });
   };
 
   return (
     <button
       type="button"
       onClick={handleSignOut}
-      className="rounded-full border border-stone-200 bg-white px-4 py-1.5 text-sm font-medium text-stone-600 transition-all duration-200 hover:border-stone-300 hover:text-stone-900 hover:shadow-[2px_2px_0px_#2C2416]"
+      className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
     >
       Sign out
     </button>

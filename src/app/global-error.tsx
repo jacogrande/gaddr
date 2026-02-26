@@ -1,22 +1,11 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
-import { useEffect } from "react";
-
 export default function GlobalError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    // Skip client-side capture for server-originated errors (already reported via reportError)
-    if (!error.digest) {
-      Sentry.captureException(error);
-    }
-  }, [error]);
-
   return (
     <html lang="en">
       <head>
@@ -24,63 +13,44 @@ export default function GlobalError({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Something went wrong</title>
       </head>
-      {/* Inline styles required — Tailwind unavailable at global-error level.
-          Mirrors design-kit tokens: bg #FAFAF8, shadow 4px_4px_0_0_#000, brand-red #8B2500, text #57534e */}
       <body
         style={{
           display: "flex",
           minHeight: "100vh",
           alignItems: "center",
           justifyContent: "center",
-          background: "#FAFAF8",
           margin: 0,
+          background: "#f9fafb",
           fontFamily: "ui-sans-serif, system-ui, sans-serif",
         }}
       >
         <div
           style={{
-            maxWidth: "28rem",
             width: "100%",
+            maxWidth: "28rem",
+            border: "1px solid #d1d5db",
             borderRadius: "0.5rem",
-            border: "2px solid #000",
-            background: "#fff",
-            padding: "2rem",
+            background: "white",
+            padding: "1.5rem",
             textAlign: "center",
-            boxShadow: "4px 4px 0 0 #000",
           }}
         >
-          <h1
-            style={{
-              fontSize: "1.5rem",
-              fontWeight: 700,
-              letterSpacing: "-0.025em",
-              color: "#000",
-              fontFamily: "ui-serif, Georgia, serif",
-              margin: 0,
-            }}
-          >
-            Something went wrong
-          </h1>
-          <p style={{ marginTop: "0.75rem", fontSize: "0.875rem", color: "#57534e" }}>
-            An unexpected error occurred. Please try again.
+          <h1 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 600 }}>Something went wrong</h1>
+          <p style={{ marginTop: "0.75rem", color: "#4b5563", fontSize: "0.875rem" }}>
+            An unexpected error occurred.
           </p>
           <button
             type="button"
-            onClick={() => { reset(); }}
+            onClick={() => {
+              reset();
+            }}
             style={{
-              marginTop: "1.5rem",
-              borderRadius: "9999px",
-              border: "2px solid #000",
-              background: "#8B2500",
-              paddingLeft: "1.5rem",
-              paddingRight: "1.5rem",
-              paddingTop: "0.5rem",
-              paddingBottom: "0.5rem",
-              fontSize: "0.875rem",
-              fontWeight: 600,
-              color: "#fff",
+              marginTop: "1rem",
+              border: "1px solid #9ca3af",
+              borderRadius: "0.375rem",
+              background: "white",
+              padding: "0.5rem 0.75rem",
               cursor: "pointer",
-              boxShadow: "3px 3px 0 0 #000",
             }}
           >
             Try again

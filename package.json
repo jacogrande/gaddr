@@ -5,25 +5,16 @@
     "dev": "next dev --turbopack --port 8080",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src/ test/ --no-error-on-unmatched-pattern",
-    "lint:boundaries": "eslint src/ test/ --no-error-on-unmatched-pattern --rule '{\"no-restricted-imports\": \"error\"}' --quiet",
+    "lint": "eslint src/ --no-error-on-unmatched-pattern",
     "typecheck": "tsc --noEmit",
-    "knip": "knip",
-    "knip:strict": "knip --strict",
-    "check": "bun run typecheck && bun run lint && bun run knip",
-    "check:barrel-files": "find src/domain -name 'index.ts' -o -name 'index.tsx' | grep . && echo 'ERROR: Barrel files found in domain/' && exit 1 || echo 'No barrel files found.'",
+    "check": "bun run typecheck && bun run lint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "test": "bun test test/unit/",
-    "test:unit": "bun test test/unit/",
-    "test:contract": "bun test test/contract/",
-    "test:all": "bun test test/unit/ test/contract/",
-    "test:e2e": "bunx playwright test"
+    "test": "bun test"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.11.1",
     "@eslint/js": "^9",
     "@next/eslint-plugin-next": "^16.1.6",
     "@types/bun": "latest",
@@ -33,14 +24,11 @@
     "eslint": "^9",
     "eslint-plugin-import-x": "^4",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "knip": "^5.83.1",
-    "playwright": "^1.58.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
-    "@sentry/nextjs": "^10.38.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@tiptap/pm": "^3.19.0",
     "@tiptap/react": "^3.19.0",
@@ -51,8 +39,6 @@
     "postcss": "^8.5.6",
     "postgres": "^3.4.8",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "tailwindcss": "^4.1.18",
-    "zod": "^4.3.6"
+    "react-dom": "^19.2.4"
   }
 }
