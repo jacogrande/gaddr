@@ -108,6 +108,12 @@ All assistant responses must be **structured JSON** validated with Zod. Reject a
 - **Evidence over vibes:** every claim should link to evidence cards; citation mismatches are flagged
 - **Reward learning behaviors:** revision after feedback, adding evidence, addressing counterarguments — not volume or engagement
 
+## Editor Performance Constraint (P0)
+
+- Typing responsiveness is non-negotiable. The editor must feel instant under normal use and long documents.
+- Prefer asynchronous/background persistence (idle callbacks, delayed flushes, blur/unload flush) over synchronous writes during active typing.
+- Avoid per-keystroke expensive operations in the editing loop (full-document serialization, heavy decoration rebuilds, unnecessary re-renders).
+
 ## Reference Docs
 
 - `docs/architecture.md` — full architecture document, dependency rules, testing strategy, feature workflow
