@@ -73,6 +73,21 @@
   animation: gaddr-modifier-chip-out 145ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 
+.gaddr-command-palette {
+  animation: gaddr-command-palette-in 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes gaddr-command-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes gaddr-modifier-chip-in {
   from {
     opacity: 0;
@@ -101,6 +116,10 @@
   }
 
   .gaddr-modifier-chip--exit {
+    animation: none;
+  }
+
+  .gaddr-command-palette {
     animation: none;
   }
 }

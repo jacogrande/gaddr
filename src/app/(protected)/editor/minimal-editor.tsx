@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
+import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
 import { StandardHotkeys } from "./standard-hotkeys-extension";
 
@@ -51,6 +52,34 @@ const MODIFIER_BADGES: Array<{
   { key: "blockquote", label: "Q", isActive: (editor) => editor.isActive("blockquote") },
 ];
 
+function eventMatchesHotkey(event: KeyboardEvent, hotkey: string): boolean {
+  const parts = hotkey.split("-").map((part) => part.toLowerCase());
+  const requiresMod = parts.includes("mod");
+  const requiresShift = parts.includes("shift");
+  const requiresAlt = parts.includes("alt");
+  const baseKey = parts.find((part) => part !== "mod" && part !== "shift" && part !== "alt");
+
+  if (!baseKey) {
+    return false;
+  }
+
+  const hasMod = event.metaKey || event.ctrlKey;
+
+  if (hasMod !== requiresMod) {
+    return false;
+  }
+
+  if (event.shiftKey !== requiresShift) {
+    return false;
+  }
+
+  if (event.altKey !== requiresAlt) {
+    return false;
+  }
+
+  return event.key.toLowerCase() === baseKey;
+}
+
 function emptyDoc(): JSONContent {
   return { type: "doc", content: [{ type: "paragraph" }] };
 }
@@ -78,6 +107,10 @@ function loadDoc(): JSONContent {
 export function MinimalEditor() {
   const [activeModifiers, setActiveModifiers] = useState<ModifierBadge[]>([]);
   const [displayModifiers, setDisplayModifiers] = useState<DisplayModifierBadge[]>([]);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+  const [commandPaletteActiveIndex, setCommandPaletteActiveIndex] = useState(0);
+  const [isMacLike, setIsMacLike] = useState(false);
   const activeModifiersSignatureRef = useRef("");
   const modifierActivationOrderRef = useRef<Record<string, number>>({});
   const modifierActivationCounterRef = useRef(0);
@@ -154,6 +187,65 @@ export function MinimalEditor() {
     saveHandleRef.current = { kind: "timeout", id };
   }, [persistNow]);
 
+  const filteredPaletteCommands = useMemo(() => {
+    const query = commandPaletteQuery.trim().toLowerCase();
+
+    if (!query) {
+      return EDITOR_MODIFIER_COMMANDS;
+    }
+
+    return EDITOR_MODIFIER_COMMANDS.map((command) => {
+      const label = command.label.toLowerCase();
+      const id = command.id.toLowerCase();
+      const hotkeys = command.hotkeys.join(" ").toLowerCase();
+
+      if (label.startsWith(query)) {
+        return { command, rank: 0 };
+      }
+
+      if (id.startsWith(query)) {
+        return { command, rank: 1 };
+      }
+
+      const labelIndex = label.indexOf(query);
+      if (labelIndex >= 0) {
+        return { command, rank: 10 + labelIndex };
+      }
+
+      const idIndex = id.indexOf(query);
+      if (idIndex >= 0) {
+        return { command, rank: 30 + idIndex };
+      }
+
+      const hotkeyIndex = hotkeys.indexOf(query);
+      if (hotkeyIndex >= 0) {
+        return { command, rank: 50 + hotkeyIndex };
+      }
+
+      return null;
+    })
+      .filter((entry): entry is { command: EditorCommand; rank: number } => entry !== null)
+      .sort((left, right) => {
+        if (left.rank !== right.rank) {
+          return left.rank - right.rank;
+        }
+
+        return left.command.label.localeCompare(right.command.label);
+      })
+      .map((entry) => entry.command);
+  }, [commandPaletteQuery]);
+
+  const commandHotkeyEntries = useMemo(
+    () =>
+      EDITOR_MODIFIER_COMMANDS.flatMap((command) =>
+        command.hotkeys.map((hotkey) => ({
+          command,
+          hotkey,
+        })),
+      ),
+    [],
+  );
+
   const syncActiveModifiers = useCallback((current: TiptapEditor) => {
     const next = current.isFocused ? MODIFIER_BADGES.filter((badge) => badge.isActive(current)) : [];
     const activeKeys = new Set(next.map((badge) => badge.key));
@@ -190,6 +282,26 @@ export function MinimalEditor() {
     setActiveModifiers(ordered.map((badge) => ({ key: badge.key, label: badge.label })));
   }, []);
 
+  const formatHotkey = useCallback(
+    (hotkey: string) => {
+      const chunks = hotkey.split("-").map((chunk) => {
+        switch (chunk) {
+          case "Mod":
+            return isMacLike ? "⌘" : "Ctrl";
+          case "Shift":
+            return isMacLike ? "⇧" : "Shift";
+          case "Alt":
+            return isMacLike ? "⌥" : "Alt";
+          default:
+            return chunk.length === 1 ? chunk.toUpperCase() : chunk;
+        }
+      });
+
+      return isMacLike ? chunks.join("") : chunks.join("+");
+    },
+    [isMacLike],
+  );
+
   const editor = useEditor({
     immediatelyRender: false,
     autofocus: "end",
@@ -209,11 +321,152 @@ export function MinimalEditor() {
     },
   });
 
+  const openCommandPalette = useCallback(() => {
+    setCommandPaletteQuery("");
+    setCommandPaletteActiveIndex(0);
+    setIsCommandPaletteOpen(true);
+  }, []);
+
+  const closeCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen(false);
+    setCommandPaletteQuery("");
+    setCommandPaletteActiveIndex(0);
+    window.setTimeout(() => {
+      editor?.commands.focus("end");
+    }, 0);
+  }, [editor]);
+
+  const runPaletteCommand = useCallback(
+    (command: EditorCommand) => {
+      if (!editor) {
+        return;
+      }
+
+      command.run(editor);
+      syncActiveModifiers(editor);
+      closeCommandPalette();
+    },
+    [closeCommandPalette, editor, syncActiveModifiers],
+  );
+
+  const runSelectedPaletteCommand = useCallback(() => {
+    const command = filteredPaletteCommands[commandPaletteActiveIndex] ?? filteredPaletteCommands[0];
+    if (!command) {
+      return;
+    }
+
+    runPaletteCommand(command);
+  }, [commandPaletteActiveIndex, filteredPaletteCommands, runPaletteCommand]);
+
   useEffect(() => {
     if (editor && !editor.isFocused) {
       editor.commands.focus("end");
     }
   }, [editor]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined") {
+      return;
+    }
+
+    setIsMacLike(/Mac|iPhone|iPad|iPod/.test(navigator.platform));
+  }, []);
+
+  useEffect(() => {
+    setCommandPaletteActiveIndex((previous) => {
+      if (filteredPaletteCommands.length === 0) {
+        return 0;
+      }
+
+      return previous >= filteredPaletteCommands.length ? filteredPaletteCommands.length - 1 : previous;
+    });
+  }, [filteredPaletteCommands.length]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (isCommandPaletteOpen) {
+          closeCommandPalette();
+        } else {
+          openCommandPalette();
+        }
+        return;
+      }
+
+      if (!isCommandPaletteOpen) {
+        return;
+      }
+
+      const matchedHotkeyEntry = commandHotkeyEntries.find((entry) => eventMatchesHotkey(event, entry.hotkey));
+      if (matchedHotkeyEntry) {
+        event.preventDefault();
+        runPaletteCommand(matchedHotkeyEntry.command);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeCommandPalette();
+        return;
+      }
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setCommandPaletteActiveIndex((previous) => {
+          if (filteredPaletteCommands.length === 0) {
+            return 0;
+          }
+
+          return (previous + 1) % filteredPaletteCommands.length;
+        });
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setCommandPaletteActiveIndex((previous) => {
+          if (filteredPaletteCommands.length === 0) {
+            return 0;
+          }
+
+          return previous <= 0 ? filteredPaletteCommands.length - 1 : previous - 1;
+        });
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runSelectedPaletteCommand();
+        return;
+      }
+
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const firstCommand = filteredPaletteCommands[0];
+        if (!firstCommand) {
+          return;
+        }
+
+        setCommandPaletteQuery(firstCommand.label);
+        setCommandPaletteActiveIndex(0);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown, true);
+    };
+  }, [
+    commandHotkeyEntries,
+    closeCommandPalette,
+    filteredPaletteCommands,
+    isCommandPaletteOpen,
+    openCommandPalette,
+    runPaletteCommand,
+    runSelectedPaletteCommand,
+  ]);
 
   useEffect(() => {
     if (!editor) {
@@ -345,6 +598,82 @@ export function MinimalEditor() {
               {modifier.label}
             </div>
           ))}
+        </div>
+      ) : null}
+      {isCommandPaletteOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-start justify-center bg-[#2f2218]/24 px-4 pt-14 backdrop-blur-[2px] sm:pt-20"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeCommandPalette();
+            }
+          }}
+        >
+          <div
+            aria-modal="true"
+            role="dialog"
+            aria-label="Editor command palette"
+            className="gaddr-command-palette w-full max-w-xl rounded-xl border border-[#cfb187]/70 bg-[#f5e8d5]/95 p-2 shadow-[0_30px_70px_rgba(45,27,8,0.25)]"
+          >
+            <div className="border-b border-[#cfb187]/70 px-3 pb-2 pt-1 text-xs tracking-[0.14em] text-[#8d6b46]">
+              MODIFIERS
+            </div>
+            <div className="px-2 pb-1 pt-2">
+              <input
+                type="text"
+                autoFocus
+                value={commandPaletteQuery}
+                placeholder="Search commands"
+                className="w-full rounded-lg border border-[#c9ab81]/80 bg-[#f7ebda] px-3 py-2 text-sm text-[#5b4327] outline-none placeholder:text-[#9d7d57] focus:border-[#b68d59] focus:ring-2 focus:ring-[#b68d59]/30"
+                onChange={(event) => {
+                  setCommandPaletteQuery(event.target.value);
+                  setCommandPaletteActiveIndex(0);
+                }}
+              />
+            </div>
+            <div className="max-h-[min(70vh,34rem)] overflow-y-auto py-1">
+              {filteredPaletteCommands.length > 0 ? (
+                filteredPaletteCommands.map((command, index) => {
+                  const commandIsActive = command.isActive?.(editor) ?? false;
+                  const commandIsSelected = index === commandPaletteActiveIndex;
+
+                  return (
+                    <button
+                      key={command.id}
+                      type="button"
+                      className={`gaddr-command-row flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
+                        commandIsSelected
+                          ? "bg-[#e2c9a3]/95 text-[#452c14]"
+                          : commandIsActive
+                            ? "bg-[#ead7b8]/95 text-[#4a331a]"
+                            : "text-[#5c4328] hover:bg-[#efdec3]/85 active:bg-[#e6cfab]"
+                      }`}
+                      onMouseEnter={() => {
+                        setCommandPaletteActiveIndex(index);
+                      }}
+                      onClick={() => {
+                        runPaletteCommand(command);
+                      }}
+                    >
+                      <span className="text-sm font-medium tracking-[0.01em]">{command.label}</span>
+                      <span className="ml-4 flex items-center gap-1.5">
+                        {command.hotkeys.map((hotkey) => (
+                          <kbd
+                            key={hotkey}
+                            className="rounded border border-[#c4a476]/75 bg-[#f2e4cf]/92 px-1.5 py-0.5 text-[0.66rem] font-semibold tracking-[0.08em] text-[#87623c]"
+                          >
+                            {formatHotkey(hotkey)}
+                          </kbd>
+                        ))}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="px-3 py-6 text-center text-sm text-[#8f6d48]">No matching commands</div>
+              )}
+            </div>
+          </div>
         </div>
       ) : null}
       <EditorContent editor={editor} />
