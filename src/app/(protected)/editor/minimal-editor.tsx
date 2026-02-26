@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { BrandedCaret } from "./branded-caret-extension";
+import { GlyphInputRules } from "./glyph-input-rules-extension";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
 
@@ -31,33 +33,68 @@ function loadDoc(): JSONContent {
 }
 
 export function MinimalEditor() {
+  const persistTimerRef = useRef<number | null>(null);
+
+  const persistNow = (current: { getJSON: () => JSONContent }) => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(current.getJSON()));
+    } catch {
+      // Ignore storage errors.
+    }
+  };
+
+  const queuePersist = (current: { getJSON: () => JSONContent }) => {
+    if (persistTimerRef.current !== null) {
+      window.clearTimeout(persistTimerRef.current);
+    }
+
+    persistTimerRef.current = window.setTimeout(() => {
+      persistNow(current);
+      persistTimerRef.current = null;
+    }, 250);
+  };
+
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [StarterKit],
+    autofocus: "end",
+    extensions: [StarterKit, BrandedCaret, GlyphInputRules],
     content: loadDoc(),
     editorProps: {
       attributes: {
         class:
-          "tiptap rounded border border-gray-300 bg-white px-4 py-3 text-base leading-7 text-gray-900 focus:outline-none",
+          "tiptap h-full min-h-[calc(100vh-8.5rem)] w-full bg-transparent text-lg leading-8 text-[#3b2f1f] focus:outline-none",
       },
     },
     onUpdate: ({ editor: current }) => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(current.getJSON()));
-      } catch {
-        // Ignore storage errors.
+      queuePersist(current);
+    },
+    onBlur: ({ editor: current }) => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
       }
+      persistNow(current);
     },
   });
 
   useEffect(() => {
+    if (editor && !editor.isFocused) {
+      editor.commands.focus("end");
+    }
+  }, [editor]);
+
+  useEffect(() => {
     return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
       editor?.destroy();
     };
   }, [editor]);
 
   if (!editor) {
-    return <div className="rounded border border-gray-300 bg-white px-4 py-3 text-sm text-gray-500">Loading editor...</div>;
+    return <div className="min-h-[calc(100vh-8.5rem)]" />;
   }
 
   return <EditorContent editor={editor} />;

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 .tiptap {
-  min-height: 24rem;
+  caret-color: transparent;
   outline: none;
 }
 
@@ -40,10 +40,50 @@
   padding: 0.1rem 0.3rem;
 }
 
-.tiptap p.is-editor-empty:first-child::before {
-  content: "Start writing...";
-  color: #9ca3af;
-  float: left;
-  height: 0;
+.gaddr-caret {
   pointer-events: none;
+  display: inline-block;
+  margin-left: -1px;
+  width: 3px;
+  height: 1.25em;
+  vertical-align: text-bottom;
+  background: currentColor;
+  border-radius: 2px;
+  opacity: 0;
+  animation: gaddr-caret-blink 1.08s step-end infinite;
+}
+
+.tiptap.ProseMirror-focused .gaddr-caret {
+  opacity: 1;
+}
+
+@keyframes gaddr-caret-blink {
+  0% {
+    opacity: 1;
+  }
+  49% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gaddr-caret {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .tiptap {
+    caret-color: CanvasText;
+  }
+
+  .gaddr-caret {
+    display: none;
+  }
 }
