@@ -88,6 +88,28 @@
   padding: 0;
 }
 
+.gaddr-gadfly-highlight {
+  border-bottom: 2px solid color-mix(in srgb, #c08f59 72%, transparent);
+  background-color: color-mix(in srgb, #efd9ba 52%, transparent);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.gaddr-gadfly-highlight:hover {
+  background-color: color-mix(in srgb, #efd9ba 70%, transparent);
+}
+
+.gaddr-gadfly-highlight--low {
+  border-bottom-color: color-mix(in srgb, #b49368 68%, transparent);
+}
+
+.gaddr-gadfly-highlight--medium {
+  border-bottom-color: color-mix(in srgb, #b17845 76%, transparent);
+}
+
+.gaddr-gadfly-highlight--high {
+  border-bottom-color: color-mix(in srgb, #99542f 82%, transparent);
+}
+
 .gaddr-modifier-stack {
   will-change: transform, opacity;
 }

@@ -72,7 +72,7 @@ src/
       essay.schemas.ts       # Zod schemas for essay validation
 
     review/
-      review.ts              # CoachReview type, rubric structure
+      review.ts              # GadflyReview type, rubric structure
       review.pipeline.ts     # Composed pipeline: validate → call LLM → enforce constraints → structure result
       constraints.ts         # No-ghostwriting enforcement (pure validation)
       review.schemas.ts      # Zod schemas for review request/response
@@ -93,7 +93,7 @@ src/
     llm/
       client.ts              # LLM API client
       prompts/
-        review.ts            # Prompt templates for coach review
+        review.ts            # Prompt templates for gadfly review
       review.adapter.ts      # Implements review.port
 
     auth/
@@ -255,7 +255,7 @@ Client components manage UI state (form inputs, modals, loading states). They ca
 
 **What is tested:**
 
-- No-ghostwriting constraint: valid coaching artifacts accepted, replacement prose rejected. Property-based tests with `fast-check` to verify the constraint holds against thousands of generated response shapes.
+- No-ghostwriting constraint: valid gadfly artifacts accepted, replacement prose rejected. Property-based tests with `fast-check` to verify the constraint holds against thousands of generated response shapes.
 - Essay state transitions: every valid transition succeeds, every invalid transition returns the correct error.
 - Review pipeline: each step tested individually with synthetic data. Composed pipeline tested with known inputs and expected outputs.
 - Zod schemas: edge cases, missing fields, malformed data. Especially the review response schema — this is the contract that enforces the authorship rule.
@@ -284,7 +284,7 @@ Client components manage UI state (form inputs, modals, loading states). They ca
 e2e/
   auth.spec.ts              # OAuth sign-in, session persistence, sign-out, unauthorized redirects
   write-and-publish.spec.ts # Create draft → edit content → publish → verify public page
-  coach-review.spec.ts      # Write essay → request review → coaching feedback displayed → resolve issues
+  gadfly-review.spec.ts     # Write essay → request review → gadfly feedback displayed → resolve issues
   evidence.spec.ts          # Create evidence card → attach to claim → verify on published view
   revision.spec.ts          # Publish → edit → new version → version history visible
   error-states.spec.ts      # LLM timeout → partial feedback shown; validation failure → clear error
@@ -295,7 +295,7 @@ e2e/
 - Auth works end-to-end (Better Auth + middleware + session + redirect)
 - Server Actions wire correctly to domain logic and database
 - Forms validate, submit, and display results
-- The review endpoint returns coaching feedback and the UI renders it
+- The review endpoint returns gadfly feedback and the UI renders it
 - Error states surface correctly to the user
 - Accessibility (axe-core integration in Playwright for automated a11y audits)
 - Visual regression (Playwright screenshot comparison for editor and publish pages)
@@ -308,7 +308,7 @@ e2e/
 
 **Not run on every commit.** These hit a real LLM API, cost money, and are slow. Run nightly on a schedule and on-demand before releases.
 
-**What they catch:** prompt drift, model behavior changes, schema-compliant but semantically wrong responses (e.g., coaching artifacts that technically pass Zod but contain thinly disguised replacement prose).
+**What they catch:** prompt drift, model behavior changes, schema-compliant but semantically wrong responses (e.g., gadfly artifacts that technically pass Zod but contain thinly disguised replacement prose).
 
 ### 9.4 Forbidden Testing Practices
 

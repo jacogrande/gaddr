@@ -40,6 +40,15 @@ test.describe("editor workflow", () => {
     await page.keyboard.type("Quoted inside blockquote");
     await expect(page.locator(".tiptap")).toContainText("Quoted inside blockquote");
 
+    await page.keyboard.type(" This should trigger gadfly analysis.");
+    await page.waitForTimeout(900);
+
+    await page.keyboard.press("Control+Shift+D");
+    const debugPane = page.getByTestId("gadfly-debug-pane");
+    await expect(debugPane).toBeVisible();
+    await expect(debugPane).toContainText("GADFLY DEBUG");
+    await expect(debugPane).toContainText("Request JSON");
+
     const screenshotPath = testInfo.outputPath("editor-workflow.png");
     await page.screenshot({ path: screenshotPath, fullPage: true });
     await testInfo.attach("editor-workflow", {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -8,6 +8,8 @@ import Underline from "@tiptap/extension-underline";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
 import { StandardHotkeys } from "./standard-hotkeys-extension";
+import { GadflyHighlights } from "./gadfly-highlights-extension";
+import { useGadfly } from "./use-gadfly";
 import {
   collectExitingModifierKeys,
   createModifierOrderingState,
@@ -20,14 +22,17 @@ import {
   type DisplayModifierBadge,
   type ModifierBadge,
 } from "../../../domain/editor/interaction-core";
+import type { GadflyAnnotation } from "../../../domain/gadfly/types";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
+const GADFLY_NOTE_ID = "gaddr:editor:phase1";
 const IDLE_SAVE_TIMEOUT_MS = 1200;
 const MODIFIER_EXIT_ANIMATION_MS = 180;
 const SLASH_MENU_WIDTH_PX = 360;
 const SLASH_MENU_VIEWPORT_MARGIN_PX = 12;
 const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
 const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
+const DEV_DEBUG_ENABLED = process.env.NODE_ENV !== "production";
 
 type IdleRequestCallbackLike = (deadline: { readonly didTimeout: boolean; timeRemaining: () => number }) => void;
 type IdleSchedulerWindow = Window &
@@ -52,6 +57,20 @@ type SlashMenuState = {
   top: number;
   left: number;
 };
+
+type HoveredGadflyState = {
+  annotation: GadflyAnnotation;
+  x: number;
+  y: number;
+};
+
+function formatDebugJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
 
 const MODIFIER_BADGES: Array<{
   key: string;
@@ -100,6 +119,8 @@ export function MinimalEditor() {
   const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null);
   const [slashMenuActiveIndex, setSlashMenuActiveIndex] = useState(0);
   const [isMacLike, setIsMacLike] = useState(false);
+  const [isDebugPaneOpen, setIsDebugPaneOpen] = useState(false);
+  const [hoveredGadfly, setHoveredGadfly] = useState<HoveredGadflyState | null>(null);
   const activeModifiersSignatureRef = useRef("");
   const modifierOrderingStateRef = useRef(createModifierOrderingState());
   const modifierExitTimersRef = useRef<Map<string, number>>(new Map());
@@ -232,7 +253,7 @@ export function MinimalEditor() {
   const editor = useEditor({
     immediatelyRender: false,
     autofocus: "end",
-    extensions: [StarterKit, Underline, GlyphInputRules, StandardHotkeys],
+    extensions: [StarterKit, Underline, GlyphInputRules, StandardHotkeys, GadflyHighlights],
     content: loadDoc(),
     editorProps: {
       attributes: {
@@ -247,6 +268,25 @@ export function MinimalEditor() {
       flushPersist();
     },
   });
+
+  const {
+    annotations: gadflyAnnotations,
+    analyzeError,
+    clearDebugEntries,
+    debugEntries,
+    handleTransaction,
+    isAnalyzing,
+  } = useGadfly(editor, {
+    noteId: GADFLY_NOTE_ID,
+  });
+
+  const gadflyAnnotationLookup = useMemo(() => {
+    const entries: Array<[string, GadflyAnnotation]> = [];
+    for (const annotation of gadflyAnnotations) {
+      entries.push([annotation.id, annotation]);
+    }
+    return new Map(entries);
+  }, [gadflyAnnotations]);
 
   const closeSlashMenu = useCallback(() => {
     slashMenuSignatureRef.current = "";
@@ -448,9 +488,51 @@ export function MinimalEditor() {
   }, [filteredSlashCommands.length]);
 
   useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    editor.commands.setGadflyAnnotations(gadflyAnnotations);
+  }, [editor, gadflyAnnotations]);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const onTransaction = ({ transaction }: { transaction: Parameters<typeof handleTransaction>[0] }) => {
+      handleTransaction(transaction);
+    };
+
+    editor.on("transaction", onTransaction);
+
+    return () => {
+      editor.off("transaction", onTransaction);
+    };
+  }, [editor, handleTransaction]);
+
+  useEffect(() => {
+    if (!hoveredGadfly) {
+      return;
+    }
+
+    if (gadflyAnnotationLookup.has(hoveredGadfly.annotation.id)) {
+      return;
+    }
+
+    setHoveredGadfly(null);
+  }, [gadflyAnnotationLookup, hoveredGadfly]);
+
+  useEffect(() => {
     const isSlashMenuOpen = slashMenuState !== null;
 
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (DEV_DEBUG_ENABLED && (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        setIsDebugPaneOpen((current) => !current);
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         if (isCommandPaletteOpen) {
@@ -687,12 +769,80 @@ export function MinimalEditor() {
     };
   }, [editor, flushPersist]);
 
+  const handleEditorMouseMove = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const elementWithId = target.closest("[data-gadfly-id]");
+      if (!elementWithId) {
+        setHoveredGadfly((previous) => (previous ? null : previous));
+        return;
+      }
+
+      const annotationId = elementWithId.getAttribute("data-gadfly-id");
+      if (!annotationId) {
+        setHoveredGadfly((previous) => (previous ? null : previous));
+        return;
+      }
+
+      const annotation = gadflyAnnotationLookup.get(annotationId);
+      if (!annotation) {
+        setHoveredGadfly((previous) => (previous ? null : previous));
+        return;
+      }
+
+      setHoveredGadfly((previous) => {
+        if (
+          previous &&
+          previous.annotation.id === annotation.id &&
+          Math.abs(previous.x - event.clientX) < 3 &&
+          Math.abs(previous.y - event.clientY) < 3
+        ) {
+          return previous;
+        }
+
+        return {
+          annotation,
+          x: event.clientX,
+          y: event.clientY,
+        };
+      });
+    },
+    [gadflyAnnotationLookup],
+  );
+
+  const hoveredGadflyStyle = useMemo(() => {
+    if (!hoveredGadfly) {
+      return undefined;
+    }
+
+    const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
+    const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
+    const left = Math.min(hoveredGadfly.x + 14, Math.max(12, viewportWidth - 320));
+    const top = Math.min(hoveredGadfly.y + 14, Math.max(12, viewportHeight - 240));
+
+    return {
+      left: `${String(left)}px`,
+      top: `${String(top)}px`,
+    } satisfies CSSProperties;
+  }, [hoveredGadfly]);
+
   if (!editor) {
     return <div className="min-h-[calc(100vh-8.5rem)]" />;
   }
 
   return (
-    <div className="relative h-full" data-testid="editor-shell">
+    <div
+      className="relative h-full"
+      data-testid="editor-shell"
+      onMouseMove={handleEditorMouseMove}
+      onMouseLeave={() => {
+        setHoveredGadfly(null);
+      }}
+    >
       {displayModifiers.length > 0 ? (
         <div className="gaddr-modifier-stack pointer-events-none fixed left-4 top-4 z-50 flex flex-col gap-1.5">
           {displayModifiers.map((modifier, index) => (
@@ -714,6 +864,9 @@ export function MinimalEditor() {
           ))}
         </div>
       ) : null}
+      <div className="pointer-events-none fixed right-4 top-4 z-[48] hidden rounded-md border border-[#d8c1a1]/75 bg-[#f5e8d5]/92 px-2.5 py-1 text-[0.64rem] font-semibold tracking-[0.09em] text-[#7b5a34] sm:block">
+        {isAnalyzing ? "GADFLY ANALYZING" : "GADFLY IDLE"}
+      </div>
       {slashMenuState && !isCommandPaletteOpen ? (
         <div
           aria-label="Editor slash menu"
@@ -856,6 +1009,107 @@ export function MinimalEditor() {
             </div>
           </div>
         </div>
+      ) : null}
+      {analyzeError ? (
+        <div className="pointer-events-none fixed bottom-4 left-1/2 z-[59] w-[min(90vw,36rem)] -translate-x-1/2 rounded-lg border border-[#cc9a6c]/70 bg-[#f4e3cf]/96 px-3 py-2 text-xs text-[#6c4a2b] shadow-[0_10px_28px_rgba(62,38,17,0.18)]">
+          Gadfly unavailable: {analyzeError}
+        </div>
+      ) : null}
+      {hoveredGadfly ? (
+        <aside
+          className="gaddr-gadfly-card pointer-events-none fixed z-[57] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-lg border border-[#d5bb98]/80 bg-[#f6ebdc]/96 p-3 shadow-[0_16px_36px_rgba(43,27,11,0.2)] backdrop-blur-[1px]"
+          style={hoveredGadflyStyle}
+        >
+          <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[#8f6a45]">
+            {hoveredGadfly.annotation.category.toUpperCase()} · {hoveredGadfly.annotation.severity.toUpperCase()}
+          </div>
+          <p className="mt-1.5 text-xs leading-5 text-[#5a4127]">{hoveredGadfly.annotation.explanation}</p>
+          <p className="mt-1.5 text-[0.7rem] leading-4 text-[#7b5f3d]">Rule: {hoveredGadfly.annotation.rule}</p>
+          <p className="mt-2 text-xs italic leading-5 text-[#4f3820]">{hoveredGadfly.annotation.question}</p>
+        </aside>
+      ) : null}
+      {DEV_DEBUG_ENABLED ? (
+        <aside
+          aria-label="Gadfly debug pane"
+          data-testid="gadfly-debug-pane"
+          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[62] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[#d3b58d]/70 bg-[#f6ead8]/95 shadow-[0_24px_48px_rgba(45,27,8,0.22)] backdrop-blur-[2px] transition-all duration-200 ${
+            isDebugPaneOpen ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[105%] opacity-0"
+          }`}
+        >
+          <header className="flex items-center justify-between border-b border-[#d6bb98]/80 px-3 py-2">
+            <div className="text-[0.68rem] font-semibold tracking-[0.12em] text-[#7f5c37]">GADFLY DEBUG</div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="rounded border border-[#caa67d]/80 bg-[#f4e5cf]/90 px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em] text-[#7e5a35] hover:bg-[#efdcc0]"
+                onClick={clearDebugEntries}
+              >
+                CLEAR
+              </button>
+              <button
+                type="button"
+                className="rounded border border-[#caa67d]/80 bg-[#f4e5cf]/90 px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em] text-[#7e5a35] hover:bg-[#efdcc0]"
+                onClick={() => {
+                  setIsDebugPaneOpen(false);
+                }}
+              >
+                CLOSE
+              </button>
+            </div>
+          </header>
+          <div className="border-b border-[#d6bb98]/80 px-3 py-2 text-[0.66rem] tracking-[0.09em] text-[#86643f]">
+            {isAnalyzing ? "Status: analyzing" : "Status: idle"} · {debugEntries.length} entries
+          </div>
+          <div className="h-[calc(100%-5.2rem)] overflow-y-auto px-2 pb-2 pt-2">
+            {debugEntries.length === 0 ? (
+              <div className="rounded border border-dashed border-[#d8be9a]/80 px-3 py-4 text-xs text-[#8b6a46]">
+                No requests yet. Toggle with Cmd/Ctrl+Shift+D.
+              </div>
+            ) : (
+              [...debugEntries].reverse().map((entry) => (
+                <article
+                  key={entry.id}
+                  className="mb-2 rounded-lg border border-[#d7bc98]/80 bg-[#f8eddc]/90 p-2 text-[0.67rem] text-[#684a2b]"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold tracking-[0.08em] uppercase">
+                      {entry.status} · {entry.id}
+                    </span>
+                    <span>{new Date(entry.startedAtIso).toLocaleTimeString()}</span>
+                  </div>
+                  <div className="mt-1 text-[0.62rem] text-[#866443]">
+                    HTTP {entry.responseStatus ?? "-"} · {entry.usage ? `${String(entry.usage.totalTokens)} tokens` : "0 tokens"} ·{" "}
+                    {entry.latencyMs !== undefined ? `${String(entry.latencyMs)}ms` : "-"}
+                  </div>
+                  {entry.error ? <div className="mt-1 text-[#8c3f26]">{entry.error}</div> : null}
+                  <details className="mt-1">
+                    <summary className="cursor-pointer select-none text-[#7b5936]">Request JSON</summary>
+                    <pre className="mt-1 max-h-36 overflow-auto rounded border border-[#dbc4a3]/80 bg-[#f1e1cb]/90 p-2 text-[0.62rem] leading-4 text-[#5f4328]">
+                      {formatDebugJson(entry.request)}
+                    </pre>
+                  </details>
+                  <details className="mt-1">
+                    <summary className="cursor-pointer select-none text-[#7b5936]">Response JSON</summary>
+                    <pre className="mt-1 max-h-36 overflow-auto rounded border border-[#dbc4a3]/80 bg-[#f1e1cb]/90 p-2 text-[0.62rem] leading-4 text-[#5f4328]">
+                      {formatDebugJson(entry.responseBody)}
+                    </pre>
+                  </details>
+                </article>
+              ))
+            )}
+          </div>
+        </aside>
+      ) : null}
+      {DEV_DEBUG_ENABLED && !isDebugPaneOpen ? (
+        <button
+          type="button"
+          className="fixed bottom-4 right-4 z-[61] rounded-md border border-[#c8a877]/70 bg-[#f3e5cf]/92 px-2 py-1 text-[0.62rem] font-semibold tracking-[0.08em] text-[#7b5c3a] shadow-[0_8px_22px_rgba(53,35,16,0.16)]"
+          onClick={() => {
+            setIsDebugPaneOpen(true);
+          }}
+        >
+          GADFLY DEBUG
+        </button>
       ) : null}
       <div data-testid="editor-content">
         <EditorContent editor={editor} />

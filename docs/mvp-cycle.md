@@ -174,13 +174,13 @@ Write a draft with formatting (headings, bold, lists). Click "Publish." See stat
 
 ---
 
-## Sprint 4: Coach Review MVP [DONE]
+## Sprint 4: Gadfly Review MVP [DONE]
 
-The product's core differentiator. LLM coaching with no-ghostwriting enforcement.
+The product's core differentiator. LLM gadfly feedback with no-ghostwriting enforcement.
 
 ### Domain
 
-- `CoachReview` type: inline comments, issue list, rubric scores
+- `GadflyReview` type: inline comments, issue list, rubric scores
 - `InlineComment`: anchor (TipTap node position range), problem, why, question, suggestedAction
 - `ReviewIssue`: tag, severity, description, suggestedAction
 - `ReviewRequest` / `ReviewResponse` Zod schemas
@@ -191,7 +191,7 @@ The product's core differentiator. LLM coaching with no-ghostwriting enforcement
 
 ### Tests
 
-- Unit: `enforceAuthorshipConstraint` accepts valid coaching artifacts
+- Unit: `enforceAuthorshipConstraint` accepts valid gadfly artifacts
 - Unit: `enforceAuthorshipConstraint` rejects responses with replacement prose
 - Unit: `ReviewResponse` schema validates correct structure, rejects malformed
 - Unit: pipeline steps individually with synthetic data
@@ -200,7 +200,7 @@ The product's core differentiator. LLM coaching with no-ghostwriting enforcement
 ### Infra
 
 - LLM client (Anthropic SDK)
-- Prompt template for coach review (system prompt enforcing no-ghostwriting, structured JSON output)
+- Prompt template for gadfly review (system prompt enforcing no-ghostwriting, structured JSON output)
 - `LlmReviewAdapter` implementing `ReviewPort`
 - Zod parsing of LLM response with fallback on parse failure
 
@@ -219,7 +219,7 @@ Write a 200+ word essay with formatting. Click "Get Feedback." Wait for LLM resp
 
 ### Implementation Notes
 
-- **Agentic tool-use loop** (`src/infra/llm/review-adapter.ts`): Claude uses 4 tools (`add_inline_comment`, `add_issue`, `ask_question`, `score_rubric`) as structured output channels — each tool call emits one coaching artifact. The adapter runs an agentic loop (message → tool_use → tool_result → continue) for up to 10 iterations until Claude issues `end_turn`. Non-streaming API per turn, but events are yielded between turns for incremental client delivery. Model defaults to `claude-sonnet-4-5-20250929`, configurable via `LLM_MODEL` env var.
+- **Agentic tool-use loop** (`src/infra/llm/review-adapter.ts`): Claude uses 4 tools (`add_inline_comment`, `add_issue`, `ask_question`, `score_rubric`) as structured output channels — each tool call emits one gadfly artifact. The adapter runs an agentic loop (message → tool_use → tool_result → continue) for up to 10 iterations until Claude issues `end_turn`. Non-streaming API per turn, but events are yielded between turns for incremental client delivery. Model defaults to `claude-sonnet-4-5-20250929`, configurable via `LLM_MODEL` env var.
 - **Authorship enforcement at two layers**: The adapter validates each tool call via `validateArtifact()` and sends corrective `is_error` tool_results back to Claude when violations are detected (giving the LLM a chance to rephrase). The domain pipeline (`validateReviewStream`) re-validates as defense-in-depth, so any adapter implementation is forced through the constraint. Heuristics: rejects fields starting with "Replace with:", "Change to:", "Rewrite as:", "Try:", or containing backtick-wrapped sentences (4+ words). Checks all free-text fields (problem, why, description, rationale, suggestedAction), not just `suggestedAction`.
 - **Domain pipeline** (`src/domain/review/pipeline.ts`): `prepareReviewRequest(essay)` validates essay is reviewable (non-empty) and extracts plain text. `validateReviewStream(events)` wraps the adapter's `AsyncIterable<ReviewEvent>` with authorship re-validation and completeness checking (verifies all 5 rubric dimensions — clarity, evidence, structure, argument, originality — were scored before `done`).
 - **Streaming via SSE** (`src/app/api/review/route.ts`): Thin Route Handler — auth, parse `ReviewRequestSchema`, load essay from DB, call `prepareReviewRequest`, pipe adapter output through `validateReviewStream`, convert `AsyncIterable` to `ReadableStream` with `data: {json}\n\n` framing. Returns 422 for empty essays, 404 for missing, 401 for unauthenticated.
@@ -399,7 +399,7 @@ Prove everything works together. Catch regressions.
 
 - `auth.spec.ts`: OAuth sign-in, session persistence, sign-out, unauthorized redirect
 - `write-and-publish.spec.ts`: create draft -> edit -> publish -> verify public page
-- `coach-review.spec.ts`: write essay -> request review -> feedback displayed -> no ghostwriting in output
+- `gadfly-review.spec.ts`: write essay -> request review -> feedback displayed -> no ghostwriting in output
 - `evidence.spec.ts`: create card -> attach to claim -> verify on published view
 - `revision.spec.ts`: publish -> edit -> republish -> version history visible
 
@@ -426,7 +426,7 @@ Run `bunx playwright test` — all specs green. Manually: disconnect network dur
 - **Fixture review adapter** (`src/infra/llm/fixture-review-adapter.ts`): Implements `ReviewPort` with a deterministic sequence — 2 inline comments, 1 issue, 1 question, 5 rubric scores (all dimensions), then `done`. All fixture data validated against `validateArtifact()` at module load (fail-fast if authorship constraints change). 50ms delay between events simulates streaming.
 - **Sentry observability** (`src/infra/observability/report-error.ts`): `reportError(cause, context)` accepts `unknown` and normalizes to `Error`. Context uses branded types (`UserId`, `EssayId`). Added at all infra failure points across editor actions (7 call sites: updateDraft, publishEssay, publishEssay.countVersions, unpublishEssay, attachEvidence, detachEvidence, listEssayEvidence, listVersions, getVersion) and library actions (3 call sites). `NotFoundError` paths intentionally skip reporting (expected user-facing errors). Review route wraps the streaming loop in `Sentry.startSpan({ name: "review.stream", op: "llm.stream" })` with `try/finally` ensuring `controller.close()` runs even if the Sentry SDK throws.
 - **Error boundaries**: Three levels — `src/app/global-error.tsx` (inline styles since Tailwind is unavailable when the root layout crashes), `src/app/(protected)/error.tsx`, `src/app/essay/[id]/error.tsx`. All check `error.digest` before calling `Sentry.captureException` to prevent double-reporting server-originated errors already captured via `reportError`.
-- **E2E test specs** (21 tests across 5 files): `auth.spec.ts` (6 tests — redirect, sign-in options, dashboard access, sign-out, callbackUrl preservation, authenticated redirect), `coach-review.spec.ts` (3 tests — create+review, verify fixture feedback, authorship constraint check via `data-testid="feedback-panel"`), `evidence.spec.ts` (4 tests — create card, attach to essay, verify in library, delete), `revision.spec.ts` (4 tests — publish, edit+republish, version history panel, public "Revised" badge), `accessibility.spec.ts` (4 tests — dashboard, editor, sign-in, library scanned with axe-core for critical+serious violations). Tests with shared state use `test.describe.serial` to enforce execution order.
+- **E2E test specs** (21 tests across 5 files): `auth.spec.ts` (6 tests — redirect, sign-in options, dashboard access, sign-out, callbackUrl preservation, authenticated redirect), `gadfly-review.spec.ts` (3 tests — create+review, verify fixture feedback, authorship constraint check via `data-testid="feedback-panel"`), `evidence.spec.ts` (4 tests — create card, attach to essay, verify in library, delete), `revision.spec.ts` (4 tests — publish, edit+republish, version history panel, public "Revised" badge), `accessibility.spec.ts` (4 tests — dashboard, editor, sign-in, library scanned with axe-core for critical+serious violations). Tests with shared state use `test.describe.serial` to enforce execution order.
 - **Playwright config** (`playwright.config.ts`): `E2E_TESTING=true` in webServer command, 30s global timeout, 10s expect timeout.
 - **CI workflow** (`.github/workflows/check.yml`): New `e2e` job gated by `vars.E2E_ENABLED == 'true'` repo variable, runs after `check` job passes. Installs Playwright chromium, sets `E2E_TESTING`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `DATABASE_URL` from secrets. Uploads `playwright-report/` as artifact on failure (7-day retention).
 - **Cleanup**: Removed all `as string` casts on branded types across editor actions, library actions, editor page, and library page (branded types are structural subtypes of `string`). Hoisted mid-file imports to top of `editor/actions.ts`. Added `@axe-core/playwright` to knip `ignoreDependencies` (test files excluded from knip scan). `trustedOrigins` in auth config now includes `BETTER_AUTH_URL` (fixes CSRF rejection for local/E2E auth).
