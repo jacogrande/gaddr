@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { mergeGadflyActions } from "../../../domain/gadfly/annotations";
 import { parseGadflyAction } from "../../../domain/gadfly/guards";
 import type {
@@ -13,7 +14,7 @@ import type {
   GadflyUsage,
 } from "../../../domain/gadfly/types";
 
-type GadflyDebugEntryStatus = "pending" | "success" | "error" | "aborted";
+type GadflyDebugEntryStatus = "pending" | "success" | "superseded" | "error" | "aborted";
 
 export type GadflyDebugEntry = {
   id: string;
@@ -46,8 +47,17 @@ const DEFAULT_DEBOUNCE_MS = 600;
 const DEFAULT_DEBUG_ENTRY_LIMIT = 100;
 const CONTEXT_PADDING = 90;
 
+type DocRange = {
+  from: number;
+  to: number;
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function rangesOverlap(left: DocRange, right: DocRange): boolean {
+  return left.from < right.to && right.from < left.to;
 }
 
 function parseActions(value: unknown): GadflyAction[] {
@@ -167,6 +177,199 @@ function mergeRanges(ranges: readonly GadflyRange[]): GadflyRange[] {
   return merged;
 }
 
+function findQuoteRangeInBlock(
+  blockNode: ProseMirrorNode,
+  blockPos: number,
+  quote: string,
+  referenceFrom: number,
+): DocRange | null {
+  let blockText = "";
+  const blockPositionByTextIndex: number[] = [];
+
+  blockNode.descendants((child, childPos) => {
+    if (!child.isText || !child.text) {
+      return true;
+    }
+
+    const absoluteTextStart = blockPos + childPos + 1;
+    for (let index = 0; index < child.text.length; index += 1) {
+      blockText += child.text[index] ?? "";
+      blockPositionByTextIndex.push(absoluteTextStart + index);
+    }
+
+    return true;
+  });
+
+  if (blockText.length === 0) {
+    return null;
+  }
+
+  let bestRange: DocRange | null = null;
+  let bestDistance = Number.MAX_SAFE_INTEGER;
+  let cursor = 0;
+
+  while (cursor <= blockText.length) {
+    const foundAt = blockText.indexOf(quote, cursor);
+    if (foundAt < 0) {
+      break;
+    }
+
+    const from = blockPositionByTextIndex[foundAt];
+    const to = blockPositionByTextIndex[foundAt + quote.length - 1];
+    if (from !== undefined && to !== undefined) {
+      const candidateFrom = from;
+      const candidateTo = to + 1;
+      const distance = Math.abs(candidateFrom - referenceFrom);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestRange = { from: candidateFrom, to: candidateTo };
+      }
+    }
+
+    cursor = foundAt + 1;
+  }
+
+  return bestRange;
+}
+
+function resolveAnnotationAnchor(
+  doc: ProseMirrorNode,
+  annotation: GadflyAnnotation,
+): GadflyAnnotation {
+  const quote = annotation.anchor.quote.trim();
+  const docMax = doc.content.size;
+  const fallbackFrom = Math.max(0, Math.min(annotation.anchor.from, docMax));
+  const fallbackTo = Math.max(fallbackFrom, Math.min(annotation.anchor.to, docMax));
+
+  if (quote.length === 0) {
+    return {
+      ...annotation,
+      anchor: {
+        ...annotation.anchor,
+        from: fallbackFrom,
+        to: fallbackTo,
+      },
+    };
+  }
+
+  const quoteCandidates = [quote];
+  if (quote.length > 26) {
+    quoteCandidates.push(quote.slice(0, 26));
+  }
+  if (quote.length > 18) {
+    quoteCandidates.push(quote.slice(0, 18));
+  }
+
+  for (const quoteCandidate of quoteCandidates) {
+    if (quoteCandidate.length < 8) {
+      continue;
+    }
+
+    const candidateRanges: DocRange[] = [];
+
+    doc.descendants((node, pos) => {
+      if (!node.isTextblock) {
+        return true;
+      }
+
+      const foundRange = findQuoteRangeInBlock(node, pos, quoteCandidate, fallbackFrom);
+      if (foundRange) {
+        candidateRanges.push(foundRange);
+      }
+
+      return false;
+    });
+
+    if (candidateRanges.length === 0) {
+      continue;
+    }
+
+    const initialRange = candidateRanges[0];
+    if (!initialRange) {
+      continue;
+    }
+
+    let selectedRange = initialRange;
+    let selectedDistance = Math.abs(selectedRange.from - fallbackFrom);
+
+    for (let index = 1; index < candidateRanges.length; index += 1) {
+      const candidateRange = candidateRanges[index];
+      if (!candidateRange) {
+        continue;
+      }
+
+      const distance = Math.abs(candidateRange.from - fallbackFrom);
+      if (distance < selectedDistance) {
+        selectedRange = candidateRange;
+        selectedDistance = distance;
+      }
+    }
+
+    return {
+      ...annotation,
+      anchor: {
+        ...annotation.anchor,
+        from: selectedRange.from,
+        to: selectedRange.to,
+      },
+    };
+  }
+
+  return {
+    ...annotation,
+    anchor: {
+      ...annotation.anchor,
+      from: fallbackFrom,
+      to: fallbackTo,
+    },
+  };
+}
+
+function resolveActionAnchors(
+  doc: ProseMirrorNode,
+  actions: readonly GadflyAction[],
+): GadflyAction[] {
+  const resolved: GadflyAction[] = [];
+
+  for (const action of actions) {
+    if (action.type === "clear") {
+      resolved.push(action);
+      continue;
+    }
+
+    resolved.push({
+      type: "annotate",
+      annotation: resolveAnnotationAnchor(doc, action.annotation),
+    });
+  }
+
+  return resolved;
+}
+
+function filterActionsForPendingRanges(
+  actions: readonly GadflyAction[],
+  pendingRanges: readonly GadflyRange[],
+): GadflyAction[] {
+  if (pendingRanges.length === 0) {
+    return [...actions];
+  }
+
+  const mergedPendingRanges = mergeRanges(pendingRanges);
+
+  return actions.filter((action) => {
+    if (action.type === "clear") {
+      return true;
+    }
+
+    const anchorRange = {
+      from: action.annotation.anchor.from,
+      to: action.annotation.anchor.to,
+    };
+
+    return !mergedPendingRanges.some((pendingRange) => rangesOverlap(anchorRange, pendingRange));
+  });
+}
+
 function extractChangedRanges(transaction: Transaction): GadflyRange[] {
   if (!transaction.docChanged) {
     return [];
@@ -264,6 +467,10 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
       return;
     }
 
+    if (activeRequestIdRef.current !== null) {
+      return;
+    }
+
     const changedRanges = pendingRangesRef.current;
     pendingRangesRef.current = [];
     const requestDocVersion = pendingDocVersionRef.current;
@@ -276,21 +483,11 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
     const payload = buildRequestPayload(currentEditor, changedRanges, requestDocVersion);
 
     if (payload.plainText.trim().length === 0) {
-      if (inflightAbortRef.current) {
-        inflightAbortRef.current.abort();
-        inflightAbortRef.current = null;
-      }
-
       activeRequestIdRef.current = null;
       setIsAnalyzing(false);
       setAnnotations([]);
       setAnalyzeError(null);
       return;
-    }
-
-    if (inflightAbortRef.current) {
-      inflightAbortRef.current.abort();
-      inflightAbortRef.current = null;
     }
 
     requestSequenceRef.current += 1;
@@ -331,13 +528,12 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
       }
 
       const staleByRequest = activeRequestIdRef.current !== debugId;
-      const staleByDocVersion = payload.docVersion !== docRevisionRef.current;
-      if (staleByRequest || staleByDocVersion) {
+      if (staleByRequest) {
         patchDebugEntry(debugId, {
-          status: "aborted",
+          status: "superseded",
           responseStatus: response.status,
           responseBody: parsedBody,
-          error: "Stale response discarded",
+          error: "Superseded by newer request; response ignored",
           latencyMs: Date.now() - requestStartedAt,
         });
         return;
@@ -359,7 +555,9 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
       }
 
       const parsed = parseAnalyzeSuccess(parsedBody);
-      setAnnotations((previous) => mergeGadflyActions(previous, parsed.actions));
+      const anchoredActions = resolveActionAnchors(currentEditor.state.doc, parsed.actions);
+      const safeActions = filterActionsForPendingRanges(anchoredActions, pendingRangesRef.current);
+      setAnnotations((previous) => mergeGadflyActions(previous, safeActions));
 
       patchDebugEntry(debugId, {
         status: "success",
@@ -379,8 +577,8 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
             : "Analyze request failed";
 
       patchDebugEntry(debugId, {
-        status: aborted || staleRequest ? "aborted" : "error",
-        error: staleRequest ? "Stale request aborted" : message,
+        status: staleRequest ? "superseded" : aborted ? "aborted" : "error",
+        error: staleRequest ? "Superseded by newer edits" : message,
         latencyMs: Date.now() - requestStartedAt,
       });
 
@@ -394,7 +592,12 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
         if (inflightAbortRef.current === controller) {
           inflightAbortRef.current = null;
         }
-        setIsAnalyzing(false);
+
+        if (pendingRangesRef.current.length > 0) {
+          void analyzeNow();
+        } else {
+          setIsAnalyzing(false);
+        }
       }
     }
   }, [buildRequestPayload, patchDebugEntry, pushDebugEntry]);
@@ -427,6 +630,19 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
       docRevisionRef.current += 1;
       const docVersion = docRevisionRef.current;
       scheduleAnalyze(changedRanges, docVersion);
+
+      setAnnotations((previous) => {
+        const next = previous.filter((annotation) => {
+          const anchorRange = {
+            from: annotation.anchor.from,
+            to: annotation.anchor.to,
+          };
+
+          return !changedRanges.some((changedRange) => rangesOverlap(anchorRange, changedRange));
+        });
+
+        return next.length === previous.length ? previous : next;
+      });
     },
     [scheduleAnalyze],
   );
