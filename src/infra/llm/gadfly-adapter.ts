@@ -23,6 +23,7 @@ type GadflyAdapterError = {
 type ToolInputRecord = Record<string, unknown>;
 
 const MAX_GADFLY_ACTIONS = 3;
+const TONE_INCONSISTENCY_PATTERN = /\b(inconsisten|inconsistency|shift|mismatch|deviat|breaks\s+pattern)\b/i;
 
 const GADFLY_TOOLS: Tool[] = [
   {
@@ -130,6 +131,8 @@ function buildPrompt(request: GadflyAnalyzeRequest): string {
   return [
     "Analyze this writing update and use only tool calls.",
     "Do not rewrite user text and do not provide replacement prose.",
+    "For tone feedback: only annotate tone when it is inconsistent with the surrounding writing style.",
+    "Do not flag tone based only on professionalism or informality in isolation.",
     `Return at most ${String(MAX_GADFLY_ACTIONS)} annotate calls total.`,
     "Use clear only if an existing annotation should be removed.",
     "Each annotation must be Socratic: diagnosis + rule + question.",
@@ -183,6 +186,22 @@ function parseActionsFromContent(content: Array<{ type: string; name?: string; i
       continue;
     }
 
+    if (validatedAction.value.type === "annotate" && validatedAction.value.annotation.category === "tone") {
+      const toneText = [
+        validatedAction.value.annotation.explanation,
+        validatedAction.value.annotation.rule,
+        validatedAction.value.annotation.question,
+      ].join(" ");
+
+      if (!TONE_INCONSISTENCY_PATTERN.test(toneText)) {
+        droppedArtifacts.push({
+          reason: "tone_policy_requires_inconsistency",
+          artifactSnippet: toneText.slice(0, 180),
+        });
+        continue;
+      }
+    }
+
     actions.push(validatedAction.value);
   }
 
@@ -224,6 +243,7 @@ export async function analyzeWithGadfly(
         "You are Gaddr Gadfly, a Socratic writing reviewer.",
         "Never write replacement prose.",
         "Never output rewritten sentences or paragraphs.",
+        "Only flag tone when it is inconsistent with surrounding style.",
         "Only produce tool calls using annotate or clear.",
         "Keep feedback concise, precise, and instructional.",
       ].join("\n"),
