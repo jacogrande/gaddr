@@ -4,6 +4,7 @@ import {
   createModifierOrderingState,
   eventMatchesHotkey,
   filterCommandsByQuery,
+  getSlashQueryContext,
   listCommandHotkeyEntries,
   mergeDisplayModifiers,
   orderModifierBadges,
@@ -122,5 +123,27 @@ describe("mergeDisplayModifiers and collectExitingModifierKeys", () => {
       { key: "italic", label: "I", exiting: false },
     ]);
     expect(collectExitingModifierKeys(merged)).toEqual(["bold"]);
+  });
+});
+
+describe("getSlashQueryContext", () => {
+  test("returns slash context for slash command at line end", () => {
+    expect(getSlashQueryContext("hello /hea", 10)).toEqual({
+      query: "hea",
+      from: 6,
+      to: 10,
+    });
+  });
+
+  test("returns slash context for empty slash query", () => {
+    expect(getSlashQueryContext("/", 1)).toEqual({
+      query: "",
+      from: 0,
+      to: 1,
+    });
+  });
+
+  test("does not match slashes inside urls", () => {
+    expect(getSlashQueryContext("https://gaddr.com", 17)).toBeNull();
   });
 });

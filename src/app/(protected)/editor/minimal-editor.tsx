@@ -13,6 +13,7 @@ import {
   createModifierOrderingState,
   eventMatchesHotkey,
   filterCommandsByQuery,
+  getSlashQueryContext,
   listCommandHotkeyEntries,
   mergeDisplayModifiers,
   orderModifierBadges,
@@ -23,6 +24,10 @@ import {
 const STORAGE_KEY = "gaddr:minimal-editor";
 const IDLE_SAVE_TIMEOUT_MS = 1200;
 const MODIFIER_EXIT_ANIMATION_MS = 180;
+const SLASH_MENU_WIDTH_PX = 360;
+const SLASH_MENU_VIEWPORT_MARGIN_PX = 12;
+const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
+const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
 
 type IdleRequestCallbackLike = (deadline: { readonly didTimeout: boolean; timeRemaining: () => number }) => void;
 type IdleSchedulerWindow = Window &
@@ -39,6 +44,14 @@ type SaveHandle =
       kind: "timeout";
       id: number;
     };
+
+type SlashMenuState = {
+  query: string;
+  from: number;
+  to: number;
+  top: number;
+  left: number;
+};
 
 const MODIFIER_BADGES: Array<{
   key: string;
@@ -84,10 +97,15 @@ export function MinimalEditor() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
   const [commandPaletteActiveIndex, setCommandPaletteActiveIndex] = useState(0);
+  const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null);
+  const [slashMenuActiveIndex, setSlashMenuActiveIndex] = useState(0);
   const [isMacLike, setIsMacLike] = useState(false);
   const activeModifiersSignatureRef = useRef("");
   const modifierOrderingStateRef = useRef(createModifierOrderingState());
   const modifierExitTimersRef = useRef<Map<string, number>>(new Map());
+  const slashMenuSignatureRef = useRef("");
+  const slashMenuQueryRef = useRef("");
+  const dismissedSlashRangeRef = useRef<string | null>(null);
   const pendingPersistRef = useRef(false);
   const saveHandleRef = useRef<SaveHandle | null>(null);
   const latestEditorRef = useRef<{ getJSON: () => JSONContent } | null>(null);
@@ -164,6 +182,10 @@ export function MinimalEditor() {
     return filterCommandsByQuery(EDITOR_MODIFIER_COMMANDS, commandPaletteQuery);
   }, [commandPaletteQuery]);
 
+  const filteredSlashCommands = useMemo(() => {
+    return filterCommandsByQuery(EDITOR_MODIFIER_COMMANDS, slashMenuState?.query ?? "");
+  }, [slashMenuState?.query]);
+
   const commandHotkeyEntries = useMemo(
     () => listCommandHotkeyEntries(EDITOR_MODIFIER_COMMANDS),
     [],
@@ -226,11 +248,116 @@ export function MinimalEditor() {
     },
   });
 
+  const closeSlashMenu = useCallback(() => {
+    slashMenuSignatureRef.current = "";
+    slashMenuQueryRef.current = "";
+    dismissedSlashRangeRef.current = null;
+    setSlashMenuState(null);
+    setSlashMenuActiveIndex(0);
+  }, []);
+
+  const dismissSlashMenu = useCallback(() => {
+    if (slashMenuState) {
+      dismissedSlashRangeRef.current = `${String(slashMenuState.from)}:${String(slashMenuState.to)}`;
+    }
+
+    slashMenuSignatureRef.current = "";
+    slashMenuQueryRef.current = "";
+    setSlashMenuState(null);
+    setSlashMenuActiveIndex(0);
+  }, [slashMenuState]);
+
+  const buildSlashMenuState = useCallback(
+    (current: TiptapEditor): SlashMenuState | null => {
+      if (isCommandPaletteOpen || !current.isFocused) {
+        return null;
+      }
+
+      const {
+        from,
+        empty,
+        $from: resolvedFrom,
+      } = current.state.selection;
+
+      if (!empty) {
+        return null;
+      }
+
+      const textBeforeCursor = resolvedFrom.parent.textBetween(0, resolvedFrom.parentOffset, "\0", "\0");
+      const slashContext = getSlashQueryContext(textBeforeCursor, from);
+      if (!slashContext) {
+        return null;
+      }
+
+      const coords = current.view.coordsAtPos(from);
+      const maxLeft = Math.max(
+        SLASH_MENU_VIEWPORT_MARGIN_PX,
+        window.innerWidth - SLASH_MENU_WIDTH_PX - SLASH_MENU_VIEWPORT_MARGIN_PX,
+      );
+      const maxTop = Math.max(
+        SLASH_MENU_VIEWPORT_MARGIN_PX,
+        window.innerHeight - SLASH_MENU_BOTTOM_SAFE_AREA_PX,
+      );
+
+      return {
+        ...slashContext,
+        left: Math.min(Math.max(coords.left, SLASH_MENU_VIEWPORT_MARGIN_PX), maxLeft),
+        top: Math.min(
+          Math.max(coords.bottom + SLASH_MENU_VERTICAL_OFFSET_PX, SLASH_MENU_VIEWPORT_MARGIN_PX),
+          maxTop,
+        ),
+      };
+    },
+    [isCommandPaletteOpen],
+  );
+
+  const syncSlashMenu = useCallback(
+    (current: TiptapEditor) => {
+      const nextSlashState = buildSlashMenuState(current);
+      if (!nextSlashState) {
+        if (slashMenuSignatureRef.current !== "") {
+          closeSlashMenu();
+        }
+        return;
+      }
+
+      const rangeKey = `${String(nextSlashState.from)}:${String(nextSlashState.to)}`;
+      if (dismissedSlashRangeRef.current === rangeKey) {
+        if (slashMenuSignatureRef.current !== "") {
+          slashMenuSignatureRef.current = "";
+          slashMenuQueryRef.current = "";
+          setSlashMenuState(null);
+          setSlashMenuActiveIndex(0);
+        }
+        return;
+      }
+
+      dismissedSlashRangeRef.current = null;
+      const signature = `${rangeKey}:${nextSlashState.query}:${String(Math.round(nextSlashState.left))}:${String(
+        Math.round(nextSlashState.top),
+      )}`;
+      if (signature === slashMenuSignatureRef.current) {
+        return;
+      }
+
+      const queryChanged = slashMenuQueryRef.current !== nextSlashState.query;
+
+      slashMenuSignatureRef.current = signature;
+      slashMenuQueryRef.current = nextSlashState.query;
+      setSlashMenuState(nextSlashState);
+      if (queryChanged) {
+        setSlashMenuActiveIndex(0);
+      }
+    },
+    [buildSlashMenuState, closeSlashMenu],
+  );
+
   const openCommandPalette = useCallback(() => {
+    closeSlashMenu();
     setCommandPaletteQuery("");
     setCommandPaletteActiveIndex(0);
     setIsCommandPaletteOpen(true);
-  }, []);
+  }, [closeSlashMenu]);
 
   const closeCommandPalette = useCallback(() => {
     setIsCommandPaletteOpen(false);
@@ -263,6 +390,29 @@ export function MinimalEditor() {
     runPaletteCommand(command);
   }, [commandPaletteActiveIndex, filteredPaletteCommands, runPaletteCommand]);
 
+  const runSlashMenuCommand = useCallback(
+    (command: EditorCommand) => {
+      if (!editor || !slashMenuState) {
+        return;
+      }
+
+      editor.chain().focus().deleteRange({ from: slashMenuState.from, to: slashMenuState.to }).run();
+      command.run(editor);
+      syncActiveModifiers(editor);
+      closeSlashMenu();
+    },
+    [closeSlashMenu, editor, slashMenuState, syncActiveModifiers],
+  );
+
+  const runSelectedSlashMenuCommand = useCallback(() => {
+    const command = filteredSlashCommands[slashMenuActiveIndex] ?? filteredSlashCommands[0];
+    if (!command) {
+      return;
+    }
+
+    runSlashMenuCommand(command);
+  }, [filteredSlashCommands, runSlashMenuCommand, slashMenuActiveIndex]);
+
   useEffect(() => {
     if (editor && !editor.isFocused) {
       editor.commands.focus("end");
@@ -288,6 +438,18 @@ export function MinimalEditor() {
   }, [filteredPaletteCommands.length]);
 
   useEffect(() => {
+    setSlashMenuActiveIndex((previous) => {
+      if (filteredSlashCommands.length === 0) {
+        return 0;
+      }
+
+      return previous >= filteredSlashCommands.length ? filteredSlashCommands.length - 1 : previous;
+    });
+  }, [filteredSlashCommands.length]);
+
+  useEffect(() => {
+    const isSlashMenuOpen = slashMenuState !== null;
+
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -299,62 +461,125 @@ export function MinimalEditor() {
         return;
       }
 
-      if (!isCommandPaletteOpen) {
+      if (isCommandPaletteOpen) {
+        const matchedHotkeyEntry = commandHotkeyEntries.find((entry) => eventMatchesHotkey(event, entry.hotkey));
+        if (matchedHotkeyEntry) {
+          event.preventDefault();
+          runPaletteCommand(matchedHotkeyEntry.command);
+          return;
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeCommandPalette();
+          return;
+        }
+
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setCommandPaletteActiveIndex((previous) => {
+            if (filteredPaletteCommands.length === 0) {
+              return 0;
+            }
+
+            return (previous + 1) % filteredPaletteCommands.length;
+          });
+          return;
+        }
+
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setCommandPaletteActiveIndex((previous) => {
+            if (filteredPaletteCommands.length === 0) {
+              return 0;
+            }
+
+            return previous <= 0 ? filteredPaletteCommands.length - 1 : previous - 1;
+          });
+          return;
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          runSelectedPaletteCommand();
+          return;
+        }
+
+        if (event.key === "Tab") {
+          event.preventDefault();
+          const firstCommand = filteredPaletteCommands[0];
+          if (!firstCommand) {
+            return;
+          }
+
+          setCommandPaletteQuery(firstCommand.label);
+          setCommandPaletteActiveIndex(0);
+          return;
+        }
+
+        return;
+      }
+
+      if (!isSlashMenuOpen) {
         return;
       }
 
       const matchedHotkeyEntry = commandHotkeyEntries.find((entry) => eventMatchesHotkey(event, entry.hotkey));
       if (matchedHotkeyEntry) {
         event.preventDefault();
-        runPaletteCommand(matchedHotkeyEntry.command);
+        runSlashMenuCommand(matchedHotkeyEntry.command);
         return;
       }
 
       if (event.key === "Escape") {
         event.preventDefault();
-        closeCommandPalette();
+        dismissSlashMenu();
         return;
       }
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setCommandPaletteActiveIndex((previous) => {
-          if (filteredPaletteCommands.length === 0) {
+        setSlashMenuActiveIndex((previous) => {
+          if (filteredSlashCommands.length === 0) {
             return 0;
           }
 
-          return (previous + 1) % filteredPaletteCommands.length;
+          return (previous + 1) % filteredSlashCommands.length;
         });
         return;
       }
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setCommandPaletteActiveIndex((previous) => {
-          if (filteredPaletteCommands.length === 0) {
+        setSlashMenuActiveIndex((previous) => {
+          if (filteredSlashCommands.length === 0) {
             return 0;
           }
 
-          return previous <= 0 ? filteredPaletteCommands.length - 1 : previous - 1;
+          return previous <= 0 ? filteredSlashCommands.length - 1 : previous - 1;
         });
         return;
       }
 
       if (event.key === "Enter") {
+        const hasCommand = filteredSlashCommands.length > 0;
+        if (!hasCommand) {
+          return;
+        }
+
         event.preventDefault();
-        runSelectedPaletteCommand();
+        runSelectedSlashMenuCommand();
         return;
       }
 
       if (event.key === "Tab") {
-        event.preventDefault();
-        const firstCommand = filteredPaletteCommands[0];
-        if (!firstCommand) {
+        const command = filteredSlashCommands[slashMenuActiveIndex] ?? filteredSlashCommands[0];
+        if (!command) {
           return;
         }
 
-        setCommandPaletteQuery(firstCommand.label);
-        setCommandPaletteActiveIndex(0);
+        event.preventDefault();
+        runSlashMenuCommand(command);
       }
     };
 
@@ -366,11 +591,17 @@ export function MinimalEditor() {
   }, [
     commandHotkeyEntries,
     closeCommandPalette,
+    dismissSlashMenu,
     filteredPaletteCommands,
+    filteredSlashCommands,
     isCommandPaletteOpen,
     openCommandPalette,
     runPaletteCommand,
     runSelectedPaletteCommand,
+    runSelectedSlashMenuCommand,
+    runSlashMenuCommand,
+    slashMenuActiveIndex,
+    slashMenuState,
   ]);
 
   useEffect(() => {
@@ -378,23 +609,24 @@ export function MinimalEditor() {
       return;
     }
 
-    const updateModifiers = () => {
+    const updateEditorUi = () => {
       syncActiveModifiers(editor);
+      syncSlashMenu(editor);
     };
 
-    updateModifiers();
-    editor.on("selectionUpdate", updateModifiers);
-    editor.on("transaction", updateModifiers);
-    editor.on("focus", updateModifiers);
-    editor.on("blur", updateModifiers);
+    updateEditorUi();
+    editor.on("selectionUpdate", updateEditorUi);
+    editor.on("transaction", updateEditorUi);
+    editor.on("focus", updateEditorUi);
+    editor.on("blur", updateEditorUi);
 
     return () => {
-      editor.off("selectionUpdate", updateModifiers);
-      editor.off("transaction", updateModifiers);
-      editor.off("focus", updateModifiers);
-      editor.off("blur", updateModifiers);
+      editor.off("selectionUpdate", updateEditorUi);
+      editor.off("transaction", updateEditorUi);
+      editor.off("focus", updateEditorUi);
+      editor.off("blur", updateEditorUi);
     };
-  }, [editor, syncActiveModifiers]);
+  }, [editor, syncActiveModifiers, syncSlashMenu]);
 
   useEffect(() => {
     setDisplayModifiers((previous) => {
@@ -480,6 +712,70 @@ export function MinimalEditor() {
               {modifier.label}
             </div>
           ))}
+        </div>
+      ) : null}
+      {slashMenuState && !isCommandPaletteOpen ? (
+        <div
+          aria-label="Editor slash menu"
+          data-testid="slash-menu"
+          className="gaddr-slash-menu fixed z-[58] w-[min(22.5rem,calc(100vw-1.5rem))] rounded-xl border border-[#cfb187]/70 bg-[#f5e8d5]/95 p-2 shadow-[0_20px_45px_rgba(45,27,8,0.2)] backdrop-blur-[2px]"
+          style={
+            {
+              left: `${String(slashMenuState.left)}px`,
+              top: `${String(slashMenuState.top)}px`,
+            } satisfies CSSProperties
+          }
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+        >
+          <div className="border-b border-[#cfb187]/70 px-3 pb-2 pt-1 text-xs tracking-[0.14em] text-[#8d6b46]">
+            COMMANDS
+          </div>
+          <div className="max-h-[min(50vh,20rem)] overflow-y-auto py-1">
+            {filteredSlashCommands.length > 0 ? (
+              filteredSlashCommands.map((command, index) => {
+                const commandIsActive = command.isActive?.(editor) ?? false;
+                const commandIsSelected = index === slashMenuActiveIndex;
+
+                return (
+                  <button
+                    key={command.id}
+                    type="button"
+                    data-testid={`slash-command-${command.id}`}
+                    className={`gaddr-command-row flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
+                      commandIsSelected
+                        ? "bg-[#e2c9a3]/95 text-[#452c14]"
+                        : commandIsActive
+                          ? "bg-[#ead7b8]/95 text-[#4a331a]"
+                          : "text-[#5c4328] hover:bg-[#efdec3]/85 active:bg-[#e6cfab]"
+                    }`}
+                    onMouseEnter={() => {
+                      setSlashMenuActiveIndex(index);
+                    }}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      runSlashMenuCommand(command);
+                    }}
+                  >
+                    <span className="text-sm font-medium tracking-[0.01em]">{command.label}</span>
+                    <span className="ml-4 flex items-center gap-1.5">
+                      {command.hotkeys.map((hotkey) => (
+                        <kbd
+                          key={hotkey}
+                          className="rounded border border-[#c4a476]/75 bg-[#f2e4cf]/92 px-1.5 py-0.5 text-[0.66rem] font-semibold tracking-[0.08em] text-[#87623c]"
+                        >
+                          {formatHotkey(hotkey)}
+                        </kbd>
+                      ))}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="px-3 py-4 text-center text-sm text-[#8f6d48]">No matching commands</div>
+            )}
+          </div>
         </div>
       ) : null}
       {isCommandPaletteOpen ? (

@@ -26,6 +26,12 @@ export type ModifierOrderingState = {
   nextOrder: number;
 };
 
+export type SlashQueryContext = {
+  query: string;
+  from: number;
+  to: number;
+};
+
 export function createModifierOrderingState(): ModifierOrderingState {
   return { orderByKey: {}, nextOrder: 0 };
 }
@@ -190,4 +196,20 @@ export function mergeDisplayModifiers(
 
 export function collectExitingModifierKeys(displayModifiers: readonly DisplayModifierBadge[]): string[] {
   return displayModifiers.filter((modifier) => modifier.exiting).map((modifier) => modifier.key);
+}
+
+export function getSlashQueryContext(textBeforeCursor: string, cursorPos: number): SlashQueryContext | null {
+  const match = textBeforeCursor.match(/(?:^|\s)\/([^\s/]*)$/);
+  if (!match) {
+    return null;
+  }
+
+  const query = match[1] ?? "";
+  const from = cursorPos - (query.length + 1);
+
+  return {
+    query,
+    from,
+    to: cursorPos,
+  };
 }

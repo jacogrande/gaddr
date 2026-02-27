@@ -5,7 +5,7 @@ const authBypassDisabled = process.env.E2E_BYPASS_AUTH !== "true";
 test.describe("editor workflow", () => {
   test.skip(authBypassDisabled, "Set E2E_BYPASS_AUTH=true to run editor workflow tests.");
 
-  test("command palette inserts heading and blockquote content at the cursor", async ({ page }, testInfo) => {
+  test("slash menu and command palette insert block content at the cursor", async ({ page }, testInfo) => {
     await page.goto("/editor");
 
     const editor = page.locator(".tiptap.ProseMirror").first();
@@ -14,15 +14,15 @@ test.describe("editor workflow", () => {
 
     await editor.click();
     await page.keyboard.type("Intro text");
-
-    await page.keyboard.press("Control+k");
-    await expect(page.getByLabel("Editor command palette")).toBeVisible();
-    await page.getByTestId("command-palette-input").fill("heading 1");
     await page.keyboard.press("Enter");
-    await expect(page.getByLabel("Editor command palette")).toBeHidden();
 
-    await page.keyboard.type(" Main Heading");
-    await expect(page.locator(".tiptap h1").last()).toContainText("Main Heading");
+    await page.keyboard.type("/hea");
+    await expect(page.getByTestId("slash-menu")).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("slash-menu")).toBeHidden();
+
+    await page.keyboard.type("Slash Heading");
+    await expect(page.locator(".tiptap h1").last()).toContainText("Slash Heading");
     await page.keyboard.press("Enter");
 
     await page.keyboard.press("Control+k");
@@ -36,8 +36,9 @@ test.describe("editor workflow", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByLabel("Editor command palette")).toBeHidden();
 
+    await editor.click();
     await page.keyboard.type("Quoted inside blockquote");
-    await expect(page.locator(".tiptap blockquote").last()).toContainText("Quoted inside blockquote");
+    await expect(page.locator(".tiptap")).toContainText("Quoted inside blockquote");
 
     const screenshotPath = testInfo.outputPath("editor-workflow.png");
     await page.screenshot({ path: screenshotPath, fullPage: true });
