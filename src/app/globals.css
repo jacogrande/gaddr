@@ -211,6 +211,17 @@ body {
   border-bottom-color: color-mix(in srgb, var(--highlight-high) 82%, transparent);
 }
 
+.gaddr-gadfly-highlight--status-acknowledged {
+  border-bottom-style: dashed;
+  opacity: 0.8;
+}
+
+.gaddr-gadfly-status-chip {
+  border-color: color-mix(in srgb, var(--border-soft) 76%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  color: var(--app-muted);
+}
+
 .gaddr-modifier-stack {
   will-change: transform, opacity;
 }

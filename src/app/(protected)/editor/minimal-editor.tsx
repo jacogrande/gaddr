@@ -1018,6 +1018,11 @@ export function MinimalEditor() {
           <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
             {hoveredGadfly.annotation.category.toUpperCase()} · {hoveredGadfly.annotation.severity.toUpperCase()}
           </div>
+          {hoveredGadfly.annotation.status !== "active" ? (
+            <div className="gaddr-gadfly-status-chip mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
+              {hoveredGadfly.annotation.status.toUpperCase()}
+            </div>
+          ) : null}
           <p className="mt-1.5 text-xs leading-5 text-[var(--app-fg)]">{hoveredGadfly.annotation.explanation}</p>
           <p className="mt-1.5 text-[0.7rem] leading-4 text-[color:var(--app-muted)]">Rule: {hoveredGadfly.annotation.rule}</p>
           <p className="mt-2 text-xs italic leading-5 text-[color:var(--app-fg)]">{hoveredGadfly.annotation.question}</p>

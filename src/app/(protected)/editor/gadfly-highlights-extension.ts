@@ -23,6 +23,14 @@ function buildDecorationSet(
 ): DecorationSet {
   const maxPos = doc.content.size;
   const decorations = annotations.flatMap((annotation) => {
+    if (
+      annotation.status === "dismissed" ||
+      annotation.status === "resolved" ||
+      annotation.status === "snoozed"
+    ) {
+      return [];
+    }
+
     const from = Math.max(0, Math.min(annotation.anchor.from, maxPos));
     const to = Math.max(from, Math.min(annotation.anchor.to, maxPos));
 
@@ -30,13 +38,18 @@ function buildDecorationSet(
       return [];
     }
 
-    const className = `gaddr-gadfly-highlight gaddr-gadfly-highlight--${annotation.severity}`;
+    const className = [
+      "gaddr-gadfly-highlight",
+      `gaddr-gadfly-highlight--${annotation.severity}`,
+      `gaddr-gadfly-highlight--status-${annotation.status}`,
+    ].join(" ");
 
     return [
       Decoration.inline(from, to, {
         class: className,
         "data-gadfly-id": annotation.id,
         "data-gadfly-severity": annotation.severity,
+        "data-gadfly-status": annotation.status,
       }),
     ];
   });
