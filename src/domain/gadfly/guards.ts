@@ -2,12 +2,18 @@ import type {
   GadflyAction,
   GadflyAnalyzeRequest,
   GadflyAnnotation,
+  GadflyAnnotationStatus,
   GadflyCategory,
   GadflyDroppedArtifact,
   GadflyRange,
   GadflySeverity,
 } from "./types";
-import { GADFLY_CATEGORIES, GADFLY_SEVERITIES } from "./types";
+import {
+  GADFLY_ANNOTATION_MANAGE_ACTIONS,
+  GADFLY_ANNOTATION_STATUSES,
+  GADFLY_CATEGORIES,
+  GADFLY_SEVERITIES,
+} from "./types";
 import type { Result } from "../types/result";
 import { err, ok } from "../types/result";
 import type { ValidationError } from "../types/errors";
@@ -97,6 +103,23 @@ function parseSeverity(value: unknown): Result<GadflySeverity, ValidationError> 
   return err(toValidationError("annotation.severity is invalid", "annotation.severity"));
 }
 
+function parseStatus(
+  value: unknown,
+  fieldName: string,
+): Result<GadflyAnnotationStatus, ValidationError> {
+  if (typeof value !== "string") {
+    return err(toValidationError(`${fieldName} is invalid`, fieldName));
+  }
+
+  for (const status of GADFLY_ANNOTATION_STATUSES) {
+    if (status === value) {
+      return ok(status);
+    }
+  }
+
+  return err(toValidationError(`${fieldName} is invalid`, fieldName));
+}
+
 function firstGhostwritingPattern(text: string): string | null {
   for (const pattern of GHOSTWRITING_PATTERNS) {
     if (pattern.test(text)) {
@@ -168,6 +191,12 @@ function parseAnnotationRecord(value: unknown): Result<GadflyAnnotation, Validat
     return severity;
   }
 
+  const rawStatus = value["status"];
+  const status = rawStatus === undefined ? ok<GadflyAnnotationStatus>("active") : parseStatus(rawStatus, "annotation.status");
+  if (!status.ok) {
+    return status;
+  }
+
   const explanation = value["explanation"];
   const rule = value["rule"];
   const question = value["question"];
@@ -193,6 +222,7 @@ function parseAnnotationRecord(value: unknown): Result<GadflyAnnotation, Validat
     },
     category: category.value,
     severity: severity.value,
+    status: status.value,
     explanation: sanitizeText(explanation),
     rule: sanitizeText(rule),
     question: sanitizeText(question),
@@ -278,6 +308,96 @@ export function parseGadflyAction(value: unknown): Result<GadflyAction, Validati
   }
 
   const type = value["type"];
+  if (type === "annotation.manage") {
+    const action = value["action"];
+    if (typeof action !== "string") {
+      return err(toValidationError("annotation.manage.action is required", "action"));
+    }
+
+    const isSupportedAction = GADFLY_ANNOTATION_MANAGE_ACTIONS.some((supportedAction) => supportedAction === action);
+    if (!isSupportedAction) {
+      return err(toValidationError("annotation.manage.action is invalid", "action"));
+    }
+
+    if (action === "annotate" || action === "update_annotation") {
+      const annotation = parseAnnotationRecord(value["annotation"]);
+      if (!annotation.ok) {
+        return annotation;
+      }
+
+      return ok({
+        type: "annotation.manage",
+        action,
+        annotation: annotation.value,
+      });
+    }
+
+    if (action === "clear") {
+      const annotationId = value["annotationId"];
+      if (!isNonEmptyString(annotationId)) {
+        return err(toValidationError("annotationId is required for clear actions", "annotationId"));
+      }
+
+      return ok({
+        type: "annotation.manage",
+        action,
+        annotationId: annotationId.trim(),
+      });
+    }
+
+    if (action === "clear_in_range") {
+      const range = parseRange(value["range"], "range");
+      if (!range.ok) {
+        return range;
+      }
+
+      return ok({
+        type: "annotation.manage",
+        action,
+        range: range.value,
+      });
+    }
+
+    if (action === "set_severity") {
+      const annotationId = value["annotationId"];
+      if (!isNonEmptyString(annotationId)) {
+        return err(toValidationError("annotationId is required for set_severity", "annotationId"));
+      }
+
+      const severity = parseSeverity(value["severity"]);
+      if (!severity.ok) {
+        return err(toValidationError("severity is invalid for set_severity", "severity"));
+      }
+
+      return ok({
+        type: "annotation.manage",
+        action,
+        annotationId: annotationId.trim(),
+        severity: severity.value,
+      });
+    }
+
+    if (action === "set_status") {
+      const annotationId = value["annotationId"];
+      if (!isNonEmptyString(annotationId)) {
+        return err(toValidationError("annotationId is required for set_status", "annotationId"));
+      }
+
+      const status = parseStatus(value["status"], "status");
+      if (!status.ok) {
+        return status;
+      }
+
+      return ok({
+        type: "annotation.manage",
+        action,
+        annotationId: annotationId.trim(),
+        status: status.value,
+      });
+    }
+  }
+
+  // Legacy action format fallback kept for compatibility with stale model outputs.
   if (type === "annotate") {
     const annotation = parseAnnotationRecord(value["annotation"]);
     if (!annotation.ok) {
@@ -285,7 +405,8 @@ export function parseGadflyAction(value: unknown): Result<GadflyAction, Validati
     }
 
     return ok({
-      type: "annotate",
+      type: "annotation.manage",
+      action: "annotate",
       annotation: annotation.value,
     });
   }
@@ -297,16 +418,17 @@ export function parseGadflyAction(value: unknown): Result<GadflyAction, Validati
     }
 
     return ok({
-      type: "clear",
+      type: "annotation.manage",
+      action: "clear",
       annotationId: annotationId.trim(),
     });
   }
 
-  return err(toValidationError("action.type must be annotate or clear", "type"));
+  return err(toValidationError("action.type must be annotation.manage", "type"));
 }
 
 export function validateGadflyAction(action: GadflyAction): Result<GadflyAction, GadflyDroppedArtifact> {
-  if (action.type === "clear") {
+  if (action.action !== "annotate" && action.action !== "update_annotation") {
     return ok(action);
   }
 

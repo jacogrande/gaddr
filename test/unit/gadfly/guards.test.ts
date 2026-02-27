@@ -45,7 +45,8 @@ describe("parseGadflyAnalyzeRequest", () => {
 describe("parseGadflyAction", () => {
   test("accepts annotate actions", () => {
     const parsed = parseGadflyAction({
-      type: "annotate",
+      type: "annotation.manage",
+      action: "annotate",
       annotation: {
         id: "a1",
         anchor: {
@@ -62,6 +63,32 @@ describe("parseGadflyAction", () => {
     });
 
     expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    expect(parsed.value.action).toBe("annotate");
+    if (parsed.value.action !== "annotate") {
+      return;
+    }
+
+    expect(parsed.value.annotation.status).toBe("active");
+  });
+
+  test("accepts set_status actions", () => {
+    const parsed = parseGadflyAction({
+      type: "annotation.manage",
+      action: "set_status",
+      annotationId: "a1",
+      status: "acknowledged",
+    });
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    expect(parsed.value.action).toBe("set_status");
   });
 
   test("rejects unknown action type", () => {
@@ -74,7 +101,8 @@ describe("parseGadflyAction", () => {
 describe("validateGadflyAction", () => {
   test("rejects rewrite-style coaching text", () => {
     const parsed = parseGadflyAction({
-      type: "annotate",
+      type: "annotation.manage",
+      action: "annotate",
       annotation: {
         id: "a1",
         anchor: {

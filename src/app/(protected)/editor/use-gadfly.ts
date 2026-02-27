@@ -332,13 +332,14 @@ function resolveActionAnchors(
   const resolved: GadflyAction[] = [];
 
   for (const action of actions) {
-    if (action.type === "clear") {
+    if (action.action !== "annotate" && action.action !== "update_annotation") {
       resolved.push(action);
       continue;
     }
 
     resolved.push({
-      type: "annotate",
+      type: "annotation.manage",
+      action: action.action,
       annotation: resolveAnnotationAnchor(doc, action.annotation),
     });
   }
@@ -357,7 +358,7 @@ function filterActionsForPendingRanges(
   const mergedPendingRanges = mergeRanges(pendingRanges);
 
   return actions.filter((action) => {
-    if (action.type === "clear") {
+    if (action.action !== "annotate" && action.action !== "update_annotation") {
       return true;
     }
 

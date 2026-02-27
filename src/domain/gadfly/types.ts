@@ -1,5 +1,18 @@
 export type GadflyCategory = "clarity" | "structure" | "evidence" | "tone" | "logic";
 export type GadflySeverity = "low" | "medium" | "high";
+export type GadflyAnnotationStatus =
+  | "active"
+  | "acknowledged"
+  | "resolved"
+  | "dismissed"
+  | "snoozed";
+export type GadflyAnnotationManageActionType =
+  | "annotate"
+  | "clear"
+  | "clear_in_range"
+  | "update_annotation"
+  | "set_severity"
+  | "set_status";
 
 export const GADFLY_CATEGORIES: readonly GadflyCategory[] = [
   "clarity",
@@ -9,6 +22,21 @@ export const GADFLY_CATEGORIES: readonly GadflyCategory[] = [
   "logic",
 ];
 export const GADFLY_SEVERITIES: readonly GadflySeverity[] = ["low", "medium", "high"];
+export const GADFLY_ANNOTATION_STATUSES: readonly GadflyAnnotationStatus[] = [
+  "active",
+  "acknowledged",
+  "resolved",
+  "dismissed",
+  "snoozed",
+];
+export const GADFLY_ANNOTATION_MANAGE_ACTIONS: readonly GadflyAnnotationManageActionType[] = [
+  "annotate",
+  "clear",
+  "clear_in_range",
+  "update_annotation",
+  "set_severity",
+  "set_status",
+];
 
 export type GadflyRange = {
   from: number;
@@ -30,6 +58,7 @@ export type GadflyAnnotation = {
   anchor: GadflyAnchor;
   category: GadflyCategory;
   severity: GadflySeverity;
+  status: GadflyAnnotationStatus;
   explanation: string;
   rule: string;
   question: string;
@@ -37,12 +66,36 @@ export type GadflyAnnotation = {
 
 export type GadflyAction =
   | {
-      type: "annotate";
+      type: "annotation.manage";
+      action: "annotate";
       annotation: GadflyAnnotation;
     }
   | {
-      type: "clear";
+      type: "annotation.manage";
+      action: "clear";
       annotationId: string;
+    }
+  | {
+      type: "annotation.manage";
+      action: "clear_in_range";
+      range: GadflyRange;
+    }
+  | {
+      type: "annotation.manage";
+      action: "update_annotation";
+      annotation: GadflyAnnotation;
+    }
+  | {
+      type: "annotation.manage";
+      action: "set_severity";
+      annotationId: string;
+      severity: GadflySeverity;
+    }
+  | {
+      type: "annotation.manage";
+      action: "set_status";
+      annotationId: string;
+      status: GadflyAnnotationStatus;
     };
 
 export type GadflyDroppedArtifact = {

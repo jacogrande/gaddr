@@ -93,6 +93,23 @@ function clearAnnotationFamily(annotationId: string, byId: Map<string, GadflyAnn
   }
 }
 
+function rangesOverlap(
+  left: { from: number; to: number },
+  right: { from: number; to: number },
+): boolean {
+  return left.from < right.to && right.from < left.to;
+}
+
+function findFamilyIds(annotationId: string, byId: Map<string, GadflyAnnotation>): string[] {
+  if (byId.has(annotationId)) {
+    return [annotationId];
+  }
+
+  const collisionPrefix = `${annotationId}${COLLISION_ID_SEPARATOR}`;
+  const familyIds = Array.from(byId.keys()).filter((id) => id.startsWith(collisionPrefix));
+  return familyIds;
+}
+
 export function mergeGadflyActions(
   current: readonly GadflyAnnotation[],
   actions: readonly GadflyAction[],
@@ -100,20 +117,83 @@ export function mergeGadflyActions(
   const byId = new Map<string, GadflyAnnotation>(current.map((annotation) => [annotation.id, annotation]));
 
   for (const action of actions) {
-    if (action.type === "annotate") {
-      const resolvedId = resolveAnnotationId(action.annotation, byId);
-      if (resolvedId === action.annotation.id) {
-        byId.set(action.annotation.id, action.annotation);
-      } else {
-        byId.set(resolvedId, {
-          ...action.annotation,
-          id: resolvedId,
-        });
+    switch (action.action) {
+      case "annotate": {
+        const resolvedId = resolveAnnotationId(action.annotation, byId);
+        if (resolvedId === action.annotation.id) {
+          byId.set(action.annotation.id, action.annotation);
+        } else {
+          byId.set(resolvedId, {
+            ...action.annotation,
+            id: resolvedId,
+          });
+        }
+        break;
       }
-      continue;
-    }
+      case "update_annotation": {
+        const nextId = byId.has(action.annotation.id)
+          ? action.annotation.id
+          : resolveAnnotationId(action.annotation, byId);
+        byId.set(nextId, {
+          ...action.annotation,
+          id: nextId,
+        });
+        break;
+      }
+      case "clear": {
+        clearAnnotationFamily(action.annotationId, byId);
+        break;
+      }
+      case "clear_in_range": {
+        const deletions: string[] = [];
+        for (const [annotationId, annotation] of byId) {
+          const overlaps = rangesOverlap(
+            {
+              from: annotation.anchor.from,
+              to: annotation.anchor.to,
+            },
+            action.range,
+          );
+          if (overlaps) {
+            deletions.push(annotationId);
+          }
+        }
+        for (const annotationId of deletions) {
+          byId.delete(annotationId);
+        }
+        break;
+      }
+      case "set_severity": {
+        const familyIds = findFamilyIds(action.annotationId, byId);
+        for (const annotationId of familyIds) {
+          const existing = byId.get(annotationId);
+          if (!existing) {
+            continue;
+          }
 
-    clearAnnotationFamily(action.annotationId, byId);
+          byId.set(annotationId, {
+            ...existing,
+            severity: action.severity,
+          });
+        }
+        break;
+      }
+      case "set_status": {
+        const familyIds = findFamilyIds(action.annotationId, byId);
+        for (const annotationId of familyIds) {
+          const existing = byId.get(annotationId);
+          if (!existing) {
+            continue;
+          }
+
+          byId.set(annotationId, {
+            ...existing,
+            status: action.status,
+          });
+        }
+        break;
+      }
+    }
   }
 
   return sortAnnotations(Array.from(byId.values()));

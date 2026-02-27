@@ -27,50 +27,72 @@ const TONE_INCONSISTENCY_PATTERN = /\b(inconsisten|inconsistency|shift|mismatch|
 
 const GADFLY_TOOLS: Tool[] = [
   {
-    name: "annotate",
+    name: "annotation.manage",
     description:
-      "Add one Socratic writing annotation for an existing sentence range. Keep guidance high-level and never rewrite text.",
+      "Manage inline writing annotations. Use action enum: annotate, clear, clear_in_range, update_annotation, set_severity, set_status.",
     input_schema: {
       type: "object",
       properties: {
-        id: { type: "string" },
-        from: { type: "integer", minimum: 0 },
-        to: { type: "integer", minimum: 0 },
-        quote: { type: "string" },
-        category: {
+        action: {
           type: "string",
-          enum: ["clarity", "structure", "evidence", "tone", "logic"],
+          enum: [
+            "annotate",
+            "clear",
+            "clear_in_range",
+            "update_annotation",
+            "set_severity",
+            "set_status",
+          ],
+        },
+        annotation: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            anchor: {
+              type: "object",
+              properties: {
+                from: { type: "integer", minimum: 0 },
+                to: { type: "integer", minimum: 0 },
+                quote: { type: "string" },
+              },
+              required: ["from", "to", "quote"],
+            },
+            category: {
+              type: "string",
+              enum: ["clarity", "structure", "evidence", "tone", "logic"],
+            },
+            severity: {
+              type: "string",
+              enum: ["low", "medium", "high"],
+            },
+            status: {
+              type: "string",
+              enum: ["active", "acknowledged", "resolved", "dismissed", "snoozed"],
+            },
+            explanation: { type: "string" },
+            rule: { type: "string" },
+            question: { type: "string" },
+          },
+        },
+        annotationId: { type: "string" },
+        range: {
+          type: "object",
+          properties: {
+            from: { type: "integer", minimum: 0 },
+            to: { type: "integer", minimum: 0 },
+          },
+          required: ["from", "to"],
         },
         severity: {
           type: "string",
           enum: ["low", "medium", "high"],
         },
-        explanation: { type: "string" },
-        rule: { type: "string" },
-        question: { type: "string" },
+        status: {
+          type: "string",
+          enum: ["active", "acknowledged", "resolved", "dismissed", "snoozed"],
+        },
       },
-      required: [
-        "id",
-        "from",
-        "to",
-        "quote",
-        "category",
-        "severity",
-        "explanation",
-        "rule",
-        "question",
-      ],
-    },
-  },
-  {
-    name: "clear",
-    description: "Clear a previously issued annotation id that is no longer relevant.",
-    input_schema: {
-      type: "object",
-      properties: {
-        annotationId: { type: "string" },
-      },
-      required: ["annotationId"],
+      required: ["action"],
     },
   },
 ];
@@ -84,9 +106,60 @@ function toActionFromTool(name: string, input: unknown): unknown {
     return null;
   }
 
+  if (name === "annotation.manage") {
+    const action = input["action"];
+    if (typeof action !== "string") {
+      return null;
+    }
+
+    if (action === "annotate" || action === "update_annotation") {
+      return {
+        type: "annotation.manage",
+        action,
+        annotation: input["annotation"],
+      };
+    }
+
+    if (action === "clear") {
+      return {
+        type: "annotation.manage",
+        action,
+        annotationId: input["annotationId"],
+      };
+    }
+
+    if (action === "clear_in_range") {
+      return {
+        type: "annotation.manage",
+        action,
+        range: input["range"],
+      };
+    }
+
+    if (action === "set_severity") {
+      return {
+        type: "annotation.manage",
+        action,
+        annotationId: input["annotationId"],
+        severity: input["severity"],
+      };
+    }
+
+    if (action === "set_status") {
+      return {
+        type: "annotation.manage",
+        action,
+        annotationId: input["annotationId"],
+        status: input["status"],
+      };
+    }
+  }
+
+  // Legacy tool fallback support.
   if (name === "annotate") {
     return {
-      type: "annotate",
+      type: "annotation.manage",
+      action: "annotate",
       annotation: {
         id: input["id"],
         anchor: {
@@ -105,7 +178,8 @@ function toActionFromTool(name: string, input: unknown): unknown {
 
   if (name === "clear") {
     return {
-      type: "clear",
+      type: "annotation.manage",
+      action: "clear",
       annotationId: input["annotationId"],
     };
   }
@@ -133,8 +207,10 @@ function buildPrompt(request: GadflyAnalyzeRequest): string {
     "Do not rewrite user text and do not provide replacement prose.",
     "For tone feedback: only annotate tone when it is inconsistent with the surrounding writing style.",
     "Do not flag tone based only on professionalism or informality in isolation.",
-    `Return at most ${String(MAX_GADFLY_ACTIONS)} annotate calls total.`,
-    "Use clear only if an existing annotation should be removed.",
+    `Return at most ${String(MAX_GADFLY_ACTIONS)} annotation.manage calls total.`,
+    "Use action=annotate for new findings.",
+    "Use action=update_annotation for refinement of existing findings.",
+    "Use action=clear, clear_in_range, set_severity, or set_status only when appropriate.",
     "Each annotation must be Socratic: diagnosis + rule + question.",
     "Request payload:",
     serializeRequest(request),
@@ -154,7 +230,11 @@ function parseActionsFromContent(content: Array<{ type: string; name?: string; i
     }
 
     const toolName = block.name;
-    if (toolName !== "annotate" && toolName !== "clear") {
+    if (
+      toolName !== "annotation.manage" &&
+      toolName !== "annotate" &&
+      toolName !== "clear"
+    ) {
       droppedArtifacts.push({
         reason: "unsupported_tool",
         artifactSnippet: toolName ?? "unknown",
@@ -186,7 +266,11 @@ function parseActionsFromContent(content: Array<{ type: string; name?: string; i
       continue;
     }
 
-    if (validatedAction.value.type === "annotate" && validatedAction.value.annotation.category === "tone") {
+    if (
+      (validatedAction.value.action === "annotate" ||
+        validatedAction.value.action === "update_annotation") &&
+      validatedAction.value.annotation.category === "tone"
+    ) {
       const toneText = [
         validatedAction.value.annotation.explanation,
         validatedAction.value.annotation.rule,
@@ -244,7 +328,7 @@ export async function analyzeWithGadfly(
         "Never write replacement prose.",
         "Never output rewritten sentences or paragraphs.",
         "Only flag tone when it is inconsistent with surrounding style.",
-        "Only produce tool calls using annotate or clear.",
+        "Only produce tool calls using annotation.manage.",
         "Keep feedback concise, precise, and instructional.",
       ].join("\n"),
       messages: [
