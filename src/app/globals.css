@@ -1,5 +1,106 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: light;
+  --app-bg: #f4e9d8;
+  --app-fg: #3b2f1f;
+  --app-muted: #7f5c37;
+  --app-muted-soft: #b9aa92;
+  --surface-1: #f6ead8;
+  --surface-2: #f1e1cb;
+  --surface-3: #ead7b8;
+  --surface-4: #f8eddc;
+  --border-soft: #d6bb98;
+  --border-strong: #caa67d;
+  --accent: #b68d59;
+  --accent-strong: #8f6238;
+  --overlay: rgba(47, 34, 24, 0.24);
+  --heading-1: #342312;
+  --heading-2: #3e2c1a;
+  --heading-3: #4a3724;
+  --marker: #7a5c37;
+  --blockquote-border: #b8915f;
+  --blockquote-bg: #efe2cd;
+  --blockquote-fg: #5a4833;
+  --inline-code-border: #d9bf98;
+  --inline-code-bg: #ead8bc;
+  --inline-code-fg: #4a3520;
+  --code-block-border: #d3b58a;
+  --code-block-bg: #ead8bc;
+  --code-block-fg: #3e2e1f;
+  --highlight-bg: #efd9ba;
+  --highlight-border: #c08f59;
+  --highlight-low: #b49368;
+  --highlight-medium: #b17845;
+  --highlight-high: #99542f;
+  --theme-toggle-border: color-mix(in srgb, var(--border-strong) 80%, transparent);
+  --theme-toggle-bg: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  --theme-toggle-fg: var(--app-muted);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --app-bg: #1d150f;
+  --app-fg: #eadfcd;
+  --app-muted: #c7ad8c;
+  --app-muted-soft: #8f785e;
+  --surface-1: #2a1f16;
+  --surface-2: #33261a;
+  --surface-3: #3b2c1e;
+  --surface-4: #2f2418;
+  --border-soft: #5e452c;
+  --border-strong: #765738;
+  --accent: #d7a268;
+  --accent-strong: #f0bf86;
+  --overlay: rgba(12, 8, 5, 0.62);
+  --heading-1: #f8ead4;
+  --heading-2: #f2e1c8;
+  --heading-3: #e5cfaf;
+  --marker: #d3b184;
+  --blockquote-border: #8a673f;
+  --blockquote-bg: #2e2217;
+  --blockquote-fg: #d8c2a0;
+  --inline-code-border: #6c4f31;
+  --inline-code-bg: #322416;
+  --inline-code-fg: #f1dfc6;
+  --code-block-border: #6a4d30;
+  --code-block-bg: #2d2115;
+  --code-block-fg: #e8d5bc;
+  --highlight-bg: #6f4e2c;
+  --highlight-border: #cb8f4e;
+  --highlight-low: #9d7a4d;
+  --highlight-medium: #c28544;
+  --highlight-high: #d46a49;
+}
+
+html,
+body {
+  background-color: var(--app-bg);
+  color: var(--app-fg);
+}
+
+body {
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.gaddr-theme-toggle {
+  border: 1px solid var(--theme-toggle-border);
+  background-color: var(--theme-toggle-bg);
+  color: var(--theme-toggle-fg);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--app-bg) 30%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.gaddr-theme-toggle:hover {
+  background-color: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  color: var(--accent-strong);
+}
+
+.gaddr-theme-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 2px;
+}
+
 .tiptap {
   caret-color: currentColor;
   outline: none;
@@ -16,7 +117,7 @@
   font-weight: 700;
   line-height: 1.12;
   letter-spacing: -0.015em;
-  color: #342312;
+  color: var(--heading-1);
 }
 
 .tiptap h2 {
@@ -25,7 +126,7 @@
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.01em;
-  color: #3e2c1a;
+  color: var(--heading-2);
 }
 
 .tiptap h3 {
@@ -33,7 +134,7 @@
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.28;
-  color: #4a3724;
+  color: var(--heading-3);
 }
 
 .tiptap ul,
@@ -51,32 +152,32 @@
 }
 
 .tiptap li::marker {
-  color: #7a5c37;
+  color: var(--marker);
 }
 
 .tiptap blockquote {
   margin: 1rem 0;
-  border-left: 3px solid #b8915f;
+  border-left: 3px solid var(--blockquote-border);
   border-radius: 0 0.4rem 0.4rem 0;
-  background-color: #efe2cd;
+  background-color: var(--blockquote-bg);
   padding: 0.55rem 0.9rem;
-  color: #5a4833;
+  color: var(--blockquote-fg);
 }
 
 .tiptap :not(pre) > code {
   border-radius: 0.25rem;
-  border: 1px solid #d9bf98;
-  background-color: #ead8bc;
-  color: #4a3520;
+  border: 1px solid var(--inline-code-border);
+  background-color: var(--inline-code-bg);
+  color: var(--inline-code-fg);
   padding: 0.1rem 0.3rem;
 }
 
 .tiptap pre {
   margin: 1rem 0;
   border-radius: 0.5rem;
-  border: 1px solid #d3b58a;
-  background-color: #ead8bc;
-  color: #3e2e1f;
+  border: 1px solid var(--code-block-border);
+  background-color: var(--code-block-bg);
+  color: var(--code-block-fg);
   padding: 0.85rem 1rem;
   overflow-x: auto;
 }
@@ -89,25 +190,25 @@
 }
 
 .gaddr-gadfly-highlight {
-  border-bottom: 2px solid color-mix(in srgb, #c08f59 72%, transparent);
-  background-color: color-mix(in srgb, #efd9ba 52%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--highlight-border) 72%, transparent);
+  background-color: color-mix(in srgb, var(--highlight-bg) 52%, transparent);
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .gaddr-gadfly-highlight:hover {
-  background-color: color-mix(in srgb, #efd9ba 70%, transparent);
+  background-color: color-mix(in srgb, var(--highlight-bg) 70%, transparent);
 }
 
 .gaddr-gadfly-highlight--low {
-  border-bottom-color: color-mix(in srgb, #b49368 68%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--highlight-low) 68%, transparent);
 }
 
 .gaddr-gadfly-highlight--medium {
-  border-bottom-color: color-mix(in srgb, #b17845 76%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--highlight-medium) 76%, transparent);
 }
 
 .gaddr-gadfly-highlight--high {
-  border-bottom-color: color-mix(in srgb, #99542f 82%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--highlight-high) 82%, transparent);
 }
 
 .gaddr-modifier-stack {
@@ -115,11 +216,149 @@
 }
 
 .gaddr-modifier-chip {
+  border-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  color: var(--accent-strong);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--app-bg) 50%, transparent);
   animation: gaddr-modifier-chip-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 .gaddr-modifier-chip--exit {
   animation: gaddr-modifier-chip-out 145ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.gaddr-gadfly-status {
+  border-color: color-mix(in srgb, var(--border-soft) 75%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  color: var(--app-muted);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--app-bg) 55%, transparent);
+}
+
+.gaddr-slash-menu,
+.gaddr-command-palette {
+  border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 95%, transparent);
+  color: var(--app-fg);
+  box-shadow: 0 24px 52px color-mix(in srgb, var(--app-bg) 45%, transparent);
+}
+
+.gaddr-command-overlay {
+  background-color: var(--overlay);
+}
+
+.gaddr-menu-label {
+  border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
+  color: var(--app-muted);
+}
+
+.gaddr-command-search {
+  border-color: color-mix(in srgb, var(--border-strong) 74%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-command-search::placeholder {
+  color: color-mix(in srgb, var(--app-muted) 82%, transparent);
+}
+
+.gaddr-command-search:focus {
+  border-color: color-mix(in srgb, var(--accent) 78%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.gaddr-command-row {
+  color: color-mix(in srgb, var(--app-muted) 85%, var(--app-fg));
+}
+
+.gaddr-command-row:hover {
+  background-color: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-command-row--active {
+  background-color: color-mix(in srgb, var(--surface-3) 86%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-command-row--selected {
+  background-color: color-mix(in srgb, var(--accent) 34%, var(--surface-1));
+  color: var(--app-fg);
+}
+
+.gaddr-hotkey-chip {
+  border-color: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  color: var(--app-muted);
+}
+
+.gaddr-command-empty {
+  color: color-mix(in srgb, var(--app-muted) 86%, transparent);
+}
+
+.gaddr-gadfly-error {
+  border-color: color-mix(in srgb, var(--accent) 66%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 96%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-gadfly-card {
+  border-color: color-mix(in srgb, var(--border-soft) 74%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 96%, transparent);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--app-bg) 46%, transparent);
+}
+
+.gaddr-debug-pane {
+  border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 95%, transparent);
+  color: var(--app-fg);
+  box-shadow: 0 24px 48px color-mix(in srgb, var(--app-bg) 42%, transparent);
+}
+
+.gaddr-debug-pane * {
+  border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
+  color: inherit;
+}
+
+.gaddr-debug-pane header,
+.gaddr-debug-pane > div {
+  color: color-mix(in srgb, var(--app-muted) 84%, var(--app-fg));
+}
+
+.gaddr-debug-pane button {
+  border-color: color-mix(in srgb, var(--border-strong) 74%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 94%, transparent);
+  color: var(--app-muted);
+}
+
+.gaddr-debug-pane button:hover {
+  background-color: color-mix(in srgb, var(--surface-3) 96%, transparent);
+}
+
+.gaddr-debug-pane article {
+  border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
+  background-color: color-mix(in srgb, var(--surface-4) 92%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-debug-pane summary {
+  color: color-mix(in srgb, var(--app-muted) 88%, transparent);
+}
+
+.gaddr-debug-pane pre {
+  border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-debug-toggle-button {
+  border-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  color: var(--app-muted);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--app-bg) 45%, transparent);
+}
+
+.gaddr-debug-toggle-button:hover {
+  background-color: color-mix(in srgb, var(--surface-2) 94%, transparent);
 }
 
 .gaddr-command-palette {

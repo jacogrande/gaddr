@@ -27,23 +27,23 @@ function SignInForm() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-sm rounded-lg border bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold text-gray-900">Sign in</h1>
-        <p className="mt-1 text-sm text-gray-600">Continue to the editor.</p>
+    <div className="flex min-h-screen items-center justify-center bg-[var(--app-bg)] px-4">
+      <div className="w-full max-w-sm rounded-lg border border-[color:var(--border-soft)] bg-[var(--surface-1)] p-6 shadow-sm">
+        <h1 className="text-2xl font-semibold text-[var(--app-fg)]">Sign in</h1>
+        <p className="mt-1 text-sm text-[color:var(--app-muted)]">Continue to the editor.</p>
 
         <div className="mt-6 space-y-3">
           <button
             type="button"
             onClick={handleGoogleSignIn}
-            className="w-full rounded bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            className="w-full rounded border border-[color:var(--accent)] bg-[color:var(--accent)] px-4 py-2 text-sm font-medium text-[#1c130b] hover:bg-[color:var(--accent-strong)]"
           >
             Continue with Google
           </button>
           <button
             type="button"
             onClick={handleGithubSignIn}
-            className="w-full rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+            className="w-full rounded border border-[color:var(--border-soft)] bg-[var(--surface-2)] px-4 py-2 text-sm font-medium text-[var(--app-fg)] hover:bg-[var(--surface-3)]"
           >
             Continue with GitHub
           </button>

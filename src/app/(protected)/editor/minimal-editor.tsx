@@ -258,7 +258,7 @@ export function MinimalEditor() {
     editorProps: {
       attributes: {
         class:
-          "tiptap h-full min-h-[calc(100vh-8.5rem)] w-full bg-transparent text-lg leading-8 text-[#3b2f1f] focus:outline-none",
+          "tiptap h-full min-h-[calc(100vh-8.5rem)] w-full bg-transparent text-lg leading-8 text-[var(--app-fg)] focus:outline-none",
       },
     },
     onUpdate: ({ editor: current }) => {
@@ -830,13 +830,22 @@ export function MinimalEditor() {
     } satisfies CSSProperties;
   }, [hoveredGadfly]);
 
+  const debugEntriesView = useMemo(() => {
+    return [...debugEntries].reverse().map((entry) => ({
+      ...entry,
+      timeLabel: new Date(entry.startedAtIso).toLocaleTimeString(),
+      requestJson: formatDebugJson(entry.request),
+      responseJson: formatDebugJson(entry.responseBody),
+    }));
+  }, [debugEntries]);
+
   if (!editor) {
     return <div className="min-h-[calc(100vh-8.5rem)]" />;
   }
 
   return (
     <div
-      className="relative h-full"
+      className="gaddr-editor-shell relative h-full"
       data-testid="editor-shell"
       onMouseMove={handleEditorMouseMove}
       onMouseLeave={() => {
@@ -848,7 +857,7 @@ export function MinimalEditor() {
           {displayModifiers.map((modifier, index) => (
             <div
               key={modifier.key}
-              className={`gaddr-modifier-chip inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-[#c8a877]/70 bg-[#f3e4cf]/86 px-1.5 text-[0.62rem] font-semibold leading-none tracking-[0.14em] text-[#6a4a27] shadow-[0_6px_20px_rgba(65,42,18,0.12)] backdrop-blur-[3px] ${
+              className={`gaddr-modifier-chip inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-semibold leading-none tracking-[0.14em] backdrop-blur-[3px] ${
                 modifier.exiting ? "gaddr-modifier-chip--exit" : ""
               }`}
               style={
@@ -864,14 +873,14 @@ export function MinimalEditor() {
           ))}
         </div>
       ) : null}
-      <div className="pointer-events-none fixed right-4 top-4 z-[48] hidden rounded-md border border-[#d8c1a1]/75 bg-[#f5e8d5]/92 px-2.5 py-1 text-[0.64rem] font-semibold tracking-[0.09em] text-[#7b5a34] sm:block">
+      <div className="gaddr-gadfly-status pointer-events-none fixed right-4 top-14 z-[48] hidden rounded-md border px-2.5 py-1 text-[0.64rem] font-semibold tracking-[0.09em] sm:block">
         {isAnalyzing ? "GADFLY ANALYZING" : "GADFLY IDLE"}
       </div>
       {slashMenuState && !isCommandPaletteOpen ? (
         <div
           aria-label="Editor slash menu"
           data-testid="slash-menu"
-          className="gaddr-slash-menu fixed z-[58] w-[min(22.5rem,calc(100vw-1.5rem))] rounded-xl border border-[#cfb187]/70 bg-[#f5e8d5]/95 p-2 shadow-[0_20px_45px_rgba(45,27,8,0.2)] backdrop-blur-[2px]"
+          className="gaddr-slash-menu fixed z-[58] w-[min(22.5rem,calc(100vw-1.5rem))] rounded-xl border p-2 backdrop-blur-[2px]"
           style={
             {
               left: `${String(slashMenuState.left)}px`,
@@ -882,7 +891,7 @@ export function MinimalEditor() {
             event.preventDefault();
           }}
         >
-          <div className="border-b border-[#cfb187]/70 px-3 pb-2 pt-1 text-xs tracking-[0.14em] text-[#8d6b46]">
+          <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-xs tracking-[0.14em]">
             COMMANDS
           </div>
           <div className="max-h-[min(50vh,20rem)] overflow-y-auto py-1">
@@ -896,13 +905,9 @@ export function MinimalEditor() {
                     key={command.id}
                     type="button"
                     data-testid={`slash-command-${command.id}`}
-                    className={`gaddr-command-row flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
-                      commandIsSelected
-                        ? "bg-[#e2c9a3]/95 text-[#452c14]"
-                        : commandIsActive
-                          ? "bg-[#ead7b8]/95 text-[#4a331a]"
-                          : "text-[#5c4328] hover:bg-[#efdec3]/85 active:bg-[#e6cfab]"
-                    }`}
+                    className={`gaddr-command-row ${
+                      commandIsSelected ? "gaddr-command-row--selected" : commandIsActive ? "gaddr-command-row--active" : ""
+                    } flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors`}
                     onMouseEnter={() => {
                       setSlashMenuActiveIndex(index);
                     }}
@@ -914,10 +919,7 @@ export function MinimalEditor() {
                     <span className="text-sm font-medium tracking-[0.01em]">{command.label}</span>
                     <span className="ml-4 flex items-center gap-1.5">
                       {command.hotkeys.map((hotkey) => (
-                        <kbd
-                          key={hotkey}
-                          className="rounded border border-[#c4a476]/75 bg-[#f2e4cf]/92 px-1.5 py-0.5 text-[0.66rem] font-semibold tracking-[0.08em] text-[#87623c]"
-                        >
+                        <kbd key={hotkey} className="gaddr-hotkey-chip rounded border px-1.5 py-0.5 text-[0.66rem] font-semibold tracking-[0.08em]">
                           {formatHotkey(hotkey)}
                         </kbd>
                       ))}
@@ -926,14 +928,14 @@ export function MinimalEditor() {
                 );
               })
             ) : (
-              <div className="px-3 py-4 text-center text-sm text-[#8f6d48]">No matching commands</div>
+              <div className="gaddr-command-empty px-3 py-4 text-center text-sm">No matching commands</div>
             )}
           </div>
         </div>
       ) : null}
       {isCommandPaletteOpen ? (
         <div
-          className="fixed inset-0 z-[60] flex items-start justify-center bg-[#2f2218]/24 px-4 pt-14 backdrop-blur-[2px] sm:pt-20"
+          className="gaddr-command-overlay fixed inset-0 z-[60] flex items-start justify-center px-4 pt-14 backdrop-blur-[2px] sm:pt-20"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeCommandPalette();
@@ -945,9 +947,9 @@ export function MinimalEditor() {
             role="dialog"
             aria-label="Editor command palette"
             data-testid="command-palette"
-            className="gaddr-command-palette w-full max-w-xl rounded-xl border border-[#cfb187]/70 bg-[#f5e8d5]/95 p-2 shadow-[0_30px_70px_rgba(45,27,8,0.25)]"
+            className="gaddr-command-palette w-full max-w-xl rounded-xl border p-2"
           >
-            <div className="border-b border-[#cfb187]/70 px-3 pb-2 pt-1 text-xs tracking-[0.14em] text-[#8d6b46]">
+            <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-xs tracking-[0.14em]">
               MODIFIERS
             </div>
             <div className="px-2 pb-1 pt-2">
@@ -957,7 +959,7 @@ export function MinimalEditor() {
                 value={commandPaletteQuery}
                 placeholder="Search commands"
                 data-testid="command-palette-input"
-                className="w-full rounded-lg border border-[#c9ab81]/80 bg-[#f7ebda] px-3 py-2 text-sm text-[#5b4327] outline-none placeholder:text-[#9d7d57] focus:border-[#b68d59] focus:ring-2 focus:ring-[#b68d59]/30"
+                className="gaddr-command-search w-full rounded-lg border px-3 py-2 text-sm outline-none"
                 onChange={(event) => {
                   setCommandPaletteQuery(event.target.value);
                   setCommandPaletteActiveIndex(0);
@@ -975,13 +977,9 @@ export function MinimalEditor() {
                       key={command.id}
                       type="button"
                       data-testid={`command-${command.id}`}
-                      className={`gaddr-command-row flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
-                        commandIsSelected
-                          ? "bg-[#e2c9a3]/95 text-[#452c14]"
-                          : commandIsActive
-                            ? "bg-[#ead7b8]/95 text-[#4a331a]"
-                            : "text-[#5c4328] hover:bg-[#efdec3]/85 active:bg-[#e6cfab]"
-                      }`}
+                      className={`gaddr-command-row ${
+                        commandIsSelected ? "gaddr-command-row--selected" : commandIsActive ? "gaddr-command-row--active" : ""
+                      } flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition-colors`}
                       onMouseEnter={() => {
                         setCommandPaletteActiveIndex(index);
                       }}
@@ -992,10 +990,7 @@ export function MinimalEditor() {
                       <span className="text-sm font-medium tracking-[0.01em]">{command.label}</span>
                       <span className="ml-4 flex items-center gap-1.5">
                         {command.hotkeys.map((hotkey) => (
-                          <kbd
-                            key={hotkey}
-                            className="rounded border border-[#c4a476]/75 bg-[#f2e4cf]/92 px-1.5 py-0.5 text-[0.66rem] font-semibold tracking-[0.08em] text-[#87623c]"
-                          >
+                          <kbd key={hotkey} className="gaddr-hotkey-chip rounded border px-1.5 py-0.5 text-[0.66rem] font-semibold tracking-[0.08em]">
                             {formatHotkey(hotkey)}
                           </kbd>
                         ))}
@@ -1004,51 +999,51 @@ export function MinimalEditor() {
                   );
                 })
               ) : (
-                <div className="px-3 py-6 text-center text-sm text-[#8f6d48]">No matching commands</div>
+                <div className="gaddr-command-empty px-3 py-6 text-center text-sm">No matching commands</div>
               )}
             </div>
           </div>
         </div>
       ) : null}
       {analyzeError ? (
-        <div className="pointer-events-none fixed bottom-4 left-1/2 z-[59] w-[min(90vw,36rem)] -translate-x-1/2 rounded-lg border border-[#cc9a6c]/70 bg-[#f4e3cf]/96 px-3 py-2 text-xs text-[#6c4a2b] shadow-[0_10px_28px_rgba(62,38,17,0.18)]">
+        <div className="gaddr-gadfly-error pointer-events-none fixed bottom-4 left-1/2 z-[59] w-[min(90vw,36rem)] -translate-x-1/2 rounded-lg border px-3 py-2 text-xs">
           Gadfly unavailable: {analyzeError}
         </div>
       ) : null}
       {hoveredGadfly ? (
         <aside
-          className="gaddr-gadfly-card pointer-events-none fixed z-[57] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-lg border border-[#d5bb98]/80 bg-[#f6ebdc]/96 p-3 shadow-[0_16px_36px_rgba(43,27,11,0.2)] backdrop-blur-[1px]"
+          className="gaddr-gadfly-card pointer-events-none fixed z-[57] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-lg border p-3 backdrop-blur-[1px]"
           style={hoveredGadflyStyle}
         >
-          <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[#8f6a45]">
+          <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
             {hoveredGadfly.annotation.category.toUpperCase()} · {hoveredGadfly.annotation.severity.toUpperCase()}
           </div>
-          <p className="mt-1.5 text-xs leading-5 text-[#5a4127]">{hoveredGadfly.annotation.explanation}</p>
-          <p className="mt-1.5 text-[0.7rem] leading-4 text-[#7b5f3d]">Rule: {hoveredGadfly.annotation.rule}</p>
-          <p className="mt-2 text-xs italic leading-5 text-[#4f3820]">{hoveredGadfly.annotation.question}</p>
+          <p className="mt-1.5 text-xs leading-5 text-[var(--app-fg)]">{hoveredGadfly.annotation.explanation}</p>
+          <p className="mt-1.5 text-[0.7rem] leading-4 text-[color:var(--app-muted)]">Rule: {hoveredGadfly.annotation.rule}</p>
+          <p className="mt-2 text-xs italic leading-5 text-[color:var(--app-fg)]">{hoveredGadfly.annotation.question}</p>
         </aside>
       ) : null}
       {DEV_DEBUG_ENABLED ? (
         <aside
           aria-label="Gadfly debug pane"
           data-testid="gadfly-debug-pane"
-          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[62] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[#d3b58d]/70 bg-[#f6ead8]/95 shadow-[0_24px_48px_rgba(45,27,8,0.22)] backdrop-blur-[2px] transition-all duration-200 ${
+          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[62] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border backdrop-blur-[2px] transition-all duration-200 ${
             isDebugPaneOpen ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[105%] opacity-0"
           }`}
         >
-          <header className="flex items-center justify-between border-b border-[#d6bb98]/80 px-3 py-2">
-            <div className="text-[0.68rem] font-semibold tracking-[0.12em] text-[#7f5c37]">GADFLY DEBUG</div>
+          <header className="flex items-center justify-between border-b px-3 py-2">
+            <div className="text-[0.68rem] font-semibold tracking-[0.12em]">GADFLY DEBUG</div>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                className="rounded border border-[#caa67d]/80 bg-[#f4e5cf]/90 px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em] text-[#7e5a35] hover:bg-[#efdcc0]"
+                className="rounded border px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em]"
                 onClick={clearDebugEntries}
               >
                 CLEAR
               </button>
               <button
                 type="button"
-                className="rounded border border-[#caa67d]/80 bg-[#f4e5cf]/90 px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em] text-[#7e5a35] hover:bg-[#efdcc0]"
+                className="rounded border px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em]"
                 onClick={() => {
                   setIsDebugPaneOpen(false);
                 }}
@@ -1057,41 +1052,38 @@ export function MinimalEditor() {
               </button>
             </div>
           </header>
-          <div className="border-b border-[#d6bb98]/80 px-3 py-2 text-[0.66rem] tracking-[0.09em] text-[#86643f]">
+          <div className="border-b px-3 py-2 text-[0.66rem] tracking-[0.09em]">
             {isAnalyzing ? "Status: analyzing" : "Status: idle"} · {debugEntries.length} entries
           </div>
           <div className="h-[calc(100%-5.2rem)] overflow-y-auto px-2 pb-2 pt-2">
-            {debugEntries.length === 0 ? (
-              <div className="rounded border border-dashed border-[#d8be9a]/80 px-3 py-4 text-xs text-[#8b6a46]">
+            {debugEntriesView.length === 0 ? (
+              <div className="rounded border border-dashed px-3 py-4 text-xs">
                 No requests yet. Toggle with Cmd/Ctrl+Shift+D.
               </div>
             ) : (
-              [...debugEntries].reverse().map((entry) => (
-                <article
-                  key={entry.id}
-                  className="mb-2 rounded-lg border border-[#d7bc98]/80 bg-[#f8eddc]/90 p-2 text-[0.67rem] text-[#684a2b]"
-                >
+              debugEntriesView.map((entry) => (
+                <article key={entry.id} className="mb-2 rounded-lg border p-2 text-[0.67rem]">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold tracking-[0.08em] uppercase">
                       {entry.status} · {entry.id}
                     </span>
-                    <span>{new Date(entry.startedAtIso).toLocaleTimeString()}</span>
+                    <span>{entry.timeLabel}</span>
                   </div>
-                  <div className="mt-1 text-[0.62rem] text-[#866443]">
+                  <div className="mt-1 text-[0.62rem]">
                     HTTP {entry.responseStatus ?? "-"} · {entry.usage ? `${String(entry.usage.totalTokens)} tokens` : "0 tokens"} ·{" "}
                     {entry.latencyMs !== undefined ? `${String(entry.latencyMs)}ms` : "-"}
                   </div>
-                  {entry.error ? <div className="mt-1 text-[#8c3f26]">{entry.error}</div> : null}
+                  {entry.error ? <div className="mt-1 text-[#c7694a]">{entry.error}</div> : null}
                   <details className="mt-1">
-                    <summary className="cursor-pointer select-none text-[#7b5936]">Request JSON</summary>
-                    <pre className="mt-1 max-h-36 overflow-auto rounded border border-[#dbc4a3]/80 bg-[#f1e1cb]/90 p-2 text-[0.62rem] leading-4 text-[#5f4328]">
-                      {formatDebugJson(entry.request)}
+                    <summary className="cursor-pointer select-none">Request JSON</summary>
+                    <pre className="mt-1 max-h-36 overflow-auto rounded border p-2 text-[0.62rem] leading-4">
+                      {entry.requestJson}
                     </pre>
                   </details>
                   <details className="mt-1">
-                    <summary className="cursor-pointer select-none text-[#7b5936]">Response JSON</summary>
-                    <pre className="mt-1 max-h-36 overflow-auto rounded border border-[#dbc4a3]/80 bg-[#f1e1cb]/90 p-2 text-[0.62rem] leading-4 text-[#5f4328]">
-                      {formatDebugJson(entry.responseBody)}
+                    <summary className="cursor-pointer select-none">Response JSON</summary>
+                    <pre className="mt-1 max-h-36 overflow-auto rounded border p-2 text-[0.62rem] leading-4">
+                      {entry.responseJson}
                     </pre>
                   </details>
                 </article>
@@ -1103,7 +1095,7 @@ export function MinimalEditor() {
       {DEV_DEBUG_ENABLED && !isDebugPaneOpen ? (
         <button
           type="button"
-          className="fixed bottom-4 right-4 z-[61] rounded-md border border-[#c8a877]/70 bg-[#f3e5cf]/92 px-2 py-1 text-[0.62rem] font-semibold tracking-[0.08em] text-[#7b5c3a] shadow-[0_8px_22px_rgba(53,35,16,0.16)]"
+          className="gaddr-debug-toggle-button fixed bottom-4 right-4 z-[61] rounded-md border px-2 py-1 text-[0.62rem] font-semibold tracking-[0.08em]"
           onClick={() => {
             setIsDebugPaneOpen(true);
           }}
