@@ -4,13 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { mergeGadflyActions } from "../../../domain/gadfly/annotations";
+import { reduceGadflyState } from "../../../domain/gadfly/annotations";
 import { parseGadflyAction } from "../../../domain/gadfly/guards";
 import type {
   GadflyAction,
+  GadflyAnalyzeDiagnostics,
   GadflyAnalyzeRequest,
   GadflyAnnotation,
+  GadflyDebugEvent,
+  GadflyDroppedArtifact,
+  GadflyPreferences,
   GadflyRange,
+  GadflyState,
   GadflyUsage,
 } from "../../../domain/gadfly/types";
 
@@ -26,6 +31,22 @@ export type GadflyDebugEntry = {
   usage?: GadflyUsage;
   latencyMs?: number;
   error?: string;
+  diagnostics?: GadflyAnalyzeDiagnostics;
+  parsedActions?: GadflyAction[];
+  appliedActions?: GadflyAction[];
+  droppedArtifacts?: GadflyDroppedArtifact[];
+  filteredActionCount?: number;
+  providerRequestId?: string;
+  model?: string;
+  stopReason?: string | null;
+};
+
+export type GadflyDebugRuntime = {
+  activeRequestId: string | null;
+  pendingRanges: GadflyRange[];
+  pendingDocVersion: number;
+  debounceScheduled: boolean;
+  currentDocVersion: number;
 };
 
 type UseGadflyOptions = {
@@ -36,9 +57,12 @@ type UseGadflyOptions = {
 
 type UseGadflyResult = {
   annotations: GadflyAnnotation[];
+  preferences: GadflyPreferences;
+  debugEvents: GadflyDebugEvent[];
   isAnalyzing: boolean;
   analyzeError: string | null;
   debugEntries: GadflyDebugEntry[];
+  debugRuntime: GadflyDebugRuntime;
   handleTransaction: (transaction: Transaction) => void;
   clearDebugEntries: () => void;
 };
@@ -86,6 +110,7 @@ function parseUsage(value: unknown): GadflyUsage | null {
   const inputTokens = value["inputTokens"];
   const outputTokens = value["outputTokens"];
   const totalTokens = value["totalTokens"];
+  const webSearchRequests = value["webSearchRequests"];
 
   if (
     typeof inputTokens !== "number" ||
@@ -99,6 +124,7 @@ function parseUsage(value: unknown): GadflyUsage | null {
     inputTokens,
     outputTokens,
     totalTokens,
+    webSearchRequests: typeof webSearchRequests === "number" ? webSearchRequests : undefined,
   };
 }
 
@@ -121,26 +147,97 @@ function parseAnalyzeErrorMessage(value: unknown): string | null {
 }
 
 function parseAnalyzeSuccess(value: unknown): {
+  requestId: string | null;
+  model: string | null;
+  stopReason: string | null;
   actions: GadflyAction[];
+  droppedArtifacts: GadflyDroppedArtifact[];
   usage: GadflyUsage | null;
   latencyMs: number | null;
+  diagnostics: GadflyAnalyzeDiagnostics | null;
 } {
   if (!isObject(value)) {
     return {
+      requestId: null,
+      model: null,
+      stopReason: null,
       actions: [],
+      droppedArtifacts: [],
       usage: null,
       latencyMs: null,
+      diagnostics: null,
     };
   }
 
+  const requestId = typeof value["requestId"] === "string" ? value["requestId"] : null;
+  const model = typeof value["model"] === "string" ? value["model"] : null;
   const actions = parseActions(value["actions"]);
+  const droppedArtifacts = parseDroppedArtifacts(value["droppedArtifacts"]);
   const usage = parseUsage(value["usage"]);
   const latencyMs = typeof value["latencyMs"] === "number" ? value["latencyMs"] : null;
+  const diagnostics = parseDiagnostics(value["diagnostics"]);
+  let stopReason: string | null = null;
+
+  const rawResponse = value["rawResponse"];
+  if (isObject(rawResponse) && typeof rawResponse["stopReason"] === "string") {
+    stopReason = rawResponse["stopReason"];
+  }
 
   return {
+    requestId,
+    model,
+    stopReason,
     actions,
+    droppedArtifacts,
     usage,
     latencyMs,
+    diagnostics,
+  };
+}
+
+function parseDroppedArtifacts(value: unknown): GadflyDroppedArtifact[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const artifacts: GadflyDroppedArtifact[] = [];
+  for (const item of value) {
+    if (!isObject(item)) {
+      continue;
+    }
+
+    const reason = item["reason"];
+    const artifactSnippet = item["artifactSnippet"];
+    if (typeof reason !== "string" || typeof artifactSnippet !== "string") {
+      continue;
+    }
+
+    artifacts.push({ reason, artifactSnippet });
+  }
+
+  return artifacts;
+}
+
+function parseDiagnostics(value: unknown): GadflyAnalyzeDiagnostics | null {
+  if (!isObject(value)) {
+    return null;
+  }
+
+  const webSearchEligible = value["webSearchEligible"];
+  const webSearchIncluded = value["webSearchIncluded"];
+  const webSearchFallbackUsed = value["webSearchFallbackUsed"];
+  if (
+    typeof webSearchEligible !== "boolean" ||
+    typeof webSearchIncluded !== "boolean" ||
+    typeof webSearchFallbackUsed !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    webSearchEligible,
+    webSearchIncluded,
+    webSearchFallbackUsed,
   };
 }
 
@@ -400,10 +497,24 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   const maxDebugEntries = options.maxDebugEntries ?? DEFAULT_DEBUG_ENTRY_LIMIT;
 
-  const [annotations, setAnnotations] = useState<GadflyAnnotation[]>([]);
+  const [gadflyState, setGadflyState] = useState<GadflyState>({
+    annotations: [],
+    preferences: {
+      mutedCategories: [],
+      learningGoal: null,
+    },
+    debugEvents: [],
+  });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [debugEntries, setDebugEntries] = useState<GadflyDebugEntry[]>([]);
+  const [debugRuntime, setDebugRuntime] = useState<GadflyDebugRuntime>({
+    activeRequestId: null,
+    pendingRanges: [],
+    pendingDocVersion: 0,
+    debounceScheduled: false,
+    currentDocVersion: 0,
+  });
 
   const pendingRangesRef = useRef<GadflyRange[]>([]);
   const pendingDocVersionRef = useRef(0);
@@ -432,6 +543,20 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
     setDebugEntries((previous) =>
       previous.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)),
     );
+  }, []);
+
+  const syncDebugRuntime = useCallback(() => {
+    setDebugRuntime({
+      activeRequestId: activeRequestIdRef.current,
+      pendingRanges: [...pendingRangesRef.current],
+      pendingDocVersion: pendingDocVersionRef.current,
+      debounceScheduled: debounceHandleRef.current !== null,
+      currentDocVersion: docRevisionRef.current,
+    });
+  }, []);
+
+  const applyGadflyState = useCallback((actions: readonly GadflyAction[]) => {
+    setGadflyState((currentState) => reduceGadflyState(currentState, actions));
   }, []);
 
   const buildRequestPayload = useCallback(
@@ -465,10 +590,12 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
     const currentEditor = editorRef.current;
     if (!currentEditor) {
       pendingRangesRef.current = [];
+      syncDebugRuntime();
       return;
     }
 
     if (activeRequestIdRef.current !== null) {
+      syncDebugRuntime();
       return;
     }
 
@@ -476,6 +603,7 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
     pendingRangesRef.current = [];
     const requestDocVersion = pendingDocVersionRef.current;
     pendingDocVersionRef.current = 0;
+    syncDebugRuntime();
 
     if (changedRanges.length === 0) {
       return;
@@ -486,8 +614,12 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
     if (payload.plainText.trim().length === 0) {
       activeRequestIdRef.current = null;
       setIsAnalyzing(false);
-      setAnnotations([]);
+      setGadflyState((currentState) => ({
+        ...currentState,
+        annotations: [],
+      }));
       setAnalyzeError(null);
+      syncDebugRuntime();
       return;
     }
 
@@ -498,6 +630,7 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
     const controller = new AbortController();
     inflightAbortRef.current = controller;
     activeRequestIdRef.current = debugId;
+    syncDebugRuntime();
 
     pushDebugEntry({
       id: debugId,
@@ -530,12 +663,22 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
 
       const staleByRequest = activeRequestIdRef.current !== debugId;
       if (staleByRequest) {
+        const parsed = parseAnalyzeSuccess(parsedBody);
         patchDebugEntry(debugId, {
           status: "superseded",
           responseStatus: response.status,
           responseBody: parsedBody,
           error: "Superseded by newer request; response ignored",
           latencyMs: Date.now() - requestStartedAt,
+          usage: parsed.usage ?? undefined,
+          diagnostics: parsed.diagnostics ?? undefined,
+          parsedActions: parsed.actions,
+          appliedActions: [],
+          droppedArtifacts: parsed.droppedArtifacts,
+          filteredActionCount: 0,
+          providerRequestId: parsed.requestId ?? undefined,
+          model: parsed.model ?? undefined,
+          stopReason: parsed.stopReason,
         });
         return;
       }
@@ -558,7 +701,7 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
       const parsed = parseAnalyzeSuccess(parsedBody);
       const anchoredActions = resolveActionAnchors(currentEditor.state.doc, parsed.actions);
       const safeActions = filterActionsForPendingRanges(anchoredActions, pendingRangesRef.current);
-      setAnnotations((previous) => mergeGadflyActions(previous, safeActions));
+      applyGadflyState(safeActions);
 
       patchDebugEntry(debugId, {
         status: "success",
@@ -566,6 +709,14 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
         responseBody: parsedBody,
         usage: parsed.usage ?? undefined,
         latencyMs: parsed.latencyMs ?? Date.now() - requestStartedAt,
+        diagnostics: parsed.diagnostics ?? undefined,
+        parsedActions: anchoredActions,
+        appliedActions: safeActions,
+        droppedArtifacts: parsed.droppedArtifacts,
+        filteredActionCount: anchoredActions.length - safeActions.length,
+        providerRequestId: parsed.requestId ?? undefined,
+        model: parsed.model ?? undefined,
+        stopReason: parsed.stopReason,
       });
     } catch (cause: unknown) {
       const aborted = cause instanceof Error && cause.name === "AbortError";
@@ -593,6 +744,7 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
         if (inflightAbortRef.current === controller) {
           inflightAbortRef.current = null;
         }
+        syncDebugRuntime();
 
         if (pendingRangesRef.current.length > 0) {
           void analyzeNow();
@@ -615,10 +767,12 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
 
         debounceHandleRef.current = window.setTimeout(() => {
           debounceHandleRef.current = null;
+          syncDebugRuntime();
           void analyzeNow();
         }, debounceMs);
+        syncDebugRuntime();
       },
-    [analyzeNow, debounceMs],
+    [analyzeNow, debounceMs, syncDebugRuntime],
   );
 
   const handleTransaction = useCallback(
@@ -631,9 +785,10 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
       docRevisionRef.current += 1;
       const docVersion = docRevisionRef.current;
       scheduleAnalyze(changedRanges, docVersion);
+      syncDebugRuntime();
 
-      setAnnotations((previous) => {
-        const next = previous.filter((annotation) => {
+      setGadflyState((previous) => {
+        const next = previous.annotations.filter((annotation) => {
           const anchorRange = {
             from: annotation.anchor.from,
             to: annotation.anchor.to,
@@ -642,15 +797,33 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
           return !changedRanges.some((changedRange) => rangesOverlap(anchorRange, changedRange));
         });
 
-        return next.length === previous.length ? previous : next;
+        if (next.length === previous.annotations.length) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          annotations: next,
+        };
       });
     },
-    [scheduleAnalyze],
+    [scheduleAnalyze, syncDebugRuntime],
   );
 
   const clearDebugEntries = useCallback(() => {
     setDebugEntries([]);
   }, []);
+
+  const visibleAnnotations = useMemo(() => {
+    const annotations = gadflyState.annotations;
+    const mutedCategories = gadflyState.preferences.mutedCategories;
+
+    if (mutedCategories.length === 0) {
+      return annotations;
+    }
+
+    return annotations.filter((annotation) => !mutedCategories.includes(annotation.category));
+  }, [gadflyState.annotations, gadflyState.preferences.mutedCategories]);
 
   useEffect(() => {
     return () => {
@@ -666,10 +839,13 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
   }, []);
 
   return {
-    annotations,
+    annotations: visibleAnnotations,
+    preferences: gadflyState.preferences,
+    debugEvents: gadflyState.debugEvents,
     isAnalyzing,
     analyzeError,
     debugEntries,
+    debugRuntime,
     handleTransaction,
     clearDebugEntries,
   };

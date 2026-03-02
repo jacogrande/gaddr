@@ -22,7 +22,14 @@ import {
   type DisplayModifierBadge,
   type ModifierBadge,
 } from "../../../domain/editor/interaction-core";
-import type { GadflyAnnotation } from "../../../domain/gadfly/types";
+import type {
+  GadflyAction,
+  GadflyAnnotation,
+  GadflyCategory,
+  GadflyDroppedArtifact,
+  GadflyPrompt,
+  GadflyResearchTask,
+} from "../../../domain/gadfly/types";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
 const GADFLY_NOTE_ID = "gaddr:editor:phase1";
@@ -33,6 +40,40 @@ const SLASH_MENU_VIEWPORT_MARGIN_PX = 12;
 const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
 const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
 const DEV_DEBUG_ENABLED = process.env.NODE_ENV !== "production";
+const GADFLY_PROMPT_ORDER: Record<GadflyPrompt["kind"], number> = {
+  followup_question: 0,
+  clarity: 1,
+  structure: 2,
+  evidence: 3,
+  counterpoint: 4,
+  tone_consistency: 5,
+};
+const GADFLY_PROMPT_LABELS: Record<GadflyPrompt["kind"], string> = {
+  followup_question: "Follow-up",
+  clarity: "Clarity",
+  structure: "Structure",
+  evidence: "Evidence",
+  counterpoint: "Counterpoint",
+  tone_consistency: "Tone",
+};
+const GADFLY_RESEARCH_TASK_ORDER: Record<GadflyResearchTask["kind"], number> = {
+  fact_check: 0,
+  supporting_evidence: 1,
+  counterpoint: 2,
+  context: 3,
+};
+const GADFLY_RESEARCH_TASK_LABELS: Record<GadflyResearchTask["kind"], string> = {
+  fact_check: "Fact Check",
+  supporting_evidence: "Evidence",
+  counterpoint: "Counterpoint",
+  context: "Context",
+};
+const GADFLY_RESEARCH_VERDICT_LABELS: Record<NonNullable<GadflyResearchTask["result"]>["verdict"], string> = {
+  unverified: "Unverified",
+  supported: "Supported",
+  mixed: "Mixed",
+  contradicted: "Contradicted",
+};
 
 type IdleRequestCallbackLike = (deadline: { readonly didTimeout: boolean; timeRemaining: () => number }) => void;
 type IdleSchedulerWindow = Window &
@@ -64,12 +105,179 @@ type HoveredGadflyState = {
   y: number;
 };
 
+type DebugProviderTraceItem = {
+  label: string;
+  detail: string;
+};
+
 function formatDebugJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
     return String(value);
   }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function formatRangeLabel(from: number, to: number): string {
+  return `${String(from)}-${String(to)}`;
+}
+
+function formatActionLabel(action: GadflyAction): string {
+  if (action.type === "annotation.manage") {
+    if (action.action === "annotate" || action.action === "update_annotation") {
+      return `${action.action.replaceAll("_", " ")} · ${action.annotation.category}`;
+    }
+
+    return action.action.replaceAll("_", " ");
+  }
+
+  if (action.type === "prompt.manage") {
+    return action.action.replaceAll("_", " ");
+  }
+
+  return action.action.replaceAll("_", " ");
+}
+
+function formatDroppedArtifactLabel(artifact: GadflyDroppedArtifact): string {
+  return `${artifact.reason} · ${truncateText(artifact.artifactSnippet, 44)}`;
+}
+
+function summarizeProviderTrace(responseBody: unknown): DebugProviderTraceItem[] {
+  if (!isObject(responseBody)) {
+    return [];
+  }
+
+  const rawResponse = responseBody["rawResponse"];
+  if (!isObject(rawResponse)) {
+    return [];
+  }
+
+  const content = rawResponse["content"];
+  if (!Array.isArray(content)) {
+    return [];
+  }
+
+  const items: DebugProviderTraceItem[] = [];
+
+  for (const block of content) {
+    if (!isObject(block)) {
+      continue;
+    }
+
+    const type = block["type"];
+    if (type === "tool_use") {
+      const name = typeof block["name"] === "string" ? block["name"] : "tool";
+      const input = block["input"];
+      const detail =
+        isObject(input) && typeof input["action"] === "string"
+          ? input["action"].replaceAll("_", " ")
+          : "tool call";
+      items.push({
+        label: name,
+        detail,
+      });
+      continue;
+    }
+
+    if (type === "server_tool_use") {
+      const name = typeof block["name"] === "string" ? block["name"] : "server tool";
+      const input = block["input"];
+      const detail =
+        isObject(input) && typeof input["query"] === "string"
+          ? truncateText(input["query"], 80)
+          : "server tool call";
+      items.push({
+        label: name,
+        detail,
+      });
+      continue;
+    }
+
+    if (type === "web_search_tool_result") {
+      const resultContent = block["content"];
+      if (Array.isArray(resultContent)) {
+        const domains: string[] = [];
+        for (const item of resultContent) {
+          if (!isObject(item) || typeof item["url"] !== "string") {
+            continue;
+          }
+
+          try {
+            domains.push(new URL(item["url"]).hostname);
+          } catch {
+            continue;
+          }
+        }
+
+        items.push({
+          label: "search results",
+          detail:
+            domains.length > 0
+              ? `${String(resultContent.length)} results · ${domains.slice(0, 3).join(" · ")}`
+              : `${String(resultContent.length)} results`,
+        });
+      } else if (isObject(resultContent) && typeof resultContent["error_code"] === "string") {
+        items.push({
+          label: "search error",
+          detail: resultContent["error_code"],
+        });
+      }
+      continue;
+    }
+
+    if (type === "text" && typeof block["text"] === "string") {
+      items.push({
+        label: "model",
+        detail: truncateText(block["text"], 88),
+      });
+    }
+  }
+
+  return items;
+}
+
+function statusLabel(status: string): string {
+  return status.replaceAll("_", " ");
+}
+
+function DebugJsonDetails({
+  label,
+  value,
+}: {
+  label: string;
+  value: unknown;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <details
+      className="mt-2"
+      onToggle={(event) => {
+        setIsOpen(event.currentTarget.open);
+      }}
+    >
+      <summary className="cursor-pointer select-none text-[0.63rem] font-semibold tracking-[0.08em] uppercase text-[color:var(--app-muted)]">
+        {label}
+      </summary>
+      {isOpen ? (
+        <pre className="mt-1 max-h-48 overflow-auto rounded border p-2 text-[0.62rem] leading-4">
+          {formatDebugJson(value)}
+        </pre>
+      ) : null}
+    </details>
+  );
 }
 
 const MODIFIER_BADGES: Array<{
@@ -273,9 +481,12 @@ export function MinimalEditor() {
     annotations: gadflyAnnotations,
     analyzeError,
     clearDebugEntries,
+    debugEvents,
     debugEntries,
+    debugRuntime,
     handleTransaction,
     isAnalyzing,
+    preferences,
   } = useGadfly(editor, {
     noteId: GADFLY_NOTE_ID,
   });
@@ -834,10 +1045,37 @@ export function MinimalEditor() {
     return [...debugEntries].reverse().map((entry) => ({
       ...entry,
       timeLabel: new Date(entry.startedAtIso).toLocaleTimeString(),
-      requestJson: formatDebugJson(entry.request),
-      responseJson: formatDebugJson(entry.responseBody),
+      changedRangeLabels: entry.request.changedRanges.map((range) =>
+        formatRangeLabel(range.from, range.to),
+      ),
+      contextRangeLabels: entry.request.contextWindow.map((range) =>
+        formatRangeLabel(range.from, range.to),
+      ),
+      plainTextChars: entry.request.plainText.length,
+      contextChars: entry.request.contextWindow.reduce((sum, item) => sum + item.text.length, 0),
+      parsedActionLabels: (entry.parsedActions ?? []).map((action) => formatActionLabel(action)),
+      appliedActionLabels: (entry.appliedActions ?? []).map((action) => formatActionLabel(action)),
+      droppedArtifactLabels: (entry.droppedArtifacts ?? []).map((artifact) =>
+        formatDroppedArtifactLabel(artifact),
+      ),
+      providerTrace: summarizeProviderTrace(entry.responseBody),
     }));
   }, [debugEntries]);
+
+  const debugOverview = useMemo(() => {
+    const latestEntry = debugEntriesView[0] ?? null;
+    const totalSearchRequests = debugEntries.reduce((sum, entry) => {
+      return sum + (entry.usage?.webSearchRequests ?? 0);
+    }, 0);
+
+    return {
+      latestEntry,
+      totalSearchRequests,
+      pendingRangeLabels: debugRuntime.pendingRanges.map((range) =>
+        formatRangeLabel(range.from, range.to),
+      ),
+    };
+  }, [debugEntries, debugEntriesView, debugRuntime.pendingRanges]);
 
   if (!editor) {
     return <div className="min-h-[calc(100vh-8.5rem)]" />;
@@ -1018,21 +1256,95 @@ export function MinimalEditor() {
           <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
             {hoveredGadfly.annotation.category.toUpperCase()} · {hoveredGadfly.annotation.severity.toUpperCase()}
           </div>
+          {hoveredGadfly.annotation.isPinned || hoveredGadfly.annotation.linkedAnnotationIds.length > 0 ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {hoveredGadfly.annotation.isPinned ? (
+                <div className="gaddr-gadfly-status-chip inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
+                  PINNED
+                </div>
+              ) : null}
+              {hoveredGadfly.annotation.linkedAnnotationIds.length > 0 ? (
+                <div className="gaddr-gadfly-status-chip inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
+                  LINKED {String(hoveredGadfly.annotation.linkedAnnotationIds.length)}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {hoveredGadfly.annotation.status !== "active" ? (
             <div className="gaddr-gadfly-status-chip mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
               {hoveredGadfly.annotation.status.toUpperCase()}
+              {hoveredGadfly.annotation.snoozedUntil ? ` · UNTIL ${hoveredGadfly.annotation.snoozedUntil}` : ""}
             </div>
           ) : null}
           <p className="mt-1.5 text-xs leading-5 text-[var(--app-fg)]">{hoveredGadfly.annotation.explanation}</p>
           <p className="mt-1.5 text-[0.7rem] leading-4 text-[color:var(--app-muted)]">Rule: {hoveredGadfly.annotation.rule}</p>
           <p className="mt-2 text-xs italic leading-5 text-[color:var(--app-fg)]">{hoveredGadfly.annotation.question}</p>
+          {hoveredGadfly.annotation.prompts.length > 0 ? (
+            <div className="gaddr-gadfly-prompts mt-2.5 border-t pt-2">
+              {[...hoveredGadfly.annotation.prompts]
+                .sort((left, right) => {
+                  return GADFLY_PROMPT_ORDER[left.kind] - GADFLY_PROMPT_ORDER[right.kind];
+                })
+                .map((prompt) => (
+                  <div key={prompt.kind} className="gaddr-gadfly-prompt-row mt-1.5 rounded-md border px-2 py-1.5">
+                    <div className="gaddr-gadfly-prompt-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
+                      {GADFLY_PROMPT_LABELS[prompt.kind]}
+                    </div>
+                    <p className="mt-1 text-[0.69rem] leading-4">{prompt.text}</p>
+                  </div>
+                ))}
+            </div>
+          ) : null}
+          {hoveredGadfly.annotation.research.needsFactCheck || hoveredGadfly.annotation.research.tasks.length > 0 ? (
+            <div className="gaddr-gadfly-research mt-2.5 border-t pt-2">
+              {hoveredGadfly.annotation.research.needsFactCheck ? (
+                <div className="gaddr-gadfly-fact-check rounded-md border px-2 py-1.5">
+                  <div className="gaddr-gadfly-research-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
+                    Fact Check
+                  </div>
+                  <p className="mt-1 text-[0.69rem] leading-4">
+                    {hoveredGadfly.annotation.research.factCheckNote ?? "This claim should be verified against external sources."}
+                  </p>
+                </div>
+              ) : null}
+              {[...hoveredGadfly.annotation.research.tasks]
+                .sort((left, right) => GADFLY_RESEARCH_TASK_ORDER[left.kind] - GADFLY_RESEARCH_TASK_ORDER[right.kind])
+                .map((task) => (
+                  <div key={task.id} className="gaddr-gadfly-research-task mt-1.5 rounded-md border px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="gaddr-gadfly-research-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
+                        {GADFLY_RESEARCH_TASK_LABELS[task.kind]}
+                      </div>
+                      <div className="text-[0.56rem] tracking-[0.08em] uppercase text-[color:var(--app-muted)]">
+                        {task.result ? GADFLY_RESEARCH_VERDICT_LABELS[task.result.verdict] : task.status}
+                      </div>
+                    </div>
+                    <p className="mt-1 text-[0.69rem] leading-4">{task.question}</p>
+                    {task.result ? (
+                      <>
+                        <ul className="mt-1.5 space-y-1 text-[0.67rem] leading-4 text-[color:var(--app-fg)]">
+                          {task.result.findings.map((finding) => (
+                            <li key={finding} className="list-inside list-disc">
+                              {finding}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-1.5 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
+                          {task.result.sources.map((source) => source.domain).join(" · ")}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ))}
+            </div>
+          ) : null}
         </aside>
       ) : null}
       {DEV_DEBUG_ENABLED ? (
         <aside
           aria-label="Gadfly debug pane"
           data-testid="gadfly-debug-pane"
-          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[62] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border backdrop-blur-[2px] transition-all duration-200 ${
+          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[62] flex w-[min(31rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border backdrop-blur-[2px] transition-all duration-200 ${
             isDebugPaneOpen ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[105%] opacity-0"
           }`}
         >
@@ -1057,40 +1369,228 @@ export function MinimalEditor() {
               </button>
             </div>
           </header>
-          <div className="border-b px-3 py-2 text-[0.66rem] tracking-[0.09em]">
-            {isAnalyzing ? "Status: analyzing" : "Status: idle"} · {debugEntries.length} entries
+          <div className="border-b px-3 py-2">
+            <div className="flex flex-wrap gap-1.5 text-[0.63rem]">
+              <span className={`gaddr-debug-status-badge gaddr-debug-status-badge--${isAnalyzing ? "pending" : "success"}`}>
+                {isAnalyzing ? "analyzing" : "idle"}
+              </span>
+              <span className="gaddr-debug-chip">{debugEntries.length} entries</span>
+              <span className="gaddr-debug-chip">{gadflyAnnotations.length} annotations</span>
+              <span className="gaddr-debug-chip">doc v{String(debugRuntime.currentDocVersion)}</span>
+              <span className="gaddr-debug-chip">
+                {debugRuntime.activeRequestId ? `active ${debugRuntime.activeRequestId}` : "no active request"}
+              </span>
+              <span className="gaddr-debug-chip">
+                {debugRuntime.debounceScheduled ? "debounce armed" : "debounce clear"}
+              </span>
+              <span className="gaddr-debug-chip">{String(debugRuntime.pendingRanges.length)} queued ranges</span>
+              <span className="gaddr-debug-chip">{String(debugOverview.totalSearchRequests)} searches used</span>
+              <span className="gaddr-debug-chip">
+                {preferences.learningGoal ? "goal active" : "no goal"}
+              </span>
+              <span className="gaddr-debug-chip">
+                {String(preferences.mutedCategories.length)} muted categories
+              </span>
+              <span className="gaddr-debug-chip">{String(debugEvents.length)} debug events</span>
+            </div>
+            {debugOverview.pendingRangeLabels.length > 0 ? (
+              <div className="mt-2">
+                <div className="text-[0.56rem] font-semibold tracking-[0.1em] uppercase text-[color:var(--app-muted)]">
+                  Queued Ranges
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {debugOverview.pendingRangeLabels.map((label) => (
+                    <span key={label} className="gaddr-debug-chip">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {debugOverview.latestEntry ? (
+              <div className="mt-2 text-[0.62rem] text-[color:var(--app-muted)]">
+                Latest: {debugOverview.latestEntry.id} · {statusLabel(debugOverview.latestEntry.status)} ·{" "}
+                {debugOverview.latestEntry.appliedActionLabels.length} applied
+              </div>
+            ) : null}
+            {preferences.learningGoal || preferences.mutedCategories.length > 0 ? (
+              <div className="mt-2">
+                <div className="text-[0.56rem] font-semibold tracking-[0.1em] uppercase text-[color:var(--app-muted)]">
+                  Preferences
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {preferences.learningGoal ? (
+                    <span className="gaddr-debug-chip">goal: {preferences.learningGoal}</span>
+                  ) : null}
+                  {preferences.mutedCategories.map((category: GadflyCategory) => (
+                    <span key={category} className="gaddr-debug-chip">
+                      muted {category}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {debugEvents.length > 0 ? (
+              <div className="mt-2">
+                <div className="text-[0.56rem] font-semibold tracking-[0.1em] uppercase text-[color:var(--app-muted)]">
+                  Debug Events
+                </div>
+                <div className="mt-1 flex flex-col gap-1">
+                  {[...debugEvents].slice(-4).reverse().map((event, index) => (
+                    <div key={`${event.eventName}-${String(index)}`} className="gaddr-debug-trace rounded border px-2 py-1">
+                      <span className="font-semibold uppercase tracking-[0.08em]">{event.eventName}</span>
+                      <span className="ml-2 text-[color:var(--app-muted)]">{event.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
-          <div className="h-[calc(100%-5.2rem)] overflow-y-auto px-2 pb-2 pt-2">
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 pt-2">
             {debugEntriesView.length === 0 ? (
               <div className="rounded border border-dashed px-3 py-4 text-xs">
                 No requests yet. Toggle with Cmd/Ctrl+Shift+D.
               </div>
             ) : (
               debugEntriesView.map((entry) => (
-                <article key={entry.id} className="mb-2 rounded-lg border p-2 text-[0.67rem]">
+                <article key={entry.id} className="gaddr-debug-entry mb-2 rounded-lg border p-2 text-[0.67rem]">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold tracking-[0.08em] uppercase">
-                      {entry.status} · {entry.id}
-                    </span>
-                    <span>{entry.timeLabel}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`gaddr-debug-status-badge gaddr-debug-status-badge--${entry.status}`}>
+                        {statusLabel(entry.status)}
+                      </span>
+                      <span className="font-semibold tracking-[0.08em] uppercase">{entry.id}</span>
+                    </div>
+                    <span className="text-[0.62rem] text-[color:var(--app-muted)]">{entry.timeLabel}</span>
                   </div>
-                  <div className="mt-1 text-[0.62rem]">
-                    HTTP {entry.responseStatus ?? "-"} · {entry.usage ? `${String(entry.usage.totalTokens)} tokens` : "0 tokens"} ·{" "}
-                    {entry.latencyMs !== undefined ? `${String(entry.latencyMs)}ms` : "-"}
+                  <div className="mt-2 grid grid-cols-2 gap-1.5 text-[0.61rem] sm:grid-cols-4">
+                    <div className="gaddr-debug-metric rounded border px-2 py-1.5">
+                      <div className="text-[0.54rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">HTTP</div>
+                      <div className="mt-1 font-semibold">{entry.responseStatus ?? "-"}</div>
+                    </div>
+                    <div className="gaddr-debug-metric rounded border px-2 py-1.5">
+                      <div className="text-[0.54rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Latency</div>
+                      <div className="mt-1 font-semibold">{entry.latencyMs !== undefined ? `${String(entry.latencyMs)}ms` : "-"}</div>
+                    </div>
+                    <div className="gaddr-debug-metric rounded border px-2 py-1.5">
+                      <div className="text-[0.54rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Tokens</div>
+                      <div className="mt-1 font-semibold">{entry.usage ? String(entry.usage.totalTokens) : "0"}</div>
+                    </div>
+                    <div className="gaddr-debug-metric rounded border px-2 py-1.5">
+                      <div className="text-[0.54rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Search</div>
+                      <div className="mt-1 font-semibold">{entry.usage?.webSearchRequests ?? 0}</div>
+                    </div>
                   </div>
-                  {entry.error ? <div className="mt-1 text-[#c7694a]">{entry.error}</div> : null}
-                  <details className="mt-1">
-                    <summary className="cursor-pointer select-none">Request JSON</summary>
-                    <pre className="mt-1 max-h-36 overflow-auto rounded border p-2 text-[0.62rem] leading-4">
-                      {entry.requestJson}
-                    </pre>
-                  </details>
-                  <details className="mt-1">
-                    <summary className="cursor-pointer select-none">Response JSON</summary>
-                    <pre className="mt-1 max-h-36 overflow-auto rounded border p-2 text-[0.62rem] leading-4">
-                      {entry.responseJson}
-                    </pre>
-                  </details>
+                  {entry.error ? <div className="mt-2 text-[#c7694a]">{entry.error}</div> : null}
+
+                  <section className="gaddr-debug-section mt-2 rounded border px-2 py-1.5">
+                    <div className="text-[0.54rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Request</div>
+                    <div className="mt-1 text-[0.62rem]">
+                      doc v{String(entry.request.docVersion)} · {String(entry.changedRangeLabels.length)} changed ranges ·{" "}
+                      {String(entry.request.contextWindow.length)} context windows · {String(entry.plainTextChars)} chars
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {entry.changedRangeLabels.map((label) => (
+                        <span key={`${entry.id}-changed-${label}`} className="gaddr-debug-chip">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="gaddr-debug-section mt-2 rounded border px-2 py-1.5">
+                    <div className="text-[0.54rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Provider</div>
+                    <div className="mt-1 text-[0.62rem]">
+                      {entry.model ?? "unknown model"} · {entry.providerRequestId ?? "no request id"} ·{" "}
+                      {entry.stopReason ?? "no stop reason"}
+                    </div>
+                    {entry.providerTrace.length > 0 ? (
+                      <div className="mt-1 flex flex-col gap-1">
+                        {entry.providerTrace.map((item, index) => (
+                          <div key={`${entry.id}-trace-${String(index)}`} className="gaddr-debug-trace rounded border px-2 py-1">
+                            <span className="font-semibold uppercase tracking-[0.08em]">{item.label}</span>
+                            <span className="ml-2 text-[color:var(--app-muted)]">{item.detail}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+
+                  {entry.diagnostics ? (
+                    <section className="gaddr-debug-section mt-2 rounded border px-2 py-1.5">
+                      <div className="text-[0.54rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Search</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <span className="gaddr-debug-chip">
+                          eligible {entry.diagnostics.webSearchEligible ? "yes" : "no"}
+                        </span>
+                        <span className="gaddr-debug-chip">
+                          included {entry.diagnostics.webSearchIncluded ? "yes" : "no"}
+                        </span>
+                        <span className="gaddr-debug-chip">
+                          fallback {entry.diagnostics.webSearchFallbackUsed ? "yes" : "no"}
+                        </span>
+                      </div>
+                    </section>
+                  ) : null}
+
+                  <section className="gaddr-debug-section mt-2 rounded border px-2 py-1.5">
+                    <div className="text-[0.54rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Output</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <span className="gaddr-debug-chip">
+                        parsed {String(entry.parsedActionLabels.length)}
+                      </span>
+                      <span className="gaddr-debug-chip">
+                        applied {String(entry.appliedActionLabels.length)}
+                      </span>
+                      <span className="gaddr-debug-chip">
+                        dropped {String(entry.droppedArtifactLabels.length)}
+                      </span>
+                      {entry.filteredActionCount ? (
+                        <span className="gaddr-debug-chip">
+                          filtered {String(entry.filteredActionCount)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {entry.parsedActionLabels.length > 0 ? (
+                      <div className="mt-1.5">
+                        <div className="text-[0.56rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Parsed Actions</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {entry.parsedActionLabels.map((label, index) => (
+                            <span key={`${entry.id}-parsed-${String(index)}`} className="gaddr-debug-chip">
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {entry.appliedActionLabels.length > 0 ? (
+                      <div className="mt-1.5">
+                        <div className="text-[0.56rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Applied Actions</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {entry.appliedActionLabels.map((label, index) => (
+                            <span key={`${entry.id}-applied-${String(index)}`} className="gaddr-debug-chip">
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {entry.droppedArtifactLabels.length > 0 ? (
+                      <div className="mt-1.5">
+                        <div className="text-[0.56rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">Dropped Artifacts</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {entry.droppedArtifactLabels.map((label, index) => (
+                            <span key={`${entry.id}-dropped-${String(index)}`} className="gaddr-debug-chip">
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <DebugJsonDetails label="Request JSON" value={entry.request} />
+                  <DebugJsonDetails label="Response JSON" value={entry.responseBody} />
                 </article>
               ))
             )}

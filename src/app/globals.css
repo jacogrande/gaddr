@@ -318,6 +318,35 @@ body {
   box-shadow: 0 16px 36px color-mix(in srgb, var(--app-bg) 46%, transparent);
 }
 
+.gaddr-gadfly-prompts {
+  border-color: color-mix(in srgb, var(--border-soft) 65%, transparent);
+}
+
+.gaddr-gadfly-prompt-row {
+  border-color: color-mix(in srgb, var(--border-soft) 66%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 76%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-gadfly-prompt-label {
+  color: color-mix(in srgb, var(--app-muted) 84%, transparent);
+}
+
+.gaddr-gadfly-research {
+  border-color: color-mix(in srgb, var(--border-soft) 65%, transparent);
+}
+
+.gaddr-gadfly-fact-check,
+.gaddr-gadfly-research-task {
+  border-color: color-mix(in srgb, var(--border-soft) 66%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 76%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-gadfly-research-label {
+  color: color-mix(in srgb, var(--app-muted) 84%, transparent);
+}
+
 .gaddr-debug-pane {
   border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
   background-color: color-mix(in srgb, var(--surface-1) 95%, transparent);
@@ -349,6 +378,59 @@ body {
   border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
   background-color: color-mix(in srgb, var(--surface-4) 92%, transparent);
   color: var(--app-fg);
+}
+
+.gaddr-debug-entry {
+  border-color: color-mix(in srgb, var(--border-soft) 70%, transparent);
+  background-color: color-mix(in srgb, var(--surface-4) 92%, transparent);
+}
+
+.gaddr-debug-status-badge,
+.gaddr-debug-chip {
+  border: 1px solid color-mix(in srgb, var(--border-soft) 72%, transparent);
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  padding: 0.18rem 0.5rem;
+  color: var(--app-fg);
+  line-height: 1.1;
+}
+
+.gaddr-debug-status-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.gaddr-debug-status-badge--pending {
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 18%, var(--surface-1));
+}
+
+.gaddr-debug-status-badge--success {
+  border-color: color-mix(in srgb, #7d8f55 72%, transparent);
+  background-color: color-mix(in srgb, #7d8f55 18%, var(--surface-1));
+}
+
+.gaddr-debug-status-badge--superseded,
+.gaddr-debug-status-badge--aborted {
+  border-color: color-mix(in srgb, var(--border-strong) 74%, transparent);
+  background-color: color-mix(in srgb, var(--surface-3) 84%, transparent);
+}
+
+.gaddr-debug-status-badge--error {
+  border-color: color-mix(in srgb, #c7694a 74%, transparent);
+  background-color: color-mix(in srgb, #c7694a 18%, var(--surface-1));
+}
+
+.gaddr-debug-chip {
+  color: color-mix(in srgb, var(--app-muted) 62%, var(--app-fg));
+}
+
+.gaddr-debug-metric,
+.gaddr-debug-section,
+.gaddr-debug-trace {
+  border-color: color-mix(in srgb, var(--border-soft) 70%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 84%, transparent);
 }
 
 .gaddr-debug-pane summary {
