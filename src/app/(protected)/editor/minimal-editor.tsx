@@ -30,6 +30,11 @@ import type {
   GadflyPrompt,
   GadflyResearchTask,
 } from "../../../domain/gadfly/types";
+import {
+  groupGadflyAnnotations,
+  type GadflyAnnotationGroup,
+  type GadflyAnnotationReference,
+} from "../../../domain/gadfly/presentation";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
 const GADFLY_NOTE_ID = "gaddr:editor:phase1";
@@ -100,7 +105,7 @@ type SlashMenuState = {
 };
 
 type HoveredGadflyState = {
-  annotation: GadflyAnnotation;
+  group: GadflyAnnotationGroup;
   x: number;
   y: number;
 };
@@ -108,6 +113,13 @@ type HoveredGadflyState = {
 type DebugProviderTraceItem = {
   label: string;
   detail: string;
+};
+
+type DebugProviderBlock = {
+  kind: "client_tool" | "server_tool" | "search_result" | "search_error" | "model_text";
+  title: string;
+  subtitle: string;
+  payload?: unknown;
 };
 
 function formatDebugJson(value: unknown): string {
@@ -152,6 +164,21 @@ function formatActionLabel(action: GadflyAction): string {
 
 function formatDroppedArtifactLabel(artifact: GadflyDroppedArtifact): string {
   return `${artifact.reason} · ${truncateText(artifact.artifactSnippet, 44)}`;
+}
+
+function formatProviderBlockKindLabel(kind: DebugProviderBlock["kind"]): string {
+  switch (kind) {
+    case "client_tool":
+      return "client tool";
+    case "server_tool":
+      return "server tool";
+    case "search_result":
+      return "search result";
+    case "search_error":
+      return "search error";
+    case "model_text":
+      return "model text";
+  }
 }
 
 function summarizeProviderTrace(responseBody: unknown): DebugProviderTraceItem[] {
@@ -248,16 +275,141 @@ function summarizeProviderTrace(responseBody: unknown): DebugProviderTraceItem[]
   return items;
 }
 
+function extractProviderBlocks(responseBody: unknown): DebugProviderBlock[] {
+  if (!isObject(responseBody)) {
+    return [];
+  }
+
+  const rawResponse = responseBody["rawResponse"];
+  if (!isObject(rawResponse)) {
+    return [];
+  }
+
+  const content = rawResponse["content"];
+  if (!Array.isArray(content)) {
+    return [];
+  }
+
+  const blocks: DebugProviderBlock[] = [];
+
+  for (const block of content) {
+    if (!isObject(block)) {
+      continue;
+    }
+
+    const type = block["type"];
+    if (type === "tool_use") {
+      const title = typeof block["name"] === "string" ? block["name"] : "tool";
+      const input = block["input"];
+      const subtitle =
+        isObject(input) && typeof input["action"] === "string"
+          ? `action: ${input["action"]}`
+          : "tool call";
+      blocks.push({
+        kind: "client_tool",
+        title,
+        subtitle,
+        payload: input,
+      });
+      continue;
+    }
+
+    if (type === "server_tool_use") {
+      const title = typeof block["name"] === "string" ? block["name"] : "server tool";
+      const input = block["input"];
+      const subtitle =
+        isObject(input) && typeof input["query"] === "string"
+          ? input["query"]
+          : "server tool call";
+      blocks.push({
+        kind: "server_tool",
+        title,
+        subtitle,
+        payload: input,
+      });
+      continue;
+    }
+
+    if (type === "web_search_tool_result") {
+      const resultContent = block["content"];
+      if (Array.isArray(resultContent)) {
+        const domains: string[] = [];
+        for (const item of resultContent) {
+          if (!isObject(item) || typeof item["url"] !== "string") {
+            continue;
+          }
+
+          try {
+            domains.push(new URL(item["url"]).hostname);
+          } catch {
+            continue;
+          }
+        }
+
+        blocks.push({
+          kind: "search_result",
+          title: "web_search results",
+          subtitle:
+            domains.length > 0
+              ? `${String(resultContent.length)} results · ${domains.slice(0, 4).join(" · ")}`
+              : `${String(resultContent.length)} results`,
+          payload: resultContent,
+        });
+      } else if (isObject(resultContent) && typeof resultContent["error_code"] === "string") {
+        blocks.push({
+          kind: "search_error",
+          title: "web_search error",
+          subtitle: resultContent["error_code"],
+          payload: resultContent,
+        });
+      }
+      continue;
+    }
+
+    if (type === "text" && typeof block["text"] === "string") {
+      blocks.push({
+        kind: "model_text",
+        title: "model text",
+        subtitle: truncateText(block["text"], 160),
+        payload: block["text"],
+      });
+    }
+  }
+
+  return blocks;
+}
+
 function statusLabel(status: string): string {
   return status.replaceAll("_", " ");
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (
+    typeof navigator !== "undefined" &&
+    "clipboard" in navigator &&
+    typeof navigator.clipboard.writeText === "function"
+  ) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function DebugJsonDetails({
   label,
   value,
+  copyLabel,
+  onCopy,
 }: {
   label: string;
   value: unknown;
+  copyLabel: string;
+  onCopy: (label: string, value: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -268,15 +420,185 @@ function DebugJsonDetails({
         setIsOpen(event.currentTarget.open);
       }}
     >
-      <summary className="cursor-pointer select-none text-[0.63rem] font-semibold tracking-[0.08em] uppercase text-[color:var(--app-muted)]">
-        {label}
+      <summary className="gaddr-debug-details-summary cursor-pointer select-none text-[0.63rem] font-semibold tracking-[0.08em] uppercase text-[color:var(--app-muted)]">
+        <span>{label}</span>
+        <button
+          type="button"
+          className="gaddr-debug-inline-button rounded border px-2 py-1 text-[0.56rem] font-semibold tracking-[0.08em]"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onCopy(copyLabel, formatDebugJson(value));
+          }}
+        >
+          COPY
+        </button>
       </summary>
       {isOpen ? (
-        <pre className="mt-1 max-h-48 overflow-auto rounded border p-2 text-[0.62rem] leading-4">
+        <pre className="gaddr-debug-code mt-1 max-h-80 overflow-auto rounded border p-2 text-[0.62rem] leading-4">
           {formatDebugJson(value)}
         </pre>
       ) : null}
     </details>
+  );
+}
+
+function DebugTextDetails({
+  label,
+  text,
+  copyLabel,
+  onCopy,
+}: {
+  label: string;
+  text: string;
+  copyLabel: string;
+  onCopy: (label: string, value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <details
+      className="mt-2"
+      onToggle={(event) => {
+        setIsOpen(event.currentTarget.open);
+      }}
+    >
+      <summary className="gaddr-debug-details-summary cursor-pointer select-none text-[0.63rem] font-semibold tracking-[0.08em] uppercase text-[color:var(--app-muted)]">
+        <span>{label}</span>
+        <button
+          type="button"
+          className="gaddr-debug-inline-button rounded border px-2 py-1 text-[0.56rem] font-semibold tracking-[0.08em]"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onCopy(copyLabel, text);
+          }}
+        >
+          COPY
+        </button>
+      </summary>
+      {isOpen ? (
+        <pre className="gaddr-debug-code mt-1 max-h-80 overflow-auto rounded border p-2 text-[0.62rem] leading-4">
+          {text}
+        </pre>
+      ) : null}
+    </details>
+  );
+}
+
+function findReference(
+  references: readonly GadflyAnnotationReference[],
+  annotationId: string,
+): GadflyAnnotationReference | null {
+  return references.find((reference) => reference.annotationId === annotationId) ?? null;
+}
+
+function GadflyAnnotationCardSection({
+  annotation,
+  reference,
+}: {
+  annotation: GadflyAnnotation;
+  reference: GadflyAnnotationReference | null;
+}) {
+  return (
+    <section className="gaddr-gadfly-annotation-section">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {reference ? (
+              <div className="gaddr-gadfly-reference inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[0.58rem] font-semibold leading-none">
+                {String(reference.index)}
+              </div>
+            ) : null}
+            <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
+              {annotation.category.toUpperCase()} · {annotation.severity.toUpperCase()}
+            </div>
+          </div>
+          {annotation.isPinned || annotation.linkedAnnotationIds.length > 0 ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {annotation.isPinned ? (
+                <div className="gaddr-gadfly-status-chip inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
+                  PINNED
+                </div>
+              ) : null}
+              {annotation.linkedAnnotationIds.length > 0 ? (
+                <div className="gaddr-gadfly-status-chip inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
+                  LINKED {String(annotation.linkedAnnotationIds.length)}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {annotation.status !== "active" ? (
+            <div className="gaddr-gadfly-status-chip mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
+              {annotation.status.toUpperCase()}
+              {annotation.snoozedUntil ? ` · UNTIL ${annotation.snoozedUntil}` : ""}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <p className="mt-1.5 text-xs leading-5 text-[var(--app-fg)]">{annotation.explanation}</p>
+      <p className="mt-1.5 text-[0.7rem] leading-4 text-[color:var(--app-muted)]">Rule: {annotation.rule}</p>
+      <p className="mt-2 text-xs italic leading-5 text-[color:var(--app-fg)]">{annotation.question}</p>
+      {annotation.prompts.length > 0 ? (
+        <div className="gaddr-gadfly-prompts mt-2.5 border-t pt-2">
+          {[...annotation.prompts]
+            .sort((left, right) => {
+              return GADFLY_PROMPT_ORDER[left.kind] - GADFLY_PROMPT_ORDER[right.kind];
+            })
+            .map((prompt) => (
+              <div key={prompt.kind} className="gaddr-gadfly-prompt-row mt-1.5 rounded-md border px-2 py-1.5">
+                <div className="gaddr-gadfly-prompt-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
+                  {GADFLY_PROMPT_LABELS[prompt.kind]}
+                </div>
+                <p className="mt-1 text-[0.69rem] leading-4">{prompt.text}</p>
+              </div>
+            ))}
+        </div>
+      ) : null}
+      {annotation.research.needsFactCheck || annotation.research.tasks.length > 0 ? (
+        <div className="gaddr-gadfly-research mt-2.5 border-t pt-2">
+          {annotation.research.needsFactCheck ? (
+            <div className="gaddr-gadfly-fact-check rounded-md border px-2 py-1.5">
+              <div className="gaddr-gadfly-research-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
+                Fact Check
+              </div>
+              <p className="mt-1 text-[0.69rem] leading-4">
+                {annotation.research.factCheckNote ?? "This claim should be verified against external sources."}
+              </p>
+            </div>
+          ) : null}
+          {[...annotation.research.tasks]
+            .sort((left, right) => GADFLY_RESEARCH_TASK_ORDER[left.kind] - GADFLY_RESEARCH_TASK_ORDER[right.kind])
+            .map((task) => (
+              <div key={task.id} className="gaddr-gadfly-research-task mt-1.5 rounded-md border px-2 py-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="gaddr-gadfly-research-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
+                    {GADFLY_RESEARCH_TASK_LABELS[task.kind]}
+                  </div>
+                  <div className="text-[0.56rem] tracking-[0.08em] uppercase text-[color:var(--app-muted)]">
+                    {task.result ? GADFLY_RESEARCH_VERDICT_LABELS[task.result.verdict] : task.status}
+                  </div>
+                </div>
+                <p className="mt-1 text-[0.69rem] leading-4">{task.question}</p>
+                {task.result ? (
+                  <>
+                    <ul className="mt-1.5 space-y-1 text-[0.67rem] leading-4 text-[color:var(--app-fg)]">
+                      {task.result.findings.map((finding) => (
+                        <li key={finding} className="list-inside list-disc">
+                          {finding}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-1.5 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
+                      {task.result.sources.map((source) => source.domain).join(" · ")}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -328,6 +650,7 @@ export function MinimalEditor() {
   const [slashMenuActiveIndex, setSlashMenuActiveIndex] = useState(0);
   const [isMacLike, setIsMacLike] = useState(false);
   const [isDebugPaneOpen, setIsDebugPaneOpen] = useState(false);
+  const [copiedDebugLabel, setCopiedDebugLabel] = useState<string | null>(null);
   const [hoveredGadfly, setHoveredGadfly] = useState<HoveredGadflyState | null>(null);
   const activeModifiersSignatureRef = useRef("");
   const modifierOrderingStateRef = useRef(createModifierOrderingState());
@@ -338,6 +661,7 @@ export function MinimalEditor() {
   const pendingPersistRef = useRef(false);
   const saveHandleRef = useRef<SaveHandle | null>(null);
   const latestEditorRef = useRef<{ getJSON: () => JSONContent } | null>(null);
+  const copyFeedbackTimeoutRef = useRef<number | null>(null);
 
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
     try {
@@ -491,13 +815,43 @@ export function MinimalEditor() {
     noteId: GADFLY_NOTE_ID,
   });
 
-  const gadflyAnnotationLookup = useMemo(() => {
-    const entries: Array<[string, GadflyAnnotation]> = [];
-    for (const annotation of gadflyAnnotations) {
-      entries.push([annotation.id, annotation]);
+  const debugExportPayload = useMemo(() => {
+    return {
+      runtime: debugRuntime,
+      preferences,
+      debugEvents,
+      annotations: gadflyAnnotations,
+      annotationGroups: groupGadflyAnnotations(gadflyAnnotations),
+      entries: debugEntries,
+    };
+  }, [debugEvents, debugEntries, debugRuntime, gadflyAnnotations, preferences]);
+
+  const handleCopyDebugValue = useCallback(async (label: string, value: string) => {
+    const copied = await copyTextToClipboard(value);
+    const nextLabel = copied ? `${label} copied` : `could not copy ${label.toLowerCase()}`;
+
+    setCopiedDebugLabel(nextLabel);
+    if (copyFeedbackTimeoutRef.current !== null) {
+      window.clearTimeout(copyFeedbackTimeoutRef.current);
+    }
+
+    copyFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setCopiedDebugLabel(null);
+      copyFeedbackTimeoutRef.current = null;
+    }, 1800);
+  }, []);
+
+  const gadflyAnnotationGroups = useMemo(() => {
+    return groupGadflyAnnotations(gadflyAnnotations);
+  }, [gadflyAnnotations]);
+
+  const gadflyGroupLookup = useMemo(() => {
+    const entries: Array<[string, GadflyAnnotationGroup]> = [];
+    for (const group of gadflyAnnotationGroups) {
+      entries.push([group.id, group]);
     }
     return new Map(entries);
-  }, [gadflyAnnotations]);
+  }, [gadflyAnnotationGroups]);
 
   const closeSlashMenu = useCallback(() => {
     slashMenuSignatureRef.current = "";
@@ -727,12 +1081,12 @@ export function MinimalEditor() {
       return;
     }
 
-    if (gadflyAnnotationLookup.has(hoveredGadfly.annotation.id)) {
+    if (gadflyGroupLookup.has(hoveredGadfly.group.id)) {
       return;
     }
 
     setHoveredGadfly(null);
-  }, [gadflyAnnotationLookup, hoveredGadfly]);
+  }, [gadflyGroupLookup, hoveredGadfly]);
 
   useEffect(() => {
     const isSlashMenuOpen = slashMenuState !== null;
@@ -965,6 +1319,14 @@ export function MinimalEditor() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (copyFeedbackTimeoutRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const handlePageHide = () => {
       flushPersist();
     };
@@ -987,20 +1349,20 @@ export function MinimalEditor() {
         return;
       }
 
-      const elementWithId = target.closest("[data-gadfly-id]");
-      if (!elementWithId) {
+      const elementWithGroupId = target.closest("[data-gadfly-group-id]");
+      if (!elementWithGroupId) {
         setHoveredGadfly((previous) => (previous ? null : previous));
         return;
       }
 
-      const annotationId = elementWithId.getAttribute("data-gadfly-id");
-      if (!annotationId) {
+      const groupId = elementWithGroupId.getAttribute("data-gadfly-group-id");
+      if (!groupId) {
         setHoveredGadfly((previous) => (previous ? null : previous));
         return;
       }
 
-      const annotation = gadflyAnnotationLookup.get(annotationId);
-      if (!annotation) {
+      const group = gadflyGroupLookup.get(groupId);
+      if (!group) {
         setHoveredGadfly((previous) => (previous ? null : previous));
         return;
       }
@@ -1008,7 +1370,7 @@ export function MinimalEditor() {
       setHoveredGadfly((previous) => {
         if (
           previous &&
-          previous.annotation.id === annotation.id &&
+          previous.group.id === group.id &&
           Math.abs(previous.x - event.clientX) < 3 &&
           Math.abs(previous.y - event.clientY) < 3
         ) {
@@ -1016,13 +1378,13 @@ export function MinimalEditor() {
         }
 
         return {
-          annotation,
+          group,
           x: event.clientX,
           y: event.clientY,
         };
       });
     },
-    [gadflyAnnotationLookup],
+    [gadflyGroupLookup],
   );
 
   const hoveredGadflyStyle = useMemo(() => {
@@ -1042,24 +1404,40 @@ export function MinimalEditor() {
   }, [hoveredGadfly]);
 
   const debugEntriesView = useMemo(() => {
-    return [...debugEntries].reverse().map((entry) => ({
-      ...entry,
-      timeLabel: new Date(entry.startedAtIso).toLocaleTimeString(),
-      changedRangeLabels: entry.request.changedRanges.map((range) =>
-        formatRangeLabel(range.from, range.to),
-      ),
-      contextRangeLabels: entry.request.contextWindow.map((range) =>
-        formatRangeLabel(range.from, range.to),
-      ),
-      plainTextChars: entry.request.plainText.length,
-      contextChars: entry.request.contextWindow.reduce((sum, item) => sum + item.text.length, 0),
-      parsedActionLabels: (entry.parsedActions ?? []).map((action) => formatActionLabel(action)),
-      appliedActionLabels: (entry.appliedActions ?? []).map((action) => formatActionLabel(action)),
-      droppedArtifactLabels: (entry.droppedArtifacts ?? []).map((artifact) =>
-        formatDroppedArtifactLabel(artifact),
-      ),
-      providerTrace: summarizeProviderTrace(entry.responseBody),
-    }));
+    return [...debugEntries].reverse().map((entry) => {
+      const providerBlocks = extractProviderBlocks(entry.responseBody);
+
+      return {
+        ...entry,
+        timeLabel: new Date(entry.startedAtIso).toLocaleTimeString(),
+        changedRangeLabels: entry.request.changedRanges.map((range) =>
+          formatRangeLabel(range.from, range.to),
+        ),
+        contextRangeLabels: entry.request.contextWindow.map((range) =>
+          formatRangeLabel(range.from, range.to),
+        ),
+        plainTextChars: entry.request.plainText.length,
+        contextChars: entry.request.contextWindow.reduce((sum, item) => sum + item.text.length, 0),
+        draftText: entry.request.plainText,
+        contextText: entry.request.contextWindow
+          .map((range, index) => {
+            return `Window ${String(index + 1)} · ${formatRangeLabel(range.from, range.to)}\n${range.text}`;
+          })
+          .join("\n\n"),
+        parsedActionLabels: (entry.parsedActions ?? []).map((action) => formatActionLabel(action)),
+        appliedActionLabels: (entry.appliedActions ?? []).map((action) => formatActionLabel(action)),
+        droppedArtifactLabels: (entry.droppedArtifacts ?? []).map((artifact) =>
+          formatDroppedArtifactLabel(artifact),
+        ),
+        providerTrace: summarizeProviderTrace(entry.responseBody),
+        providerBlocks,
+        providerToolLabels: providerBlocks
+          .filter((block) => block.kind === "client_tool" || block.kind === "server_tool")
+          .map((block) => {
+            return block.subtitle ? `${block.title} · ${block.subtitle}` : block.title;
+          }),
+      };
+    });
   }, [debugEntries]);
 
   const debugOverview = useMemo(() => {
@@ -1250,107 +1628,67 @@ export function MinimalEditor() {
       ) : null}
       {hoveredGadfly ? (
         <aside
-          className="gaddr-gadfly-card pointer-events-none fixed z-[57] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-lg border p-3 backdrop-blur-[1px]"
+          className="gaddr-gadfly-card pointer-events-none fixed z-[57] w-[min(22rem,calc(100vw-1.5rem))] rounded-lg border p-3 backdrop-blur-[1px]"
           style={hoveredGadflyStyle}
         >
-          <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
-            {hoveredGadfly.annotation.category.toUpperCase()} · {hoveredGadfly.annotation.severity.toUpperCase()}
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
+              {hoveredGadfly.group.annotations.length > 1 ? "ANNOTATION STACK" : "ANNOTATION"}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-1">
+              {hoveredGadfly.group.references.map((reference) => (
+                <div
+                  key={`${hoveredGadfly.group.id}-${String(reference.index)}`}
+                  className="gaddr-gadfly-reference inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[0.58rem] font-semibold leading-none"
+                >
+                  {String(reference.index)}
+                </div>
+              ))}
+            </div>
           </div>
-          {hoveredGadfly.annotation.isPinned || hoveredGadfly.annotation.linkedAnnotationIds.length > 0 ? (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {hoveredGadfly.annotation.isPinned ? (
-                <div className="gaddr-gadfly-status-chip inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
-                  PINNED
-                </div>
-              ) : null}
-              {hoveredGadfly.annotation.linkedAnnotationIds.length > 0 ? (
-                <div className="gaddr-gadfly-status-chip inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
-                  LINKED {String(hoveredGadfly.annotation.linkedAnnotationIds.length)}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {hoveredGadfly.annotation.status !== "active" ? (
-            <div className="gaddr-gadfly-status-chip mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
-              {hoveredGadfly.annotation.status.toUpperCase()}
-              {hoveredGadfly.annotation.snoozedUntil ? ` · UNTIL ${hoveredGadfly.annotation.snoozedUntil}` : ""}
-            </div>
-          ) : null}
-          <p className="mt-1.5 text-xs leading-5 text-[var(--app-fg)]">{hoveredGadfly.annotation.explanation}</p>
-          <p className="mt-1.5 text-[0.7rem] leading-4 text-[color:var(--app-muted)]">Rule: {hoveredGadfly.annotation.rule}</p>
-          <p className="mt-2 text-xs italic leading-5 text-[color:var(--app-fg)]">{hoveredGadfly.annotation.question}</p>
-          {hoveredGadfly.annotation.prompts.length > 0 ? (
-            <div className="gaddr-gadfly-prompts mt-2.5 border-t pt-2">
-              {[...hoveredGadfly.annotation.prompts]
-                .sort((left, right) => {
-                  return GADFLY_PROMPT_ORDER[left.kind] - GADFLY_PROMPT_ORDER[right.kind];
-                })
-                .map((prompt) => (
-                  <div key={prompt.kind} className="gaddr-gadfly-prompt-row mt-1.5 rounded-md border px-2 py-1.5">
-                    <div className="gaddr-gadfly-prompt-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
-                      {GADFLY_PROMPT_LABELS[prompt.kind]}
-                    </div>
-                    <p className="mt-1 text-[0.69rem] leading-4">{prompt.text}</p>
-                  </div>
-                ))}
-            </div>
-          ) : null}
-          {hoveredGadfly.annotation.research.needsFactCheck || hoveredGadfly.annotation.research.tasks.length > 0 ? (
-            <div className="gaddr-gadfly-research mt-2.5 border-t pt-2">
-              {hoveredGadfly.annotation.research.needsFactCheck ? (
-                <div className="gaddr-gadfly-fact-check rounded-md border px-2 py-1.5">
-                  <div className="gaddr-gadfly-research-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
-                    Fact Check
-                  </div>
-                  <p className="mt-1 text-[0.69rem] leading-4">
-                    {hoveredGadfly.annotation.research.factCheckNote ?? "This claim should be verified against external sources."}
-                  </p>
-                </div>
-              ) : null}
-              {[...hoveredGadfly.annotation.research.tasks]
-                .sort((left, right) => GADFLY_RESEARCH_TASK_ORDER[left.kind] - GADFLY_RESEARCH_TASK_ORDER[right.kind])
-                .map((task) => (
-                  <div key={task.id} className="gaddr-gadfly-research-task mt-1.5 rounded-md border px-2 py-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="gaddr-gadfly-research-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
-                        {GADFLY_RESEARCH_TASK_LABELS[task.kind]}
-                      </div>
-                      <div className="text-[0.56rem] tracking-[0.08em] uppercase text-[color:var(--app-muted)]">
-                        {task.result ? GADFLY_RESEARCH_VERDICT_LABELS[task.result.verdict] : task.status}
-                      </div>
-                    </div>
-                    <p className="mt-1 text-[0.69rem] leading-4">{task.question}</p>
-                    {task.result ? (
-                      <>
-                        <ul className="mt-1.5 space-y-1 text-[0.67rem] leading-4 text-[color:var(--app-fg)]">
-                          {task.result.findings.map((finding) => (
-                            <li key={finding} className="list-inside list-disc">
-                              {finding}
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="mt-1.5 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
-                          {task.result.sources.map((source) => source.domain).join(" · ")}
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
-                ))}
-            </div>
-          ) : null}
+          <div className="mt-1 text-[0.68rem] leading-4 text-[color:var(--app-muted)]">
+            {hoveredGadfly.group.anchor.quote}
+          </div>
+          <div className="gaddr-gadfly-stack mt-2.5">
+            {hoveredGadfly.group.annotations.map((annotation, index) => (
+              <div key={annotation.id} className={index > 0 ? "gaddr-gadfly-stack-item mt-3 border-t pt-3" : "gaddr-gadfly-stack-item"}>
+                <GadflyAnnotationCardSection
+                  annotation={annotation}
+                  reference={findReference(hoveredGadfly.group.references, annotation.id)}
+                />
+              </div>
+            ))}
+          </div>
         </aside>
       ) : null}
       {DEV_DEBUG_ENABLED ? (
         <aside
           aria-label="Gadfly debug pane"
           data-testid="gadfly-debug-pane"
-          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[62] flex w-[min(31rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border backdrop-blur-[2px] transition-all duration-200 ${
+          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[62] flex w-[min(42rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border backdrop-blur-[2px] transition-all duration-200 ${
             isDebugPaneOpen ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[105%] opacity-0"
           }`}
         >
-          <header className="flex items-center justify-between border-b px-3 py-2">
-            <div className="text-[0.68rem] font-semibold tracking-[0.12em]">GADFLY DEBUG</div>
+          <header className="border-b px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[0.68rem] font-semibold tracking-[0.12em]">GADFLY DEBUG</div>
+                {copiedDebugLabel ? (
+                  <div className="mt-1 text-[0.58rem] uppercase tracking-[0.09em] text-[color:var(--app-muted)]">
+                    {copiedDebugLabel}
+                  </div>
+                ) : null}
+              </div>
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="rounded border px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em]"
+                onClick={() => {
+                  void handleCopyDebugValue("debugger", formatDebugJson(debugExportPayload));
+                }}
+              >
+                COPY ALL
+              </button>
               <button
                 type="button"
                 className="rounded border px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em]"
@@ -1367,6 +1705,7 @@ export function MinimalEditor() {
               >
                 CLOSE
               </button>
+            </div>
             </div>
           </header>
           <div className="border-b px-3 py-2">
@@ -1454,14 +1793,25 @@ export function MinimalEditor() {
             ) : (
               debugEntriesView.map((entry) => (
                 <article key={entry.id} className="gaddr-debug-entry mb-2 rounded-lg border p-2 text-[0.67rem]">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`gaddr-debug-status-badge gaddr-debug-status-badge--${entry.status}`}>
-                        {statusLabel(entry.status)}
-                      </span>
-                      <span className="font-semibold tracking-[0.08em] uppercase">{entry.id}</span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`gaddr-debug-status-badge gaddr-debug-status-badge--${entry.status}`}>
+                          {statusLabel(entry.status)}
+                        </span>
+                        <span className="font-semibold tracking-[0.08em] uppercase">{entry.id}</span>
+                      </div>
+                      <div className="mt-1 text-[0.62rem] text-[color:var(--app-muted)]">{entry.timeLabel}</div>
                     </div>
-                    <span className="text-[0.62rem] text-[color:var(--app-muted)]">{entry.timeLabel}</span>
+                    <button
+                      type="button"
+                      className="gaddr-debug-inline-button rounded border px-2 py-1 text-[0.56rem] font-semibold tracking-[0.08em]"
+                      onClick={() => {
+                        void handleCopyDebugValue(entry.id, formatDebugJson(entry));
+                      }}
+                    >
+                      COPY ENTRY
+                    </button>
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-1.5 text-[0.61rem] sm:grid-cols-4">
                     <div className="gaddr-debug-metric rounded border px-2 py-1.5">
@@ -1496,6 +1846,24 @@ export function MinimalEditor() {
                         </span>
                       ))}
                     </div>
+                    <DebugTextDetails
+                      label="Draft Text"
+                      text={entry.draftText}
+                      copyLabel={`${entry.id} draft`}
+                      onCopy={(label, value) => {
+                        void handleCopyDebugValue(label, value);
+                      }}
+                    />
+                    {entry.contextText ? (
+                      <DebugTextDetails
+                        label="Context Windows"
+                        text={entry.contextText}
+                        copyLabel={`${entry.id} context`}
+                        onCopy={(label, value) => {
+                          void handleCopyDebugValue(label, value);
+                        }}
+                      />
+                    ) : null}
                   </section>
 
                   <section className="gaddr-debug-section mt-2 rounded border px-2 py-1.5">
@@ -1504,12 +1872,52 @@ export function MinimalEditor() {
                       {entry.model ?? "unknown model"} · {entry.providerRequestId ?? "no request id"} ·{" "}
                       {entry.stopReason ?? "no stop reason"}
                     </div>
-                    {entry.providerTrace.length > 0 ? (
-                      <div className="mt-1 flex flex-col gap-1">
-                        {entry.providerTrace.map((item, index) => (
-                          <div key={`${entry.id}-trace-${String(index)}`} className="gaddr-debug-trace rounded border px-2 py-1">
-                            <span className="font-semibold uppercase tracking-[0.08em]">{item.label}</span>
-                            <span className="ml-2 text-[color:var(--app-muted)]">{item.detail}</span>
+                    {entry.providerToolLabels.length > 0 ? (
+                      <div className="mt-2">
+                        <div className="text-[0.56rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">
+                          Tools Used
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {entry.providerToolLabels.map((label, index) => (
+                            <span key={`${entry.id}-tool-${String(index)}`} className="gaddr-debug-chip">
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {entry.providerBlocks.length > 0 ? (
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        {entry.providerBlocks.map((item, index) => (
+                          <div key={`${entry.id}-provider-${String(index)}`} className="gaddr-debug-trace rounded border px-2 py-1.5">
+                            <div className="text-[0.52rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">
+                              {formatProviderBlockKindLabel(item.kind)}
+                            </div>
+                            <div className="mt-0.5 break-words font-semibold">{item.title}</div>
+                            {item.subtitle ? (
+                              <div className="mt-1 whitespace-pre-wrap break-words text-[0.62rem] text-[color:var(--app-muted)]">
+                                {item.subtitle}
+                              </div>
+                            ) : null}
+                            {typeof item.payload === "string" ? (
+                              <DebugTextDetails
+                                label="Payload"
+                                text={item.payload}
+                                copyLabel={`${entry.id} ${item.title} payload`}
+                                onCopy={(label, value) => {
+                                  void handleCopyDebugValue(label, value);
+                                }}
+                              />
+                            ) : item.payload !== undefined ? (
+                              <DebugJsonDetails
+                                label="Payload"
+                                value={item.payload}
+                                copyLabel={`${entry.id} ${item.title} payload`}
+                                onCopy={(label, value) => {
+                                  void handleCopyDebugValue(label, value);
+                                }}
+                              />
+                            ) : null}
                           </div>
                         ))}
                       </div>
@@ -1589,8 +1997,22 @@ export function MinimalEditor() {
                     ) : null}
                   </section>
 
-                  <DebugJsonDetails label="Request JSON" value={entry.request} />
-                  <DebugJsonDetails label="Response JSON" value={entry.responseBody} />
+                  <DebugJsonDetails
+                    label="Request JSON"
+                    value={entry.request}
+                    copyLabel={`${entry.id} request json`}
+                    onCopy={(label, value) => {
+                      void handleCopyDebugValue(label, value);
+                    }}
+                  />
+                  <DebugJsonDetails
+                    label="Response JSON"
+                    value={entry.responseBody}
+                    copyLabel={`${entry.id} response json`}
+                    onCopy={(label, value) => {
+                      void handleCopyDebugValue(label, value);
+                    }}
+                  />
                 </article>
               ))
             )}

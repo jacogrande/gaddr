@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   extractResearchQuestionCandidates,
+  isPrimaryResearchQuestionRequest,
   isResearchQuestionCandidate,
   shouldEnableResearchForRequest,
 } from "../../../src/domain/gadfly/research";
@@ -64,5 +65,23 @@ describe("gadfly research question detection", () => {
         ],
       }),
     ).toBe(false);
+  });
+
+  test("treats a direct knowledge question as research-first even with minor wording issues", () => {
+    expect(
+      isPrimaryResearchQuestionRequest({
+        noteId: "note-1",
+        docVersion: 1,
+        changedRanges: [{ from: 0, to: 39 }],
+        plainText: "Why are headlights so bright now adays?",
+        contextWindow: [
+          {
+            from: 0,
+            to: 40,
+            text: "Why are headlights so bright now adays?",
+          },
+        ],
+      }),
+    ).toBe(true);
   });
 });

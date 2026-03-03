@@ -1,7 +1,10 @@
 import { getAnthropicClient } from "./client";
 import { GADFLY_MODEL } from "./config";
 import type { Tool, WebSearchTool20250305 } from "@anthropic-ai/sdk/resources/messages/messages";
-import { shouldEnableResearchForRequest } from "../../domain/gadfly/research";
+import {
+  isPrimaryResearchQuestionRequest,
+  shouldEnableResearchForRequest,
+} from "../../domain/gadfly/research";
 import {
   parseGadflyAction,
   validateGadflyAction,
@@ -26,12 +29,19 @@ type ToolInputRecord = Record<string, unknown>;
 const MAX_GADFLY_ACTIONS = 6;
 const TONE_INCONSISTENCY_PATTERN = /\b(inconsisten|inconsistency|shift|mismatch|deviat|breaks\s+pattern)\b/i;
 const DEBUG_TOOL_ENABLED = process.env.NODE_ENV !== "production";
+const PROVIDER_TOOL_NAMES = {
+  annotationManage: "annotation_manage",
+  promptManage: "prompt_manage",
+  preferenceManage: "preference_manage",
+  researchManage: "research_manage",
+  debugEmit: "debug_emit",
+} as const;
 
 const GADFLY_CLIENT_TOOLS: Tool[] = [
   {
-    name: "annotation.manage",
+    name: PROVIDER_TOOL_NAMES.annotationManage,
     description:
-      "Manage inline writing annotations. Use action enum: annotate, clear, clear_in_range, clear_by_category, update_annotation, set_severity, set_status, snooze_until, unsnooze, pin_annotation, unpin_annotation, link_annotations.",
+      "Manage inline writing annotations. Use action enum: annotate, clear, clear_in_range, clear_by_category, update_annotation, set_severity, set_status, snooze_until, unsnooze, pin_annotation, unpin_annotation, link_annotations. For annotate/update_annotation, annotation must include id, anchor, category, severity, explanation, rule, and question.",
     input_schema: {
       type: "object",
       properties: {
@@ -87,6 +97,7 @@ const GADFLY_CLIENT_TOOLS: Tool[] = [
               type: "object",
             },
           },
+          required: ["id", "anchor", "category", "severity", "explanation", "rule", "question"],
         },
         annotationId: { type: "string" },
         relatedAnnotationIds: {
@@ -119,7 +130,7 @@ const GADFLY_CLIENT_TOOLS: Tool[] = [
     },
   },
   {
-    name: "prompt.manage",
+    name: PROVIDER_TOOL_NAMES.promptManage,
     description:
       "Add a Socratic prompt tied to an existing annotation. Use action enum: ask_followup_question, add_clarity_prompt, add_structure_prompt, add_evidence_prompt, add_counterpoint_prompt, add_tone_consistency_prompt.",
     input_schema: {
@@ -143,7 +154,7 @@ const GADFLY_CLIENT_TOOLS: Tool[] = [
     },
   },
   {
-    name: "preference.manage",
+    name: PROVIDER_TOOL_NAMES.preferenceManage,
     description:
       "Manage Gadfly feedback policy and user learning goals. Use action enum: mute_category, unmute_category, set_learning_goal, clear_learning_goal.",
     input_schema: {
@@ -168,9 +179,9 @@ const GADFLY_CLIENT_TOOLS: Tool[] = [
     },
   },
   {
-    name: "research.manage",
+    name: PROVIDER_TOOL_NAMES.researchManage,
     description:
-      "Manage fact-check and evidence-gathering workflow. Use action enum: flag_fact_check_needed, create_research_task, attach_research_result.",
+      "Manage fact-check and evidence-gathering workflow for an existing annotation that marks the user's question or claim. Use action enum: flag_fact_check_needed, create_research_task, attach_research_result.",
     input_schema: {
       type: "object",
       properties: {
@@ -230,7 +241,7 @@ const GADFLY_CLIENT_TOOLS: Tool[] = [
   ...(DEBUG_TOOL_ENABLED
     ? ([
         {
-          name: "debug.emit",
+          name: PROVIDER_TOOL_NAMES.debugEmit,
           description:
             "Emit a structured dev-only debug event when useful for instrumentation. Use action enum: emit_debug_event.",
           input_schema: {
@@ -271,12 +282,26 @@ function isObject(value: unknown): value is ToolInputRecord {
   return typeof value === "object" && value !== null;
 }
 
+function countWebSearchToolUses(
+  content: Array<{ type: string; name?: string }>,
+): number {
+  let count = 0;
+
+  for (const block of content) {
+    if (block.type === "server_tool_use" && block.name === "web_search") {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
 function toActionFromTool(name: string, input: unknown): unknown {
   if (!isObject(input)) {
     return null;
   }
 
-  if (name === "annotation.manage") {
+  if (name === PROVIDER_TOOL_NAMES.annotationManage) {
     const action = input["action"];
     if (typeof action !== "string") {
       return null;
@@ -359,7 +384,7 @@ function toActionFromTool(name: string, input: unknown): unknown {
     }
   }
 
-  if (name === "prompt.manage") {
+  if (name === PROVIDER_TOOL_NAMES.promptManage) {
     const action = input["action"];
     if (
       action === "ask_followup_question" ||
@@ -380,7 +405,7 @@ function toActionFromTool(name: string, input: unknown): unknown {
     return null;
   }
 
-  if (name === "preference.manage") {
+  if (name === PROVIDER_TOOL_NAMES.preferenceManage) {
     const action = input["action"];
     if (action === "mute_category" || action === "unmute_category") {
       return {
@@ -408,7 +433,7 @@ function toActionFromTool(name: string, input: unknown): unknown {
     return null;
   }
 
-  if (name === "research.manage") {
+  if (name === PROVIDER_TOOL_NAMES.researchManage) {
     const action = input["action"];
     if (action === "flag_fact_check_needed") {
       return {
@@ -441,7 +466,7 @@ function toActionFromTool(name: string, input: unknown): unknown {
     return null;
   }
 
-  if (name === "debug.emit") {
+  if (name === PROVIDER_TOOL_NAMES.debugEmit) {
     if (input["action"] !== "emit_debug_event") {
       return null;
     }
@@ -512,32 +537,49 @@ function serializeRequest(request: GadflyAnalyzeRequest): string {
 }
 
 function buildPrompt(request: GadflyAnalyzeRequest): string {
+  const isPrimaryResearchQuestion = isPrimaryResearchQuestionRequest(request);
+
   return [
     "Analyze this writing update and use only tool calls.",
     "Do not rewrite user text and do not provide replacement prose.",
     "For tone feedback: only annotate tone when it is inconsistent with the surrounding writing style.",
     "Do not flag tone based only on professionalism or informality in isolation.",
+    ...(isPrimaryResearchQuestion
+      ? [
+          "Primary mode: the user's draft is an explicit real-world question.",
+          "Prioritize research_manage and web_search over spelling, grammar, or wording feedback.",
+          "In this mode, use web_search before returning research findings unless external lookup is genuinely unnecessary.",
+          "Create exactly one complete annotation on the question span and reuse that same id for every related research_manage call in this response.",
+          "If you use web_search in this mode, return both create_research_task and attach_research_result for the same task id in the same response whenever possible.",
+          "attach_research_result should include 2-4 concise findings and source metadata from the search results.",
+          "Do not spend tool budget on minor copyediting unless the wording blocks understanding of the question.",
+          "In this mode, do not annotate nits like 'now adays' vs 'nowadays' instead of researching the question.",
+        ]
+      : []),
     `Return at most ${String(MAX_GADFLY_ACTIONS)} tool calls total across all available tools.`,
     "Choose tools by intent:",
-    "1. annotation.manage for inline issue lifecycle and highlight state.",
-    "2. prompt.manage for deeper Socratic follow-up prompts on an existing annotation.",
-    "3. preference.manage only when the user is clearly expressing a stable preference or goal.",
-    "4. research.manage only for explicit real-world questions or fact-check requests.",
-    "5. debug.emit only in development, and only when it adds meaningful instrumentation.",
+    `1. ${PROVIDER_TOOL_NAMES.annotationManage} for inline issue lifecycle and highlight state.`,
+    `2. ${PROVIDER_TOOL_NAMES.promptManage} for deeper Socratic follow-up prompts on an existing annotation.`,
+    `3. ${PROVIDER_TOOL_NAMES.preferenceManage} only when the user is clearly expressing a stable preference or goal.`,
+    `4. ${PROVIDER_TOOL_NAMES.researchManage} only for explicit real-world questions or fact-check requests.`,
+    `5. ${PROVIDER_TOOL_NAMES.debugEmit} only in development, and only when it adds meaningful instrumentation.`,
     "Use action=annotate for new inline findings.",
+    "Every annotate/update_annotation call must include annotation.id, anchor, category, severity, explanation, rule, and question.",
     "Use action=update_annotation only when refining an existing finding rather than creating a new one.",
     "Use action=clear, clear_in_range, clear_by_category, set_severity, set_status, snooze_until, unsnooze, pin_annotation, unpin_annotation, or link_annotations only when the state change is clearly justified.",
-    "Use prompt.manage actions only to add Socratic prompts for an annotationId, never as a replacement for annotate.",
+    `Use ${PROVIDER_TOOL_NAMES.promptManage} actions only to add Socratic prompts for an annotationId, never as a replacement for annotate.`,
     "If you create a new annotation and prompt together, reuse the same annotation id in both calls.",
-    "Use research.manage only when the user's draft contains an explicit real-world question or fact-check request.",
+    `Use ${PROVIDER_TOOL_NAMES.researchManage} only when the user's draft contains an explicit real-world question or fact-check request.`,
     "Example: I wonder why new headlights are so bright?",
+    "Example: Why are headlights so bright nowadays?",
     "Do not create research actions just because the draft mentions evidence, research, or data in the abstract.",
     "If web_search is available, use it sparingly and only to help answer that explicit user question.",
     "Never use web_search for sentence-level style, clarity, or tone feedback.",
     "Use action=flag_fact_check_needed when a claim needs verification.",
     "Use action=create_research_task to queue a bounded research question.",
     "Use action=attach_research_result only after gathering sources, and return only findings plus source metadata.",
-    "Use preference.manage mute/unmute only for broad user-level feedback policy, not one-off annotations.",
+    "If you create_research_task and already used web_search, usually also attach_research_result in the same response.",
+    `Use ${PROVIDER_TOOL_NAMES.preferenceManage} mute/unmute only for broad user-level feedback policy, not one-off annotations.`,
     "Use set_learning_goal only when the user consistently signals a learning objective.",
     "When tone is discussed, prefer add_tone_consistency_prompt only if the issue is inconsistency with surrounding voice.",
     "Use add_counterpoint_prompt only for argumentative balance gaps, not generic disagreement.",
@@ -563,11 +605,11 @@ function parseActionsFromContent(content: Array<{ type: string; name?: string; i
 
     const toolName = block.name;
     if (
-      toolName !== "annotation.manage" &&
-      toolName !== "prompt.manage" &&
-      toolName !== "preference.manage" &&
-      toolName !== "research.manage" &&
-      toolName !== "debug.emit" &&
+      toolName !== PROVIDER_TOOL_NAMES.annotationManage &&
+      toolName !== PROVIDER_TOOL_NAMES.promptManage &&
+      toolName !== PROVIDER_TOOL_NAMES.preferenceManage &&
+      toolName !== PROVIDER_TOOL_NAMES.researchManage &&
+      toolName !== PROVIDER_TOOL_NAMES.debugEmit &&
       toolName !== "annotate" &&
       toolName !== "clear"
     ) {
@@ -675,11 +717,11 @@ export async function analyzeWithGadfly(
         "Only flag tone when it is inconsistent with surrounding style.",
         "Only produce tool calls using the provided tools.",
         "Prefer the smallest correct tool family for each intent.",
-        "annotation.manage handles inline issue state.",
-        "prompt.manage handles deeper Socratic prompts attached to an annotation.",
-        "preference.manage handles stable user policy or learning-goal state.",
-        "research.manage handles explicit real-world questions and fact-check workflows.",
-        "debug.emit is dev-only instrumentation and should be rare.",
+        `${PROVIDER_TOOL_NAMES.annotationManage} handles inline issue state.`,
+        `${PROVIDER_TOOL_NAMES.promptManage} handles deeper Socratic prompts attached to an annotation.`,
+        `${PROVIDER_TOOL_NAMES.preferenceManage} handles stable user policy or learning-goal state.`,
+        `${PROVIDER_TOOL_NAMES.researchManage} handles explicit real-world questions and fact-check workflows.`,
+        `${PROVIDER_TOOL_NAMES.debugEmit} is dev-only instrumentation and should be rare.`,
         "Use web_search only when factual verification or source discovery is necessary.",
         "Keep feedback concise, precise, and instructional.",
       ].join("\n"),
@@ -721,6 +763,8 @@ export async function analyzeWithGadfly(
 
     const parsed = parseActionsFromContent(response.content);
     const boundedActions = parsed.actions.slice(0, MAX_GADFLY_ACTIONS);
+    const webSearchRequests =
+      response.usage.server_tool_use?.web_search_requests ?? countWebSearchToolUses(response.content);
 
     return ok({
       requestId: response.id,
@@ -729,7 +773,7 @@ export async function analyzeWithGadfly(
         inputTokens: response.usage.input_tokens,
         outputTokens: response.usage.output_tokens,
         totalTokens: response.usage.input_tokens + response.usage.output_tokens,
-        webSearchRequests: response.usage.server_tool_use?.web_search_requests ?? 0,
+        webSearchRequests,
       },
       latencyMs: Date.now() - startedAt,
       actions: boundedActions,

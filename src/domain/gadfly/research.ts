@@ -47,3 +47,28 @@ export function shouldEnableResearchForRequest(request: GadflyAnalyzeRequest): b
 
   return false;
 }
+
+export function isPrimaryResearchQuestionRequest(request: GadflyAnalyzeRequest): boolean {
+  const normalizedPlainText = normalizeCandidate(request.plainText);
+  if (normalizedPlainText.length === 0) {
+    return false;
+  }
+
+  if (isResearchQuestionCandidate(normalizedPlainText)) {
+    return true;
+  }
+
+  const candidates = extractResearchQuestionCandidates(normalizedPlainText).filter((candidate) =>
+    isResearchQuestionCandidate(candidate),
+  );
+  if (candidates.length !== 1) {
+    return false;
+  }
+
+  const [candidate] = candidates;
+  if (!candidate) {
+    return false;
+  }
+
+  return normalizedPlainText.length - candidate.length <= 12;
+}

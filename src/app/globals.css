@@ -195,6 +195,14 @@ body {
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
+.gaddr-gadfly-highlight--stacked {
+  background-image: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--highlight-bg) 62%, transparent) 0 34%,
+    transparent 34% 100%
+  );
+}
+
 .gaddr-gadfly-highlight:hover {
   background-color: color-mix(in srgb, var(--highlight-bg) 70%, transparent);
 }
@@ -220,6 +228,27 @@ body {
   border-color: color-mix(in srgb, var(--border-soft) 76%, transparent);
   background-color: color-mix(in srgb, var(--surface-2) 92%, transparent);
   color: var(--app-muted);
+}
+
+.gaddr-gadfly-marker {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.12rem;
+  margin-left: 0.18rem;
+  vertical-align: super;
+  font-size: 0.62rem;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--accent-strong) 80%, var(--app-muted));
+  cursor: default;
+  user-select: none;
+}
+
+.gaddr-gadfly-reference {
+  border-color: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  color: var(--accent-strong);
 }
 
 .gaddr-modifier-stack {
@@ -433,14 +462,42 @@ body {
   background-color: color-mix(in srgb, var(--surface-1) 84%, transparent);
 }
 
+.gaddr-debug-trace {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.gaddr-debug-inline-button {
+  white-space: nowrap;
+  flex: none;
+}
+
 .gaddr-debug-pane summary {
   color: color-mix(in srgb, var(--app-muted) 88%, transparent);
+}
+
+.gaddr-debug-details-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  list-style: none;
+}
+
+.gaddr-debug-details-summary::-webkit-details-marker {
+  display: none;
 }
 
 .gaddr-debug-pane pre {
   border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
   background-color: color-mix(in srgb, var(--surface-2) 90%, transparent);
   color: var(--app-fg);
+}
+
+.gaddr-debug-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .gaddr-debug-toggle-button {

@@ -138,6 +138,68 @@ describe("mergeGadflyActions", () => {
     ]);
   });
 
+  test("reuses an existing annotation when a later model response changes the id but keeps the same quoted span", () => {
+    const current = [
+      annotation("headlights-brightness-q1", 1, 39, {
+        category: "evidence",
+        anchor: { from: 1, to: 39, quote: "why are headlights so bright nowadays?" },
+        explanation: "original explanation",
+        rule: "original rule",
+        question: "original question",
+        research: {
+          needsFactCheck: false,
+          factCheckNote: null,
+          tasks: [
+            {
+              id: "headlights-brightness-research",
+              kind: "supporting_evidence",
+              question: "Why are modern headlights brighter than older models?",
+              status: "pending",
+              result: null,
+            },
+          ],
+        },
+      }),
+    ];
+
+    const next = mergeGadflyActions(current, [
+      {
+        type: "annotation.manage",
+        action: "annotate",
+        annotation: annotation("headlight-brightness-q1", 1, 39, {
+          category: "evidence",
+          anchor: { from: 1, to: 39, quote: "why are headlights so bright nowadays?" },
+          explanation: "updated explanation",
+          rule: "updated rule",
+          question: "updated question",
+        }),
+      },
+    ]);
+
+    expect(next).toEqual([
+      annotation("headlights-brightness-q1", 1, 39, {
+        category: "evidence",
+        anchor: { from: 1, to: 39, quote: "why are headlights so bright nowadays?" },
+        explanation: "updated explanation",
+        rule: "updated rule",
+        question: "updated question",
+        research: {
+          needsFactCheck: false,
+          factCheckNote: null,
+          tasks: [
+            {
+              id: "headlights-brightness-research",
+              kind: "supporting_evidence",
+              question: "Why are modern headlights brighter than older models?",
+              status: "pending",
+              result: null,
+            },
+          ],
+        },
+      }),
+    ]);
+  });
+
   test("clear removes base id and collided siblings", () => {
     const current = [annotation("a", 2, 7), annotation("a#2", 24, 31), annotation("b", 40, 49)];
 

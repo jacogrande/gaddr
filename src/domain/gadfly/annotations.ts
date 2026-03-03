@@ -42,6 +42,10 @@ function uniqueCategories(values: readonly GadflyCategory[]): GadflyCategory[] {
   return GADFLY_CATEGORIES.filter((category) => categories.includes(category));
 }
 
+function normalizeQuote(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function isLikelySameAnnotation(
   existing: GadflyAnnotation,
   incoming: GadflyAnnotation,
@@ -70,6 +74,28 @@ function isLikelySameAnnotation(
   );
 }
 
+function findMatchingAnnotationIdByQuote(
+  incoming: GadflyAnnotation,
+  byId: Map<string, GadflyAnnotation>,
+): string | null {
+  const incomingQuote = normalizeQuote(incoming.anchor.quote);
+  if (incomingQuote.length === 0) {
+    return null;
+  }
+
+  for (const [id, existing] of byId) {
+    if (existing.category !== incoming.category) {
+      continue;
+    }
+
+    if (normalizeQuote(existing.anchor.quote) === incomingQuote) {
+      return id;
+    }
+  }
+
+  return null;
+}
+
 function nextCollisionId(baseId: string, byId: Map<string, GadflyAnnotation>): string {
   let suffix = 2;
 
@@ -87,6 +113,11 @@ function resolveAnnotationId(
   const baseId = incoming.id;
   const directMatch = byId.get(baseId);
   if (!directMatch) {
+    const quoteMatchId = findMatchingAnnotationIdByQuote(incoming, byId);
+    if (quoteMatchId) {
+      return quoteMatchId;
+    }
+
     return baseId;
   }
 
