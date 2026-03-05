@@ -147,19 +147,7 @@ function formatRangeLabel(from: number, to: number): string {
 }
 
 function formatActionLabel(action: GadflyAction): string {
-  if (action.type === "annotation.manage") {
-    if (action.action === "annotate" || action.action === "update_annotation") {
-      return `${action.action.replaceAll("_", " ")} · ${action.annotation.category}`;
-    }
-
-    return action.action.replaceAll("_", " ");
-  }
-
-  if (action.type === "prompt.manage") {
-    return action.action.replaceAll("_", " ");
-  }
-
-  return action.action.replaceAll("_", " ");
+  return `${action.type} · ${action.action}`.replaceAll("_", " ");
 }
 
 function formatDroppedArtifactLabel(artifact: GadflyDroppedArtifact): string {

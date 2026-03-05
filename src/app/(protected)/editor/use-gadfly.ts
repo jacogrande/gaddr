@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { reduceGadflyState } from "../../../domain/gadfly/annotations";
 import { parseGadflyAction } from "../../../domain/gadfly/guards";
 import type {
@@ -274,198 +273,12 @@ function mergeRanges(ranges: readonly GadflyRange[]): GadflyRange[] {
   return merged;
 }
 
-function findQuoteRangeInBlock(
-  blockNode: ProseMirrorNode,
-  blockPos: number,
-  quote: string,
-  referenceFrom: number,
-): DocRange | null {
-  let blockText = "";
-  const blockPositionByTextIndex: number[] = [];
-
-  blockNode.descendants((child, childPos) => {
-    if (!child.isText || !child.text) {
-      return true;
-    }
-
-    const absoluteTextStart = blockPos + childPos + 1;
-    for (let index = 0; index < child.text.length; index += 1) {
-      blockText += child.text[index] ?? "";
-      blockPositionByTextIndex.push(absoluteTextStart + index);
-    }
-
-    return true;
-  });
-
-  if (blockText.length === 0) {
-    return null;
-  }
-
-  let bestRange: DocRange | null = null;
-  let bestDistance = Number.MAX_SAFE_INTEGER;
-  let cursor = 0;
-
-  while (cursor <= blockText.length) {
-    const foundAt = blockText.indexOf(quote, cursor);
-    if (foundAt < 0) {
-      break;
-    }
-
-    const from = blockPositionByTextIndex[foundAt];
-    const to = blockPositionByTextIndex[foundAt + quote.length - 1];
-    if (from !== undefined && to !== undefined) {
-      const candidateFrom = from;
-      const candidateTo = to + 1;
-      const distance = Math.abs(candidateFrom - referenceFrom);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestRange = { from: candidateFrom, to: candidateTo };
-      }
-    }
-
-    cursor = foundAt + 1;
-  }
-
-  return bestRange;
+function resolveActionAnchors(actions: readonly GadflyAction[]): GadflyAction[] {
+  return [...actions];
 }
 
-function resolveAnnotationAnchor(
-  doc: ProseMirrorNode,
-  annotation: GadflyAnnotation,
-): GadflyAnnotation {
-  const quote = annotation.anchor.quote.trim();
-  const docMax = doc.content.size;
-  const fallbackFrom = Math.max(0, Math.min(annotation.anchor.from, docMax));
-  const fallbackTo = Math.max(fallbackFrom, Math.min(annotation.anchor.to, docMax));
-
-  if (quote.length === 0) {
-    return {
-      ...annotation,
-      anchor: {
-        ...annotation.anchor,
-        from: fallbackFrom,
-        to: fallbackTo,
-      },
-    };
-  }
-
-  const quoteCandidates = [quote];
-  if (quote.length > 26) {
-    quoteCandidates.push(quote.slice(0, 26));
-  }
-  if (quote.length > 18) {
-    quoteCandidates.push(quote.slice(0, 18));
-  }
-
-  for (const quoteCandidate of quoteCandidates) {
-    if (quoteCandidate.length < 8) {
-      continue;
-    }
-
-    const candidateRanges: DocRange[] = [];
-
-    doc.descendants((node, pos) => {
-      if (!node.isTextblock) {
-        return true;
-      }
-
-      const foundRange = findQuoteRangeInBlock(node, pos, quoteCandidate, fallbackFrom);
-      if (foundRange) {
-        candidateRanges.push(foundRange);
-      }
-
-      return false;
-    });
-
-    if (candidateRanges.length === 0) {
-      continue;
-    }
-
-    const initialRange = candidateRanges[0];
-    if (!initialRange) {
-      continue;
-    }
-
-    let selectedRange = initialRange;
-    let selectedDistance = Math.abs(selectedRange.from - fallbackFrom);
-
-    for (let index = 1; index < candidateRanges.length; index += 1) {
-      const candidateRange = candidateRanges[index];
-      if (!candidateRange) {
-        continue;
-      }
-
-      const distance = Math.abs(candidateRange.from - fallbackFrom);
-      if (distance < selectedDistance) {
-        selectedRange = candidateRange;
-        selectedDistance = distance;
-      }
-    }
-
-    return {
-      ...annotation,
-      anchor: {
-        ...annotation.anchor,
-        from: selectedRange.from,
-        to: selectedRange.to,
-      },
-    };
-  }
-
-  return {
-    ...annotation,
-    anchor: {
-      ...annotation.anchor,
-      from: fallbackFrom,
-      to: fallbackTo,
-    },
-  };
-}
-
-function resolveActionAnchors(
-  doc: ProseMirrorNode,
-  actions: readonly GadflyAction[],
-): GadflyAction[] {
-  const resolved: GadflyAction[] = [];
-
-  for (const action of actions) {
-    if (action.action !== "annotate" && action.action !== "update_annotation") {
-      resolved.push(action);
-      continue;
-    }
-
-    resolved.push({
-      type: "annotation.manage",
-      action: action.action,
-      annotation: resolveAnnotationAnchor(doc, action.annotation),
-    });
-  }
-
-  return resolved;
-}
-
-function filterActionsForPendingRanges(
-  actions: readonly GadflyAction[],
-  pendingRanges: readonly GadflyRange[],
-): GadflyAction[] {
-  if (pendingRanges.length === 0) {
-    return [...actions];
-  }
-
-  const mergedPendingRanges = mergeRanges(pendingRanges);
-
-  return actions.filter((action) => {
-    if (action.action !== "annotate" && action.action !== "update_annotation") {
-      return true;
-    }
-
-    const anchorRange = {
-      from: action.annotation.anchor.from,
-      to: action.annotation.anchor.to,
-    };
-
-    return !mergedPendingRanges.some((pendingRange) => rangesOverlap(anchorRange, pendingRange));
-  });
+function filterActionsForPendingRanges(actions: readonly GadflyAction[]): GadflyAction[] {
+  return [...actions];
 }
 
 function extractChangedRanges(transaction: Transaction): GadflyRange[] {
@@ -699,8 +512,8 @@ export function useGadfly(editor: TiptapEditor | null, options: UseGadflyOptions
       }
 
       const parsed = parseAnalyzeSuccess(parsedBody);
-      const anchoredActions = resolveActionAnchors(currentEditor.state.doc, parsed.actions);
-      const safeActions = filterActionsForPendingRanges(anchoredActions, pendingRangesRef.current);
+      const anchoredActions = resolveActionAnchors(parsed.actions);
+      const safeActions = filterActionsForPendingRanges(anchoredActions);
       applyGadflyState(safeActions);
 
       patchDebugEntry(debugId, {
