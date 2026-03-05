@@ -126,8 +126,8 @@ export async function analyzeWithGadfly(
       actions: [],
       droppedArtifacts: [],
       diagnostics: {
-        webSearchEligible: true,
-        webSearchIncluded: true,
+        webSearchEligible: false,
+        webSearchIncluded: false,
         webSearchFallbackUsed: false,
       },
       rawResponse: {
