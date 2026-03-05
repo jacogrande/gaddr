@@ -3,7 +3,6 @@ import { GADFLY_MODEL } from "./config";
 import type { Tool, WebSearchTool20250305 } from "@anthropic-ai/sdk/resources/messages/messages";
 import {
   isPrimaryResearchQuestionRequest,
-  shouldEnableResearchForRequest,
 } from "../../domain/gadfly/research";
 import {
   parseGadflyAction,
@@ -28,7 +27,6 @@ type ToolInputRecord = Record<string, unknown>;
 
 const MAX_GADFLY_ACTIONS = 6;
 const TONE_INCONSISTENCY_PATTERN = /\b(inconsisten|inconsistency|shift|mismatch|deviat|breaks\s+pattern)\b/i;
-const DEBUG_TOOL_ENABLED = process.env.NODE_ENV !== "production";
 const PROVIDER_TOOL_NAMES = {
   annotationManage: "annotation_manage",
   promptManage: "prompt_manage",
@@ -37,235 +35,7 @@ const PROVIDER_TOOL_NAMES = {
   debugEmit: "debug_emit",
 } as const;
 
-const GADFLY_CLIENT_TOOLS: Tool[] = [
-  {
-    name: PROVIDER_TOOL_NAMES.annotationManage,
-    description:
-      "Manage inline writing annotations. Use action enum: annotate, clear, clear_in_range, clear_by_category, update_annotation, set_severity, set_status, snooze_until, unsnooze, pin_annotation, unpin_annotation, link_annotations. For annotate/update_annotation, annotation must include id, anchor, category, severity, explanation, rule, and question.",
-    input_schema: {
-      type: "object",
-      properties: {
-        action: {
-          type: "string",
-          enum: [
-            "annotate",
-            "clear",
-            "clear_in_range",
-            "clear_by_category",
-            "update_annotation",
-            "set_severity",
-            "set_status",
-            "snooze_until",
-            "unsnooze",
-            "pin_annotation",
-            "unpin_annotation",
-            "link_annotations",
-          ],
-        },
-        annotation: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            anchor: {
-              type: "object",
-              properties: {
-                from: { type: "integer", minimum: 0 },
-                to: { type: "integer", minimum: 0 },
-                quote: { type: "string" },
-              },
-              required: ["from", "to", "quote"],
-            },
-            category: {
-              type: "string",
-              enum: ["clarity", "structure", "evidence", "tone", "logic"],
-            },
-            severity: {
-              type: "string",
-              enum: ["low", "medium", "high"],
-            },
-            status: {
-              type: "string",
-              enum: ["active", "acknowledged", "resolved", "dismissed", "snoozed"],
-            },
-            explanation: { type: "string" },
-            rule: { type: "string" },
-            question: { type: "string" },
-            prompts: {
-              type: "array",
-            },
-            research: {
-              type: "object",
-            },
-          },
-          required: ["id", "anchor", "category", "severity", "explanation", "rule", "question"],
-        },
-        annotationId: { type: "string" },
-        relatedAnnotationIds: {
-          type: "array",
-          items: { type: "string" },
-        },
-        range: {
-          type: "object",
-          properties: {
-            from: { type: "integer", minimum: 0 },
-            to: { type: "integer", minimum: 0 },
-          },
-          required: ["from", "to"],
-        },
-        severity: {
-          type: "string",
-          enum: ["low", "medium", "high"],
-        },
-        status: {
-          type: "string",
-          enum: ["active", "acknowledged", "resolved", "dismissed", "snoozed"],
-        },
-        category: {
-          type: "string",
-          enum: ["clarity", "structure", "evidence", "tone", "logic"],
-        },
-        until: { type: "string" },
-      },
-      required: ["action"],
-    },
-  },
-  {
-    name: PROVIDER_TOOL_NAMES.promptManage,
-    description:
-      "Add a Socratic prompt tied to an existing annotation. Use action enum: ask_followup_question, add_clarity_prompt, add_structure_prompt, add_evidence_prompt, add_counterpoint_prompt, add_tone_consistency_prompt.",
-    input_schema: {
-      type: "object",
-      properties: {
-        action: {
-          type: "string",
-          enum: [
-            "ask_followup_question",
-            "add_clarity_prompt",
-            "add_structure_prompt",
-            "add_evidence_prompt",
-            "add_counterpoint_prompt",
-            "add_tone_consistency_prompt",
-          ],
-        },
-        annotationId: { type: "string" },
-        prompt: { type: "string" },
-      },
-      required: ["action", "annotationId", "prompt"],
-    },
-  },
-  {
-    name: PROVIDER_TOOL_NAMES.preferenceManage,
-    description:
-      "Manage Gadfly feedback policy and user learning goals. Use action enum: mute_category, unmute_category, set_learning_goal, clear_learning_goal.",
-    input_schema: {
-      type: "object",
-      properties: {
-        action: {
-          type: "string",
-          enum: [
-            "mute_category",
-            "unmute_category",
-            "set_learning_goal",
-            "clear_learning_goal",
-          ],
-        },
-        category: {
-          type: "string",
-          enum: ["clarity", "structure", "evidence", "tone", "logic"],
-        },
-        goal: { type: "string" },
-      },
-      required: ["action"],
-    },
-  },
-  {
-    name: PROVIDER_TOOL_NAMES.researchManage,
-    description:
-      "Manage fact-check and evidence-gathering workflow for an existing annotation that marks the user's question or claim. Use action enum: flag_fact_check_needed, create_research_task, attach_research_result.",
-    input_schema: {
-      type: "object",
-      properties: {
-        action: {
-          type: "string",
-          enum: [
-            "flag_fact_check_needed",
-            "create_research_task",
-            "attach_research_result",
-          ],
-        },
-        annotationId: { type: "string" },
-        note: { type: "string" },
-        task: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            kind: {
-              type: "string",
-              enum: ["fact_check", "supporting_evidence", "counterpoint", "context"],
-            },
-            question: { type: "string" },
-          },
-          required: ["id", "kind", "question"],
-        },
-        taskId: { type: "string" },
-        result: {
-          type: "object",
-          properties: {
-            verdict: {
-              type: "string",
-              enum: ["unverified", "supported", "mixed", "contradicted"],
-            },
-            findings: {
-              type: "array",
-              items: { type: "string" },
-            },
-            sources: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  title: { type: "string" },
-                  url: { type: "string" },
-                  pageAge: { type: "string" },
-                },
-                required: ["title", "url"],
-              },
-            },
-          },
-          required: ["verdict", "findings", "sources"],
-        },
-      },
-      required: ["action", "annotationId"],
-    },
-  },
-  ...(DEBUG_TOOL_ENABLED
-    ? ([
-        {
-          name: PROVIDER_TOOL_NAMES.debugEmit,
-          description:
-            "Emit a structured dev-only debug event when useful for instrumentation. Use action enum: emit_debug_event.",
-          input_schema: {
-            type: "object",
-            properties: {
-              action: {
-                type: "string",
-                enum: ["emit_debug_event"],
-              },
-              event: {
-                type: "object",
-                properties: {
-                  eventName: { type: "string" },
-                  detail: { type: "string" },
-                },
-                required: ["eventName", "detail"],
-              },
-            },
-            required: ["action", "event"],
-          },
-        },
-      ] satisfies Tool[])
-    : []),
-];
+const GADFLY_CLIENT_TOOLS: Tool[] = [];
 
 const GADFLY_WEB_SEARCH_TOOL: WebSearchTool20250305 = {
   type: "web_search_20250305",
@@ -510,15 +280,7 @@ function toActionFromTool(name: string, input: unknown): unknown {
   return null;
 }
 
-function shouldEnableWebSearch(request: GadflyAnalyzeRequest): boolean {
-  return shouldEnableResearchForRequest(request);
-}
-
-function buildTools(request: GadflyAnalyzeRequest): Array<Tool | WebSearchTool20250305> {
-  if (!shouldEnableWebSearch(request)) {
-    return GADFLY_CLIENT_TOOLS;
-  }
-
+function buildTools(): Array<Tool | WebSearchTool20250305> {
   return [...GADFLY_CLIENT_TOOLS, GADFLY_WEB_SEARCH_TOOL];
 }
 
@@ -540,52 +302,21 @@ function buildPrompt(request: GadflyAnalyzeRequest): string {
   const isPrimaryResearchQuestion = isPrimaryResearchQuestionRequest(request);
 
   return [
-    "Analyze this writing update and use only tool calls.",
+    "Analyze this writing update.",
     "Do not rewrite user text and do not provide replacement prose.",
-    "For tone feedback: only annotate tone when it is inconsistent with the surrounding writing style.",
-    "Do not flag tone based only on professionalism or informality in isolation.",
+    "The only available tool is web_search.",
+    "If no external lookup is needed, do not call any tool.",
+    "Never use web_search for sentence-level style, clarity, or tone feedback.",
     ...(isPrimaryResearchQuestion
       ? [
           "Primary mode: the user's draft is an explicit real-world question.",
-          "Prioritize research_manage and web_search over spelling, grammar, or wording feedback.",
-          "In this mode, use web_search before returning research findings unless external lookup is genuinely unnecessary.",
-          "Create exactly one complete annotation on the question span and reuse that same id for every related research_manage call in this response.",
-          "If you use web_search in this mode, return both create_research_task and attach_research_result for the same task id in the same response whenever possible.",
-          "attach_research_result should include 2-4 concise findings and source metadata from the search results.",
-          "Do not spend tool budget on minor copyediting unless the wording blocks understanding of the question.",
-          "In this mode, do not annotate nits like 'now adays' vs 'nowadays' instead of researching the question.",
+          "Use web_search before answering unless external lookup is genuinely unnecessary.",
+          "Focus on factual verification and source discovery only.",
         ]
       : []),
-    `Return at most ${String(MAX_GADFLY_ACTIONS)} tool calls total across all available tools.`,
-    "Choose tools by intent:",
-    `1. ${PROVIDER_TOOL_NAMES.annotationManage} for inline issue lifecycle and highlight state.`,
-    `2. ${PROVIDER_TOOL_NAMES.promptManage} for deeper Socratic follow-up prompts on an existing annotation.`,
-    `3. ${PROVIDER_TOOL_NAMES.preferenceManage} only when the user is clearly expressing a stable preference or goal.`,
-    `4. ${PROVIDER_TOOL_NAMES.researchManage} only for explicit real-world questions or fact-check requests.`,
-    `5. ${PROVIDER_TOOL_NAMES.debugEmit} only in development, and only when it adds meaningful instrumentation.`,
-    "Use action=annotate for new inline findings.",
-    "Every annotate/update_annotation call must include annotation.id, anchor, category, severity, explanation, rule, and question.",
-    "Use action=update_annotation only when refining an existing finding rather than creating a new one.",
-    "Use action=clear, clear_in_range, clear_by_category, set_severity, set_status, snooze_until, unsnooze, pin_annotation, unpin_annotation, or link_annotations only when the state change is clearly justified.",
-    `Use ${PROVIDER_TOOL_NAMES.promptManage} actions only to add Socratic prompts for an annotationId, never as a replacement for annotate.`,
-    "If you create a new annotation and prompt together, reuse the same annotation id in both calls.",
-    `Use ${PROVIDER_TOOL_NAMES.researchManage} only when the user's draft contains an explicit real-world question or fact-check request.`,
     "Example: I wonder why new headlights are so bright?",
     "Example: Why are headlights so bright nowadays?",
-    "Do not create research actions just because the draft mentions evidence, research, or data in the abstract.",
-    "If web_search is available, use it sparingly and only to help answer that explicit user question.",
-    "Never use web_search for sentence-level style, clarity, or tone feedback.",
-    "Use action=flag_fact_check_needed when a claim needs verification.",
-    "Use action=create_research_task to queue a bounded research question.",
-    "Use action=attach_research_result only after gathering sources, and return only findings plus source metadata.",
-    "If you create_research_task and already used web_search, usually also attach_research_result in the same response.",
-    `Use ${PROVIDER_TOOL_NAMES.preferenceManage} mute/unmute only for broad user-level feedback policy, not one-off annotations.`,
-    "Use set_learning_goal only when the user consistently signals a learning objective.",
-    "When tone is discussed, prefer add_tone_consistency_prompt only if the issue is inconsistency with surrounding voice.",
-    "Use add_counterpoint_prompt only for argumentative balance gaps, not generic disagreement.",
-    "Do not emit overlapping tools for the same change unless each one serves a distinct purpose.",
-    "Do not invent ids. Reuse annotation ids you just created when adding follow-up actions.",
-    "Each annotation must be Socratic: diagnosis + rule + question.",
+    "Do not use web_search just because the draft mentions evidence, research, or data in the abstract.",
     "Request payload:",
     serializeRequest(request),
   ].join("\n\n");
@@ -700,10 +431,10 @@ export async function analyzeWithGadfly(
   }
 
   const startedAt = Date.now();
-  const tools = buildTools(request);
-  const webSearchEligible = shouldEnableWebSearch(request);
+  const tools = buildTools();
+  const webSearchEligible = true;
   const webSearchIncluded = tools.some((tool) => tool.type === "web_search_20250305");
-  let webSearchFallbackUsed = false;
+  const webSearchFallbackUsed = false;
 
   const runRequest = async (requestTools: Array<Tool | WebSearchTool20250305>) => {
     return client.messages.create({
@@ -714,16 +445,10 @@ export async function analyzeWithGadfly(
         "You are Gaddr Gadfly, a Socratic writing reviewer.",
         "Never write replacement prose.",
         "Never output rewritten sentences or paragraphs.",
-        "Only flag tone when it is inconsistent with surrounding style.",
         "Only produce tool calls using the provided tools.",
-        "Prefer the smallest correct tool family for each intent.",
-        `${PROVIDER_TOOL_NAMES.annotationManage} handles inline issue state.`,
-        `${PROVIDER_TOOL_NAMES.promptManage} handles deeper Socratic prompts attached to an annotation.`,
-        `${PROVIDER_TOOL_NAMES.preferenceManage} handles stable user policy or learning-goal state.`,
-        `${PROVIDER_TOOL_NAMES.researchManage} handles explicit real-world questions and fact-check workflows.`,
-        `${PROVIDER_TOOL_NAMES.debugEmit} is dev-only instrumentation and should be rare.`,
+        "No client-side action tools are enabled in this mode.",
         "Use web_search only when factual verification or source discovery is necessary.",
-        "Keep feedback concise, precise, and instructional.",
+        "If search is unnecessary, do not call any tool.",
       ].join("\n"),
       messages: [
         {
@@ -739,27 +464,7 @@ export async function analyzeWithGadfly(
   };
 
   try {
-    let response;
-
-    try {
-      response = await runRequest(tools);
-    } catch (cause: unknown) {
-      const message = cause instanceof Error ? cause.message.toLowerCase() : "";
-      const webSearchWasEnabled = tools.some((tool) => tool.type === "web_search_20250305");
-      const webSearchFailure =
-        webSearchWasEnabled &&
-        (message.includes("web_search") ||
-          message.includes("server tool") ||
-          message.includes("invalid tool") ||
-          message.includes("unsupported"));
-
-      if (!webSearchFailure) {
-        throw cause;
-      }
-
-      webSearchFallbackUsed = true;
-      response = await runRequest(GADFLY_CLIENT_TOOLS);
-    }
+    const response = await runRequest(tools);
 
     const parsed = parseActionsFromContent(response.content);
     const boundedActions = parsed.actions.slice(0, MAX_GADFLY_ACTIONS);
