@@ -43,16 +43,41 @@ const SLASH_MENU_WIDTH_PX = 360;
 const SLASH_MENU_VIEWPORT_MARGIN_PX = 12;
 const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
 const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
-const DEFAULT_SPRINT_OPTION = 10;
+const DEFAULT_SPRINT_OPTION = "10m";
 const SPRINT_EXTENSION_MINUTES = 5;
 const SPRINT_RECENT_ACTIVITY_MS = 2600;
-const SPRINT_OPTIONS = [5, 10, 15, 20] as const;
-const TIMER_OPTION_HINTS: Record<(typeof SPRINT_OPTIONS)[number], string> = {
-  5: "Quick reset",
-  10: "Default",
-  15: "Longer pass",
-  20: "Deep focus",
-};
+const SPRINT_OPTIONS = [
+  {
+    id: "5s",
+    durationMs: 5_000,
+    label: "5 sec",
+    hint: "Transition test",
+  },
+  {
+    id: "5m",
+    durationMs: 5 * 60_000,
+    label: "5 min",
+    hint: "Quick reset",
+  },
+  {
+    id: "10m",
+    durationMs: 10 * 60_000,
+    label: "10 min",
+    hint: "Default",
+  },
+  {
+    id: "15m",
+    durationMs: 15 * 60_000,
+    label: "15 min",
+    hint: "Longer pass",
+  },
+  {
+    id: "20m",
+    durationMs: 20 * 60_000,
+    label: "20 min",
+    hint: "Deep focus",
+  },
+] as const;
 const DEV_DEBUG_ENABLED = process.env.NODE_ENV !== "production";
 const GADFLY_RESEARCH_TASK_ORDER: Record<GadflyResearchTask["kind"], number> = {
   fact_check: 0,
@@ -116,6 +141,7 @@ type DebugProviderBlock = {
 };
 
 type SprintOption = (typeof SPRINT_OPTIONS)[number];
+type SprintOptionId = SprintOption["id"];
 type SprintPhase = "idle" | "running" | "paused" | "completed";
 
 function formatDebugJson(value: unknown): string {
@@ -375,8 +401,8 @@ function formatClockDuration(ms: number): string {
   return `${String(minutes)}:${String(seconds).padStart(2, "0")}`;
 }
 
-function formatSprintOptionActionLabel(option: SprintOption): string {
-  return `${String(option)} min`;
+function getSprintOption(optionId: SprintOptionId): SprintOption {
+  return SPRINT_OPTIONS.find((option) => option.id === optionId) ?? SPRINT_OPTIONS[0];
 }
 
 function formatSprintRemainingLabel(ms: number): string {
@@ -576,7 +602,7 @@ export function MinimalEditor() {
   const [hoveredGadfly, setHoveredGadfly] = useState<HoveredGadflyState | null>(null);
   const [hoverLockGroupId, setHoverLockGroupId] = useState<string | null>(null);
   const [researchPaneGroupId, setResearchPaneGroupId] = useState<string | null>(null);
-  const [sprintOption, setSprintOption] = useState<SprintOption>(DEFAULT_SPRINT_OPTION);
+  const [sprintOption, setSprintOption] = useState<SprintOptionId>(DEFAULT_SPRINT_OPTION);
   const [sprintPhase, setSprintPhase] = useState<SprintPhase>("idle");
   const [sprintEndsAtMs, setSprintEndsAtMs] = useState<number | null>(null);
   const [pausedSprintRemainingMs, setPausedSprintRemainingMs] = useState<number | null>(null);
@@ -648,14 +674,15 @@ export function MinimalEditor() {
     }, 140);
   }, [cancelSprintMenuClose]);
 
-  const startSprint = useCallback((option: SprintOption) => {
+  const startSprint = useCallback((optionId: SprintOptionId) => {
     const now = Date.now();
+    const option = getSprintOption(optionId);
 
     cancelSprintMenuClose();
     setSprintNowMs(now);
-    setSprintOption(option);
+    setSprintOption(option.id);
     setSprintPhase("running");
-    setSprintEndsAtMs(now + option * 60_000);
+    setSprintEndsAtMs(now + option.durationMs);
     setPausedSprintRemainingMs(null);
     setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
@@ -1882,23 +1909,23 @@ export function MinimalEditor() {
                   {sprintPhase === "idle" ? (
                     <div className="grid grid-cols-2 gap-1.5">
                       {SPRINT_OPTIONS.map((option) => {
-                        const isSelected = option === sprintOption;
+                        const isSelected = option.id === sprintOption;
                         return (
                           <button
-                            key={option}
+                            key={option.id}
                             type="button"
                             className={`gaddr-sprint-option rounded-xl border px-3 py-2 text-left ${
                               isSelected ? "gaddr-sprint-option--selected" : ""
                             }`}
                             onClick={() => {
-                              startSprint(option);
+                              startSprint(option.id);
                             }}
                           >
                             <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">
-                              {formatSprintOptionActionLabel(option)}
+                              {option.label}
                             </div>
                             <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
-                              {TIMER_OPTION_HINTS[option]}
+                              {option.hint}
                             </div>
                           </button>
                         );
