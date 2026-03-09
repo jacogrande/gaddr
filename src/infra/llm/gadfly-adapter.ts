@@ -1,6 +1,10 @@
 import { getAnthropicClient } from "./client";
 import { GADFLY_MODEL } from "./config";
-import type { Tool, WebSearchTool20250305 } from "@anthropic-ai/sdk/resources/messages/messages";
+import type {
+  BetaTool,
+  BetaWebFetchTool20250910,
+  BetaWebSearchTool20250305,
+} from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { isPrimaryResearchQuestionRequest } from "../../domain/gadfly/research";
 import type {
   GadflyAction,
@@ -17,9 +21,9 @@ type GadflyAdapterError = {
   details?: unknown;
 };
 
-const GADFLY_CLIENT_TOOLS: Tool[] = [];
+const GADFLY_CLIENT_TOOLS: BetaTool[] = [];
 
-const GADFLY_WEB_SEARCH_TOOL: WebSearchTool20250305 = {
+const GADFLY_WEB_SEARCH_TOOL: BetaWebSearchTool20250305 = {
   type: "web_search_20250305",
   name: "web_search",
   max_uses: 1,
@@ -28,6 +32,14 @@ const GADFLY_WEB_SEARCH_TOOL: WebSearchTool20250305 = {
     type: "approximate",
     country: "US",
   },
+};
+
+const GADFLY_WEB_FETCH_TOOL: BetaWebFetchTool20250910 = {
+  type: "web_fetch_20250910",
+  name: "web_fetch",
+  max_uses: 2,
+  max_content_tokens: 2800,
+  strict: true,
 };
 
 function countWebSearchToolUses(
@@ -67,8 +79,8 @@ function parseActionsFromContent(content: Array<{ type: string; name?: string }>
   };
 }
 
-function buildTools(): Array<Tool | WebSearchTool20250305> {
-  return [...GADFLY_CLIENT_TOOLS, GADFLY_WEB_SEARCH_TOOL];
+function buildTools(): Array<BetaTool | BetaWebSearchTool20250305 | BetaWebFetchTool20250910> {
+  return [...GADFLY_CLIENT_TOOLS, GADFLY_WEB_SEARCH_TOOL, GADFLY_WEB_FETCH_TOOL];
 }
 
 function serializeRequest(request: GadflyAnalyzeRequest): string {
@@ -88,24 +100,68 @@ function serializeRequest(request: GadflyAnalyzeRequest): string {
 function buildPrompt(request: GadflyAnalyzeRequest): string {
   const isPrimaryResearchQuestion = isPrimaryResearchQuestionRequest(request);
 
+  const modeSection = isPrimaryResearchQuestion
+    ? [
+        "<mode>",
+        "primary_research_question",
+        "</mode>",
+        "<mode_requirements>",
+        "- The draft is an explicit real-world question.",
+        "- Use web_search before concluding unless external lookup is truly unnecessary.",
+        "- After search, use web_fetch on 1-2 strongest URLs from search results.",
+        "</mode_requirements>",
+      ].join("\n")
+    : [
+        "<mode>",
+        "general_writing",
+        "</mode>",
+        "<mode_requirements>",
+        "- Use tools only if external verification/source discovery is necessary.",
+        "</mode_requirements>",
+      ].join("\n");
+
   return [
-    "Analyze this writing update.",
-    "Do not rewrite user text and do not provide replacement prose.",
-    "The only available tool is web_search.",
-    "If no external lookup is needed, do not call any tool.",
-    "Never use web_search for sentence-level style, clarity, or tone feedback.",
-    ...(isPrimaryResearchQuestion
-      ? [
-          "Primary mode: the user's draft is an explicit real-world question.",
-          "Use web_search before answering unless external lookup is genuinely unnecessary.",
-          "Focus on factual verification and source discovery only.",
-        ]
-      : []),
-    "Example: I wonder why new headlights are so bright?",
-    "Example: Why are headlights so bright nowadays?",
-    "Do not use web_search just because the draft mentions evidence, research, or data in the abstract.",
-    "Request payload:",
+    "<task>",
+    "Analyze this writing update for research-worthy questions.",
+    "Do not rewrite user prose. Do not provide replacement sentences.",
+    "</task>",
+    "<tools>",
+    "Available tools: web_search, web_fetch.",
+    "Never use tools for sentence-level style, clarity, or tone feedback.",
+    "</tools>",
+    modeSection,
+    "<decision_policy>",
+    "- If no external lookup is needed, call no tools.",
+    "- If lookup is needed: search first, fetch strongest source URLs, then synthesize.",
+    "- Do not narrate your process.",
+    "</decision_policy>",
+    "<output_contract>",
+    "After any tool use, produce one final text block in this exact shape:",
+    "<synthesis>",
+    "- finding one",
+    "- finding two",
+    "</synthesis>",
+    "Requirements:",
+    "- 2-4 bullet findings starting with '- '.",
+    "- Findings must be factual takeaways grounded in tool results.",
+    "- No first-person/process language (e.g., \"I'll search\", \"let me\").",
+    "- No placeholders or punctuation-only output.",
+    "</output_contract>",
+    "<examples>",
+    "<example>",
+    "<input>Why are headlights so bright nowadays?</input>",
+    "<good_output><synthesis>\n- Modern headlights often use high-intensity LED/HID systems with greater peak luminance than many legacy halogen setups.\n- Vehicle height mismatch and misalignment can increase perceived glare for oncoming drivers.\n- Regulatory differences in beam patterns and testing methods can affect real-world glare outcomes.\n</synthesis></good_output>",
+    "<bad_output>I'll search for current information.</bad_output>",
+    "</example>",
+    "<example>",
+    "<input>I wonder why eggs are more expensive lately.</input>",
+    "<good_output><synthesis>\n- Avian flu outbreaks have reduced laying hen supply in multiple regions, increasing egg prices.\n- Feed, energy, and transport costs have also contributed to higher retail prices.\n- Prices can remain volatile because supply recovery lags demand.\n</synthesis></good_output>",
+    "<bad_output>.</bad_output>",
+    "</example>",
+    "</examples>",
+    "<request_payload>",
     serializeRequest(request),
+    "</request_payload>",
   ].join("\n\n");
 }
 
@@ -142,7 +198,7 @@ export async function analyzeWithGadfly(
   const tools = buildTools();
 
   try {
-    const response = await client.messages.create({
+    const response = await client.beta.messages.create({
       model: GADFLY_MODEL,
       max_tokens: 640,
       temperature: 0.2,
@@ -150,10 +206,13 @@ export async function analyzeWithGadfly(
         "You are Gaddr Gadfly, a Socratic writing reviewer.",
         "Never write replacement prose.",
         "Never output rewritten sentences or paragraphs.",
+        "Use XML sections from the user prompt as authoritative task constraints.",
         "Only produce tool calls using the provided tools.",
         "No client-side action tools are enabled in this mode.",
-        "Use web_search only when factual verification or source discovery is necessary.",
-        "If search is unnecessary, do not call any tool.",
+        "Use tools only when factual verification or source discovery is necessary.",
+        "If lookup is unnecessary, do not call any tool.",
+        "When search is used, fetch the strongest URLs and then provide final synthesized findings.",
+        "Never end on process narration. End with a valid <synthesis> block.",
       ].join("\n"),
       messages: [
         {
