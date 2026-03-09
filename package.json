@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
+    "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/postcss": "^4.1.18",
     "@tiptap/extension-underline": "3.19.0",
     "@tiptap/pm": "^3.19.0",

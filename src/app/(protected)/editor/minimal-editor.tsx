@@ -1,5 +1,6 @@
 "use client";
 
+import { BugBeetleIcon, ClockIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
@@ -27,13 +28,11 @@ import type {
   GadflyAnnotation,
   GadflyCategory,
   GadflyDroppedArtifact,
-  GadflyPrompt,
   GadflyResearchTask,
 } from "../../../domain/gadfly/types";
 import {
   groupGadflyAnnotations,
   type GadflyAnnotationGroup,
-  type GadflyAnnotationReference,
 } from "../../../domain/gadfly/presentation";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
@@ -44,23 +43,17 @@ const SLASH_MENU_WIDTH_PX = 360;
 const SLASH_MENU_VIEWPORT_MARGIN_PX = 12;
 const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
 const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
+const DEFAULT_SPRINT_OPTION = 10;
+const SPRINT_EXTENSION_MINUTES = 5;
+const SPRINT_RECENT_ACTIVITY_MS = 2600;
+const SPRINT_OPTIONS = [5, 10, 15, 20] as const;
+const TIMER_OPTION_HINTS: Record<(typeof SPRINT_OPTIONS)[number], string> = {
+  5: "Quick reset",
+  10: "Default",
+  15: "Longer pass",
+  20: "Deep focus",
+};
 const DEV_DEBUG_ENABLED = process.env.NODE_ENV !== "production";
-const GADFLY_PROMPT_ORDER: Record<GadflyPrompt["kind"], number> = {
-  followup_question: 0,
-  clarity: 1,
-  structure: 2,
-  evidence: 3,
-  counterpoint: 4,
-  tone_consistency: 5,
-};
-const GADFLY_PROMPT_LABELS: Record<GadflyPrompt["kind"], string> = {
-  followup_question: "Follow-up",
-  clarity: "Clarity",
-  structure: "Structure",
-  evidence: "Evidence",
-  counterpoint: "Counterpoint",
-  tone_consistency: "Tone",
-};
 const GADFLY_RESEARCH_TASK_ORDER: Record<GadflyResearchTask["kind"], number> = {
   fact_check: 0,
   supporting_evidence: 1,
@@ -121,6 +114,9 @@ type DebugProviderBlock = {
   subtitle: string;
   payload?: unknown;
 };
+
+type SprintOption = (typeof SPRINT_OPTIONS)[number];
+type SprintPhase = "idle" | "running" | "paused" | "completed";
 
 function formatDebugJson(value: unknown): string {
   try {
@@ -371,6 +367,59 @@ function statusLabel(status: string): string {
   return status.replaceAll("_", " ");
 }
 
+function formatClockDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(minutes)}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatSprintOptionActionLabel(option: SprintOption): string {
+  return `${String(option)} min`;
+}
+
+function formatSprintRemainingLabel(ms: number): string {
+  if (ms <= 6 * 60_000) {
+    return formatClockDuration(ms);
+  }
+
+  return `${String(Math.max(1, Math.ceil(ms / 60_000)))} min left`;
+}
+
+function formatOvertimeLabel(ms: number): string {
+  return `+${formatClockDuration(ms)} overtime`;
+}
+
+function hasResearchData(annotation: GadflyAnnotation): boolean {
+  return annotation.research.needsFactCheck || annotation.research.tasks.length > 0;
+}
+
+function selectPrimaryResearchTask(annotation: GadflyAnnotation): GadflyResearchTask | null {
+  if (annotation.research.tasks.length === 0) {
+    return null;
+  }
+
+  const orderedTasks = [...annotation.research.tasks].sort((left, right) => {
+    if (left.status !== right.status) {
+      return left.status === "completed" ? -1 : 1;
+    }
+
+    return GADFLY_RESEARCH_TASK_ORDER[left.kind] - GADFLY_RESEARCH_TASK_ORDER[right.kind];
+  });
+
+  return orderedTasks[0] ?? null;
+}
+
+function selectResearchAnnotation(group: GadflyAnnotationGroup): GadflyAnnotation | null {
+  const researchAnnotations = group.annotations.filter((annotation) => hasResearchData(annotation));
+  if (researchAnnotations.length > 0) {
+    return researchAnnotations[0] ?? null;
+  }
+
+  return group.annotations[0] ?? null;
+}
+
 async function copyTextToClipboard(text: string): Promise<boolean> {
   if (
     typeof navigator !== "undefined" &&
@@ -474,122 +523,6 @@ function DebugTextDetails({
   );
 }
 
-function findReference(
-  references: readonly GadflyAnnotationReference[],
-  annotationId: string,
-): GadflyAnnotationReference | null {
-  return references.find((reference) => reference.annotationId === annotationId) ?? null;
-}
-
-function GadflyAnnotationCardSection({
-  annotation,
-  reference,
-}: {
-  annotation: GadflyAnnotation;
-  reference: GadflyAnnotationReference | null;
-}) {
-  return (
-    <section className="gaddr-gadfly-annotation-section">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {reference ? (
-              <div className="gaddr-gadfly-reference inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[0.58rem] font-semibold leading-none">
-                {String(reference.index)}
-              </div>
-            ) : null}
-            <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
-              {annotation.category.toUpperCase()} · {annotation.severity.toUpperCase()}
-            </div>
-          </div>
-          {annotation.isPinned || annotation.linkedAnnotationIds.length > 0 ? (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {annotation.isPinned ? (
-                <div className="gaddr-gadfly-status-chip inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
-                  PINNED
-                </div>
-              ) : null}
-              {annotation.linkedAnnotationIds.length > 0 ? (
-                <div className="gaddr-gadfly-status-chip inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
-                  LINKED {String(annotation.linkedAnnotationIds.length)}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {annotation.status !== "active" ? (
-            <div className="gaddr-gadfly-status-chip mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.58rem] font-semibold tracking-[0.11em]">
-              {annotation.status.toUpperCase()}
-              {annotation.snoozedUntil ? ` · UNTIL ${annotation.snoozedUntil}` : ""}
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <p className="mt-1.5 text-xs leading-5 text-[var(--app-fg)]">{annotation.explanation}</p>
-      <p className="mt-1.5 text-[0.7rem] leading-4 text-[color:var(--app-muted)]">Rule: {annotation.rule}</p>
-      <p className="mt-2 text-xs italic leading-5 text-[color:var(--app-fg)]">{annotation.question}</p>
-      {annotation.prompts.length > 0 ? (
-        <div className="gaddr-gadfly-prompts mt-2.5 border-t pt-2">
-          {[...annotation.prompts]
-            .sort((left, right) => {
-              return GADFLY_PROMPT_ORDER[left.kind] - GADFLY_PROMPT_ORDER[right.kind];
-            })
-            .map((prompt) => (
-              <div key={prompt.kind} className="gaddr-gadfly-prompt-row mt-1.5 rounded-md border px-2 py-1.5">
-                <div className="gaddr-gadfly-prompt-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
-                  {GADFLY_PROMPT_LABELS[prompt.kind]}
-                </div>
-                <p className="mt-1 text-[0.69rem] leading-4">{prompt.text}</p>
-              </div>
-            ))}
-        </div>
-      ) : null}
-      {annotation.research.needsFactCheck || annotation.research.tasks.length > 0 ? (
-        <div className="gaddr-gadfly-research mt-2.5 border-t pt-2">
-          {annotation.research.needsFactCheck ? (
-            <div className="gaddr-gadfly-fact-check rounded-md border px-2 py-1.5">
-              <div className="gaddr-gadfly-research-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
-                Fact Check
-              </div>
-              <p className="mt-1 text-[0.69rem] leading-4">
-                {annotation.research.factCheckNote ?? "This claim should be verified against external sources."}
-              </p>
-            </div>
-          ) : null}
-          {[...annotation.research.tasks]
-            .sort((left, right) => GADFLY_RESEARCH_TASK_ORDER[left.kind] - GADFLY_RESEARCH_TASK_ORDER[right.kind])
-            .map((task) => (
-              <div key={task.id} className="gaddr-gadfly-research-task mt-1.5 rounded-md border px-2 py-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="gaddr-gadfly-research-label text-[0.56rem] font-semibold tracking-[0.1em] uppercase">
-                    {GADFLY_RESEARCH_TASK_LABELS[task.kind]}
-                  </div>
-                  <div className="text-[0.56rem] tracking-[0.08em] uppercase text-[color:var(--app-muted)]">
-                    {task.result ? GADFLY_RESEARCH_VERDICT_LABELS[task.result.verdict] : task.status}
-                  </div>
-                </div>
-                <p className="mt-1 text-[0.69rem] leading-4">{task.question}</p>
-                {task.result ? (
-                  <>
-                    <ul className="mt-1.5 space-y-1 text-[0.67rem] leading-4 text-[color:var(--app-fg)]">
-                      {task.result.findings.map((finding) => (
-                        <li key={finding} className="list-inside list-disc">
-                          {finding}
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="mt-1.5 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
-                      {task.result.sources.map((source) => source.domain).join(" · ")}
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            ))}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 const MODIFIER_BADGES: Array<{
   key: string;
   label: string;
@@ -638,8 +571,17 @@ export function MinimalEditor() {
   const [slashMenuActiveIndex, setSlashMenuActiveIndex] = useState(0);
   const [isMacLike, setIsMacLike] = useState(false);
   const [isDebugPaneOpen, setIsDebugPaneOpen] = useState(false);
+  const [isSprintMenuOpen, setIsSprintMenuOpen] = useState(false);
   const [copiedDebugLabel, setCopiedDebugLabel] = useState<string | null>(null);
   const [hoveredGadfly, setHoveredGadfly] = useState<HoveredGadflyState | null>(null);
+  const [hoverLockGroupId, setHoverLockGroupId] = useState<string | null>(null);
+  const [researchPaneGroupId, setResearchPaneGroupId] = useState<string | null>(null);
+  const [sprintOption, setSprintOption] = useState<SprintOption>(DEFAULT_SPRINT_OPTION);
+  const [sprintPhase, setSprintPhase] = useState<SprintPhase>("idle");
+  const [sprintEndsAtMs, setSprintEndsAtMs] = useState<number | null>(null);
+  const [pausedSprintRemainingMs, setPausedSprintRemainingMs] = useState<number | null>(null);
+  const [sprintCompletedAtMs, setSprintCompletedAtMs] = useState<number | null>(null);
+  const [sprintNowMs, setSprintNowMs] = useState(() => Date.now());
   const activeModifiersSignatureRef = useRef("");
   const modifierOrderingStateRef = useRef(createModifierOrderingState());
   const modifierExitTimersRef = useRef<Map<string, number>>(new Map());
@@ -650,6 +592,10 @@ export function MinimalEditor() {
   const saveHandleRef = useRef<SaveHandle | null>(null);
   const latestEditorRef = useRef<{ getJSON: () => JSONContent } | null>(null);
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
+  const sprintMenuRef = useRef<HTMLDivElement | null>(null);
+  const sprintMenuCloseTimeoutRef = useRef<number | null>(null);
+  const sprintPhaseRef = useRef<SprintPhase>("idle");
+  const lastEditAtMsRef = useRef(Date.now());
 
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
     try {
@@ -684,6 +630,107 @@ export function MinimalEditor() {
     pendingPersistRef.current = false;
     persistNow(current);
   }, [clearScheduledPersist, persistNow]);
+
+  const cancelSprintMenuClose = useCallback(() => {
+    if (sprintMenuCloseTimeoutRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(sprintMenuCloseTimeoutRef.current);
+    sprintMenuCloseTimeoutRef.current = null;
+  }, []);
+
+  const scheduleSprintMenuClose = useCallback(() => {
+    cancelSprintMenuClose();
+    sprintMenuCloseTimeoutRef.current = window.setTimeout(() => {
+      setIsSprintMenuOpen(false);
+      sprintMenuCloseTimeoutRef.current = null;
+    }, 140);
+  }, [cancelSprintMenuClose]);
+
+  const startSprint = useCallback((option: SprintOption) => {
+    const now = Date.now();
+
+    cancelSprintMenuClose();
+    setSprintNowMs(now);
+    setSprintOption(option);
+    setSprintPhase("running");
+    setSprintEndsAtMs(now + option * 60_000);
+    setPausedSprintRemainingMs(null);
+    setSprintCompletedAtMs(null);
+    setIsSprintMenuOpen(false);
+  }, [cancelSprintMenuClose]);
+
+  const pauseSprint = useCallback(() => {
+    if (sprintPhase !== "running" || sprintEndsAtMs === null) {
+      return;
+    }
+
+    const now = Date.now();
+    const remainingMs = Math.max(sprintEndsAtMs - now, 0);
+    setSprintNowMs(now);
+
+    if (remainingMs === 0) {
+      setSprintPhase("completed");
+      setSprintEndsAtMs(null);
+      setPausedSprintRemainingMs(null);
+      setSprintCompletedAtMs(now);
+      return;
+    }
+
+    setSprintPhase("paused");
+    setSprintEndsAtMs(null);
+    setPausedSprintRemainingMs(remainingMs);
+  }, [sprintEndsAtMs, sprintPhase]);
+
+  const resumeSprint = useCallback(() => {
+    if (sprintPhase !== "paused" || pausedSprintRemainingMs === null) {
+      return;
+    }
+
+    const now = Date.now();
+    setSprintNowMs(now);
+    setSprintPhase("running");
+    setSprintEndsAtMs(now + pausedSprintRemainingMs);
+    setPausedSprintRemainingMs(null);
+    setSprintCompletedAtMs(null);
+    setIsSprintMenuOpen(false);
+  }, [pausedSprintRemainingMs, sprintPhase]);
+
+  const endSprint = useCallback(() => {
+    setSprintPhase("idle");
+    setSprintEndsAtMs(null);
+    setPausedSprintRemainingMs(null);
+    setSprintCompletedAtMs(null);
+    setIsSprintMenuOpen(false);
+  }, []);
+
+  const addSprintTime = useCallback(() => {
+    const now = Date.now();
+    const extensionMs = SPRINT_EXTENSION_MINUTES * 60_000;
+
+    setSprintNowMs(now);
+
+    if (sprintPhase === "running" && sprintEndsAtMs !== null) {
+      setSprintEndsAtMs(sprintEndsAtMs + extensionMs);
+      setIsSprintMenuOpen(false);
+      return;
+    }
+
+    if (sprintPhase === "paused" && pausedSprintRemainingMs !== null) {
+      setPausedSprintRemainingMs(pausedSprintRemainingMs + extensionMs);
+      setIsSprintMenuOpen(false);
+      return;
+    }
+
+    if (sprintPhase === "completed") {
+      setSprintPhase("running");
+      setSprintEndsAtMs(now + extensionMs);
+      setPausedSprintRemainingMs(null);
+      setSprintCompletedAtMs(null);
+      setIsSprintMenuOpen(false);
+    }
+  }, [pausedSprintRemainingMs, sprintEndsAtMs, sprintPhase]);
 
   const schedulePersist = useCallback((current: { getJSON: () => JSONContent }) => {
     latestEditorRef.current = current;
@@ -782,6 +829,11 @@ export function MinimalEditor() {
       },
     },
     onUpdate: ({ editor: current }) => {
+      const now = Date.now();
+      lastEditAtMsRef.current = now;
+      if (sprintPhaseRef.current === "completed") {
+        setSprintNowMs(now);
+      }
       schedulePersist(current);
     },
     onBlur: () => {
@@ -840,6 +892,19 @@ export function MinimalEditor() {
     }
     return new Map(entries);
   }, [gadflyAnnotationGroups]);
+
+  const researchPaneGroup = useMemo(() => {
+    if (!researchPaneGroupId) {
+      return null;
+    }
+
+    return gadflyGroupLookup.get(researchPaneGroupId) ?? null;
+  }, [gadflyGroupLookup, researchPaneGroupId]);
+
+  const openResearchPane = useCallback((group: GadflyAnnotationGroup) => {
+    setResearchPaneGroupId(group.id);
+    setIsDebugPaneOpen(false);
+  }, []);
 
   const closeSlashMenu = useCallback(() => {
     slashMenuSignatureRef.current = "";
@@ -1077,12 +1142,52 @@ export function MinimalEditor() {
   }, [gadflyGroupLookup, hoveredGadfly]);
 
   useEffect(() => {
+    if (!hoverLockGroupId) {
+      return;
+    }
+
+    if (!gadflyGroupLookup.has(hoverLockGroupId)) {
+      setHoverLockGroupId(null);
+    }
+  }, [gadflyGroupLookup, hoverLockGroupId]);
+
+  useEffect(() => {
+    if (!researchPaneGroupId) {
+      return;
+    }
+
+    if (!gadflyGroupLookup.has(researchPaneGroupId)) {
+      setResearchPaneGroupId(null);
+    }
+  }, [gadflyGroupLookup, researchPaneGroupId]);
+
+  useEffect(() => {
     const isSlashMenuOpen = slashMenuState !== null;
 
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       if (DEV_DEBUG_ENABLED && (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "d") {
         event.preventDefault();
-        setIsDebugPaneOpen((current) => !current);
+        setIsDebugPaneOpen((current) => {
+          const next = !current;
+          if (next) {
+            setResearchPaneGroupId(null);
+          }
+          return next;
+        });
+        return;
+      }
+
+      if (
+        hoveredGadfly &&
+        !isCommandPaletteOpen &&
+        !isSlashMenuOpen &&
+        event.code === "Space" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        openResearchPane(hoveredGadfly.group);
         return;
       }
 
@@ -1218,10 +1323,39 @@ export function MinimalEditor() {
       }
     };
 
+    const handleGlobalKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Shift") {
+        return;
+      }
+
+      setHoverLockGroupId(null);
+      setHoveredGadfly((previous) => {
+        if (!previous) {
+          return previous;
+        }
+
+        const activeElement = document.elementFromPoint(previous.x, previous.y);
+        if (!(activeElement instanceof Element)) {
+          return null;
+        }
+
+        if (
+          activeElement.closest("[data-gadfly-group-id]") ||
+          activeElement.closest("[data-gadfly-popover='true']")
+        ) {
+          return previous;
+        }
+
+        return null;
+      });
+    };
+
     window.addEventListener("keydown", handleGlobalKeyDown, true);
+    window.addEventListener("keyup", handleGlobalKeyUp, true);
 
     return () => {
       window.removeEventListener("keydown", handleGlobalKeyDown, true);
+      window.removeEventListener("keyup", handleGlobalKeyUp, true);
     };
   }, [
     commandHotkeyEntries,
@@ -1229,7 +1363,9 @@ export function MinimalEditor() {
     dismissSlashMenu,
     filteredPaletteCommands,
     filteredSlashCommands,
+    hoveredGadfly,
     isCommandPaletteOpen,
+    openResearchPane,
     openCommandPalette,
     runPaletteCommand,
     runSelectedPaletteCommand,
@@ -1337,22 +1473,51 @@ export function MinimalEditor() {
         return;
       }
 
+      if (target.closest("[data-gadfly-popover='true']")) {
+        if (event.shiftKey && hoveredGadfly) {
+          setHoverLockGroupId((current) => (current === hoveredGadfly.group.id ? current : hoveredGadfly.group.id));
+        }
+        setHoveredGadfly((previous) =>
+          previous
+            ? {
+                ...previous,
+                x: event.clientX,
+                y: event.clientY,
+              }
+            : previous,
+        );
+        return;
+      }
+
       const elementWithGroupId = target.closest("[data-gadfly-group-id]");
       if (!elementWithGroupId) {
+        if (hoverLockGroupId !== null) {
+          return;
+        }
         setHoveredGadfly((previous) => (previous ? null : previous));
         return;
       }
 
       const groupId = elementWithGroupId.getAttribute("data-gadfly-group-id");
       if (!groupId) {
+        if (hoverLockGroupId !== null) {
+          return;
+        }
         setHoveredGadfly((previous) => (previous ? null : previous));
         return;
       }
 
       const group = gadflyGroupLookup.get(groupId);
       if (!group) {
+        if (hoverLockGroupId !== null) {
+          return;
+        }
         setHoveredGadfly((previous) => (previous ? null : previous));
         return;
+      }
+
+      if (event.shiftKey) {
+        setHoverLockGroupId((current) => (current === group.id ? current : group.id));
       }
 
       setHoveredGadfly((previous) => {
@@ -1372,7 +1537,7 @@ export function MinimalEditor() {
         };
       });
     },
-    [gadflyGroupLookup],
+    [gadflyGroupLookup, hoverLockGroupId, hoveredGadfly],
   );
 
   const hoveredGadflyStyle = useMemo(() => {
@@ -1390,6 +1555,40 @@ export function MinimalEditor() {
       top: `${String(top)}px`,
     } satisfies CSSProperties;
   }, [hoveredGadfly]);
+
+  const hoveredResearchAnnotation = useMemo(() => {
+    if (!hoveredGadfly) {
+      return null;
+    }
+
+    return selectResearchAnnotation(hoveredGadfly.group);
+  }, [hoveredGadfly]);
+
+  const hoveredResearchTask = useMemo(() => {
+    if (!hoveredResearchAnnotation) {
+      return null;
+    }
+
+    return selectPrimaryResearchTask(hoveredResearchAnnotation);
+  }, [hoveredResearchAnnotation]);
+
+  const hoveredResearchFindings = useMemo(() => {
+    if (!hoveredResearchTask?.result) {
+      return [];
+    }
+
+    return hoveredResearchTask.result.findings.slice(0, 2);
+  }, [hoveredResearchTask]);
+
+  const hoveredResearchSources = useMemo(() => {
+    if (!hoveredResearchTask?.result) {
+      return [];
+    }
+
+    return hoveredResearchTask.result.sources.slice(0, 3);
+  }, [hoveredResearchTask]);
+
+  const isHoverLocked = hoveredGadfly ? hoverLockGroupId === hoveredGadfly.group.id : false;
 
   const debugEntriesView = useMemo(() => {
     return [...debugEntries].reverse().map((entry) => {
@@ -1443,6 +1642,146 @@ export function MinimalEditor() {
     };
   }, [debugEntries, debugEntriesView, debugRuntime.pendingRanges]);
 
+  const researchPaneAnnotation = useMemo(() => {
+    if (!researchPaneGroup) {
+      return null;
+    }
+
+    return selectResearchAnnotation(researchPaneGroup);
+  }, [researchPaneGroup]);
+
+  const researchPaneTask = useMemo(() => {
+    if (!researchPaneAnnotation) {
+      return null;
+    }
+
+    return selectPrimaryResearchTask(researchPaneAnnotation);
+  }, [researchPaneAnnotation]);
+
+  const sprintRemainingMs = useMemo(() => {
+    if (sprintPhase === "running" && sprintEndsAtMs !== null) {
+      return Math.max(sprintEndsAtMs - sprintNowMs, 0);
+    }
+
+    if (sprintPhase === "paused") {
+      return pausedSprintRemainingMs ?? 0;
+    }
+
+    return 0;
+  }, [pausedSprintRemainingMs, sprintEndsAtMs, sprintNowMs, sprintPhase]);
+
+  const sprintWriterActive = sprintNowMs - lastEditAtMsRef.current < SPRINT_RECENT_ACTIVITY_MS;
+
+  const shouldTickSprintClock =
+    sprintPhase === "running" || (sprintPhase === "completed" && sprintWriterActive);
+
+  const sprintChipLabel = useMemo(() => {
+    switch (sprintPhase) {
+      case "running":
+        return formatSprintRemainingLabel(sprintRemainingMs);
+      case "paused":
+        return `Paused ${formatSprintRemainingLabel(sprintRemainingMs)}`;
+      case "completed":
+        if (sprintCompletedAtMs === null || !sprintWriterActive) {
+          return "Review ready";
+        }
+
+        return formatOvertimeLabel(Math.max(0, sprintNowMs - sprintCompletedAtMs));
+      case "idle":
+        return "Timer";
+    }
+  }, [sprintCompletedAtMs, sprintNowMs, sprintPhase, sprintRemainingMs, sprintWriterActive]);
+
+  const sprintMenuNote = useMemo(() => {
+    switch (sprintPhase) {
+      case "running":
+        return "The timer stays quiet while Gadfly works in the background.";
+      case "paused":
+        return "Resume when you want more protected drafting time.";
+      case "completed":
+        return "Nothing interrupts the draft. Keep writing or pause when you are ready to review.";
+      case "idle":
+        return "Pick a length to start freewriting.";
+    }
+  }, [sprintPhase]);
+
+  useEffect(() => {
+    sprintPhaseRef.current = sprintPhase;
+  }, [sprintPhase]);
+
+  useEffect(() => {
+    if (!shouldTickSprintClock) {
+      return;
+    }
+
+    const tick = () => {
+      setSprintNowMs(Date.now());
+    };
+
+    tick();
+    const intervalId = window.setInterval(tick, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [shouldTickSprintClock]);
+
+  useEffect(() => {
+    if (sprintPhase !== "running" || sprintEndsAtMs === null || sprintNowMs < sprintEndsAtMs) {
+      return;
+    }
+
+    setSprintPhase("completed");
+    setSprintEndsAtMs(null);
+    setPausedSprintRemainingMs(null);
+    setSprintCompletedAtMs(sprintEndsAtMs);
+    setIsSprintMenuOpen(false);
+  }, [sprintEndsAtMs, sprintNowMs, sprintPhase]);
+
+  useEffect(() => {
+    if (!isSprintMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || sprintMenuRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsSprintMenuOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSprintMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleEscape, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleEscape, true);
+    };
+  }, [isSprintMenuOpen]);
+
+  useEffect(() => {
+    if (!isCommandPaletteOpen && !slashMenuState) {
+      return;
+    }
+
+    cancelSprintMenuClose();
+    setIsSprintMenuOpen(false);
+  }, [cancelSprintMenuClose, isCommandPaletteOpen, slashMenuState]);
+
+  useEffect(() => {
+    return () => {
+      cancelSprintMenuClose();
+    };
+  }, [cancelSprintMenuClose]);
+
   if (!editor) {
     return <div className="min-h-[calc(100vh-8.5rem)]" />;
   }
@@ -1453,7 +1792,9 @@ export function MinimalEditor() {
       data-testid="editor-shell"
       onMouseMove={handleEditorMouseMove}
       onMouseLeave={() => {
-        setHoveredGadfly(null);
+        if (hoverLockGroupId === null) {
+          setHoveredGadfly(null);
+        }
       }}
     >
       {displayModifiers.length > 0 ? (
@@ -1477,8 +1818,143 @@ export function MinimalEditor() {
           ))}
         </div>
       ) : null}
-      <div className="gaddr-gadfly-status pointer-events-none fixed right-4 top-14 z-[48] hidden rounded-md border px-2.5 py-1 text-[0.64rem] font-semibold tracking-[0.09em] sm:block">
-        {isAnalyzing ? "GADFLY ANALYZING" : "GADFLY IDLE"}
+      <div className="pointer-events-none fixed right-4 top-4 z-[68] flex justify-end">
+        <div className="pointer-events-auto flex items-start">
+          <div
+            ref={sprintMenuRef}
+            className="relative"
+            onMouseEnter={() => {
+              cancelSprintMenuClose();
+              setIsSprintMenuOpen(true);
+            }}
+            onMouseLeave={() => {
+              scheduleSprintMenuClose();
+            }}
+            onFocusCapture={() => {
+              cancelSprintMenuClose();
+              setIsSprintMenuOpen(true);
+            }}
+            onBlur={(event) => {
+              const nextTarget = event.relatedTarget;
+              if (!(nextTarget instanceof Node) || !sprintMenuRef.current?.contains(nextTarget)) {
+                cancelSprintMenuClose();
+                setIsSprintMenuOpen(false);
+              }
+            }}
+          >
+            <button
+              type="button"
+              aria-expanded={isSprintMenuOpen}
+              aria-haspopup="dialog"
+              data-testid="sprint-chip"
+              className={`gaddr-sprint-chip rounded-full border px-2.5 py-1.5 text-left transition-all ${
+                sprintPhase === "completed"
+                  ? "gaddr-sprint-chip--complete"
+                  : sprintPhase === "running"
+                    ? "gaddr-sprint-chip--running"
+                    : sprintPhase === "paused"
+                      ? "gaddr-sprint-chip--paused"
+                      : ""
+              }`}
+              onClick={() => {
+                cancelSprintMenuClose();
+                setIsSprintMenuOpen((current) => !current);
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <ClockIcon size={14} weight="regular" aria-hidden="true" className="text-[color:var(--app-muted)]" />
+                <span className="whitespace-nowrap text-[0.72rem] font-semibold leading-4 text-[var(--app-fg)]">
+                  {sprintChipLabel}
+                </span>
+              </span>
+            </button>
+            {isSprintMenuOpen ? (
+              <div
+                role="dialog"
+                aria-label="Freewrite timer"
+                data-testid="sprint-menu"
+                className="gaddr-sprint-menu absolute right-0 top-full z-[58] mt-1.5 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border p-2"
+              >
+                <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-[0.62rem] tracking-[0.12em]">
+                  TIMER
+                </div>
+                <div className="px-1 pb-1 pt-2">
+                  {sprintPhase === "idle" ? (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {SPRINT_OPTIONS.map((option) => {
+                        const isSelected = option === sprintOption;
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            className={`gaddr-sprint-option rounded-xl border px-3 py-2 text-left ${
+                              isSelected ? "gaddr-sprint-option--selected" : ""
+                            }`}
+                            onClick={() => {
+                              startSprint(option);
+                            }}
+                          >
+                            <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">
+                              {formatSprintOptionActionLabel(option)}
+                            </div>
+                            <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
+                              {TIMER_OPTION_HINTS[option]}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="grid gap-1.5">
+                      <button
+                        type="button"
+                        className="gaddr-sprint-action rounded-xl border px-3 py-2 text-left"
+                        onClick={() => {
+                          if (sprintPhase === "paused") {
+                            resumeSprint();
+                            return;
+                          }
+
+                          pauseSprint();
+                        }}
+                      >
+                        <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">
+                          {sprintPhase === "paused" ? "Resume timer" : "Pause timer"}
+                        </div>
+                        <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
+                          {sprintPhase === "paused" ? "Return to the countdown quietly." : "Freeze the timer without changing the draft."}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        className="gaddr-sprint-action rounded-xl border px-3 py-2 text-left"
+                        onClick={addSprintTime}
+                      >
+                        <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">
+                          +{String(SPRINT_EXTENSION_MINUTES)} min
+                        </div>
+                        <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
+                          Extend the protected writing window without changing focus.
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        className="gaddr-sprint-action rounded-xl border px-3 py-2 text-left"
+                        onClick={endSprint}
+                      >
+                        <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">End timer</div>
+                        <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
+                          Return to the idle timer without interrupting the note.
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                  <p className="mt-2 px-2 text-[0.62rem] leading-4 text-[color:var(--app-muted)]">{sprintMenuNote}</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
       {slashMenuState && !isCommandPaletteOpen ? (
         <div
@@ -1616,12 +2092,19 @@ export function MinimalEditor() {
       ) : null}
       {hoveredGadfly ? (
         <aside
-          className="gaddr-gadfly-card pointer-events-none fixed z-[57] w-[min(22rem,calc(100vw-1.5rem))] rounded-lg border p-3 backdrop-blur-[1px]"
+          data-gadfly-popover="true"
+          data-gadfly-group-id={hoveredGadfly.group.id}
+          className="gaddr-gadfly-card fixed z-[57] w-[min(22rem,calc(100vw-1.5rem))] rounded-lg border p-3 backdrop-blur-[1px]"
           style={hoveredGadflyStyle}
+          onMouseMove={(event) => {
+            if (event.shiftKey) {
+              setHoverLockGroupId((current) => (current === hoveredGadfly.group.id ? current : hoveredGadfly.group.id));
+            }
+          }}
         >
           <div className="flex items-center justify-between gap-2">
             <div className="text-[0.64rem] font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
-              {hoveredGadfly.group.annotations.length > 1 ? "ANNOTATION STACK" : "ANNOTATION"}
+              {hoveredGadfly.group.annotations.length > 1 ? "RESEARCH STACK" : "RESEARCH NOTE"}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-1">
               {hoveredGadfly.group.references.map((reference) => (
@@ -1637,23 +2120,127 @@ export function MinimalEditor() {
           <div className="mt-1 text-[0.68rem] leading-4 text-[color:var(--app-muted)]">
             {hoveredGadfly.group.anchor.quote}
           </div>
-          <div className="gaddr-gadfly-stack mt-2.5">
-            {hoveredGadfly.group.annotations.map((annotation, index) => (
-              <div key={annotation.id} className={index > 0 ? "gaddr-gadfly-stack-item mt-3 border-t pt-3" : "gaddr-gadfly-stack-item"}>
-                <GadflyAnnotationCardSection
-                  annotation={annotation}
-                  reference={findReference(hoveredGadfly.group.references, annotation.id)}
-                />
-              </div>
-            ))}
+          <p className="mt-2 text-xs leading-5 text-[var(--app-fg)]">
+            {hoveredResearchFindings[0] ??
+              hoveredResearchAnnotation?.explanation ??
+              "Search-backed context is available for this question."}
+          </p>
+          {hoveredResearchSources.length > 0 ? (
+            <div className="mt-2 text-[0.62rem] leading-4 text-[color:var(--app-muted)]">
+              {hoveredResearchSources.map((source) => source.domain).join(" · ")}
+            </div>
+          ) : null}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              className="gaddr-gadfly-card-button rounded border px-2 py-1 text-[0.62rem] font-semibold tracking-[0.08em]"
+              onClick={() => {
+                openResearchPane(hoveredGadfly.group);
+              }}
+            >
+              OPEN RESEARCH
+            </button>
+            <div className="text-[0.56rem] uppercase tracking-[0.09em] text-[color:var(--app-muted)]">
+              {isHoverLocked ? "Shift lock enabled" : "Hold Shift to lock"}
+            </div>
           </div>
         </aside>
       ) : null}
+      <aside
+        aria-label="Gadfly research pane"
+        data-testid="gadfly-research-pane"
+        className={`gaddr-research-pane fixed bottom-4 right-4 top-4 z-[82] flex w-[min(42rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border backdrop-blur-[2px] transition-all duration-200 ${
+          researchPaneGroup ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[105%] opacity-0"
+        }`}
+      >
+        <header className="border-b px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[0.68rem] font-semibold tracking-[0.12em]">GADFLY RESEARCH</div>
+              {researchPaneAnnotation ? (
+                <div className="mt-1 text-[0.58rem] uppercase tracking-[0.09em] text-[color:var(--app-muted)]">
+                  {researchPaneAnnotation.category} · {researchPaneAnnotation.severity}
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="rounded border px-2 py-1 text-[0.63rem] font-semibold tracking-[0.08em]"
+              onClick={() => {
+                setResearchPaneGroupId(null);
+              }}
+            >
+              CLOSE
+            </button>
+          </div>
+        </header>
+        {researchPaneGroup && researchPaneAnnotation ? (
+          <div className="flex-1 overflow-y-auto px-3 py-3">
+            <div className="gaddr-debug-section rounded-lg border p-3">
+              <div className="text-[0.56rem] font-semibold uppercase tracking-[0.1em] text-[color:var(--app-muted)]">
+                Annotated Question
+              </div>
+              <p className="mt-1.5 text-sm leading-6 text-[var(--app-fg)]">{researchPaneGroup.anchor.quote}</p>
+              <p className="mt-2 text-xs leading-5 text-[var(--app-fg)]">{researchPaneAnnotation.explanation}</p>
+              {researchPaneTask ? (
+                <div className="mt-3">
+                  <div className="text-[0.56rem] font-semibold uppercase tracking-[0.1em] text-[color:var(--app-muted)]">
+                    {GADFLY_RESEARCH_TASK_LABELS[researchPaneTask.kind]} ·{" "}
+                    {researchPaneTask.result
+                      ? GADFLY_RESEARCH_VERDICT_LABELS[researchPaneTask.result.verdict]
+                      : researchPaneTask.status}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-[var(--app-fg)]">{researchPaneTask.question}</p>
+                  {researchPaneTask.result ? (
+                    <>
+                      <ul className="mt-2 space-y-1 text-xs leading-5 text-[var(--app-fg)]">
+                        {researchPaneTask.result.findings.map((finding) => (
+                          <li key={finding} className="list-inside list-disc">
+                            {finding}
+                          </li>
+                        ))}
+                      </ul>
+                      {researchPaneTask.result.sources.length > 0 ? (
+                        <div className="mt-3">
+                          <div className="text-[0.56rem] font-semibold uppercase tracking-[0.1em] text-[color:var(--app-muted)]">
+                            Sources
+                          </div>
+                          <div className="mt-1.5 space-y-1.5">
+                            {researchPaneTask.result.sources.map((source) => (
+                              <a
+                                key={`${source.url}:${source.title}`}
+                                href={source.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="gaddr-research-source block rounded border px-2 py-1.5 text-[0.68rem] leading-4"
+                              >
+                                <div className="font-semibold">{source.title}</div>
+                                <div className="mt-0.5 text-[0.6rem] text-[color:var(--app-muted)]">
+                                  {source.domain}
+                                  {source.pageAge ? ` · ${source.pageAge}` : ""}
+                                </div>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center px-6 text-center text-[0.72rem] uppercase tracking-[0.1em] text-[color:var(--app-muted)]">
+            Hover a research annotation and open it to inspect results.
+          </div>
+        )}
+      </aside>
       {DEV_DEBUG_ENABLED ? (
         <aside
           aria-label="Gadfly debug pane"
           data-testid="gadfly-debug-pane"
-          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[62] flex w-[min(42rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border backdrop-blur-[2px] transition-all duration-200 ${
+          className={`gaddr-debug-pane fixed bottom-4 right-4 top-4 z-[82] flex w-[min(42rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border backdrop-blur-[2px] transition-all duration-200 ${
             isDebugPaneOpen ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[105%] opacity-0"
           }`}
         >
@@ -2010,12 +2597,18 @@ export function MinimalEditor() {
       {DEV_DEBUG_ENABLED && !isDebugPaneOpen ? (
         <button
           type="button"
-          className="gaddr-debug-toggle-button fixed bottom-4 right-4 z-[61] rounded-md border px-2 py-1 text-[0.62rem] font-semibold tracking-[0.08em]"
+          aria-label="Open Gadfly debug pane"
+          title="Open Gadfly debug pane"
+          className="gaddr-debug-toggle-button fixed bottom-4 right-[4.25rem] z-[61] inline-flex h-10 w-10 items-center justify-center rounded-full border text-[0.82rem] font-semibold"
           onClick={() => {
             setIsDebugPaneOpen(true);
           }}
         >
-          GADFLY DEBUG
+          <span
+            aria-hidden="true"
+            className={`gaddr-debug-toggle-indicator ${isAnalyzing ? "gaddr-debug-toggle-indicator--active" : ""}`}
+          />
+          <BugBeetleIcon size={17} weight="regular" aria-hidden="true" />
         </button>
       ) : null}
       <div data-testid="editor-content">

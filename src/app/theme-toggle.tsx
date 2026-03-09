@@ -1,5 +1,6 @@
 "use client";
 
+import { MoonIcon, SunIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
@@ -56,12 +57,16 @@ export function ThemeToggle() {
       type="button"
       aria-label="Toggle color theme"
       aria-pressed={mounted ? theme === "dark" : false}
-      className="gaddr-theme-toggle fixed right-4 top-4 z-[70] inline-flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[0.64rem] font-semibold tracking-[0.08em] transition-colors"
+      title={mounted && theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+      className="gaddr-theme-toggle fixed bottom-4 right-4 z-[70] inline-flex h-11 w-11 items-center justify-center rounded-full text-[1rem] transition-colors"
       onClick={toggleTheme}
     >
-      <span>{mounted && theme === "dark" ? "DARK" : "LIGHT"}</span>
       <span className="gaddr-theme-toggle__icon" aria-hidden="true">
-        {mounted && theme === "dark" ? "☾" : "☼"}
+        {mounted && theme === "dark" ? (
+          <MoonIcon size={18} weight="regular" />
+        ) : (
+          <SunIcon size={18} weight="regular" />
+        )}
       </span>
     </button>
   );

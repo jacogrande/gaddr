@@ -101,6 +101,13 @@ body {
   outline-offset: 2px;
 }
 
+.gaddr-theme-toggle__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 .tiptap {
   caret-color: currentColor;
   outline: none;
@@ -274,6 +281,69 @@ body {
   box-shadow: 0 8px 24px color-mix(in srgb, var(--app-bg) 55%, transparent);
 }
 
+.gaddr-sprint-chip {
+  border-color: color-mix(in srgb, var(--border-soft) 78%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 94%, transparent);
+  color: var(--app-fg);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--app-bg) 46%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.gaddr-sprint-chip:hover {
+  background-color: color-mix(in srgb, var(--surface-2) 95%, transparent);
+}
+
+.gaddr-sprint-chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 2px;
+}
+
+.gaddr-sprint-chip--running {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border-soft));
+}
+
+.gaddr-sprint-chip--paused {
+  border-color: color-mix(in srgb, var(--border-strong) 82%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 94%, transparent);
+}
+
+.gaddr-sprint-chip--complete {
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--border-soft));
+  background-color: color-mix(in srgb, var(--accent) 10%, var(--surface-1));
+  animation: gaddr-sprint-chip-complete 680ms cubic-bezier(0.2, 0.7, 0.2, 1) 1;
+}
+
+.gaddr-sprint-menu {
+  border-color: color-mix(in srgb, var(--border-soft) 74%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 96%, transparent);
+  color: var(--app-fg);
+  box-shadow: 0 22px 44px color-mix(in srgb, var(--app-bg) 42%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.gaddr-sprint-option,
+.gaddr-sprint-action {
+  border-color: color-mix(in srgb, var(--border-soft) 70%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-sprint-option:hover,
+.gaddr-sprint-action:hover {
+  background-color: color-mix(in srgb, var(--surface-3) 88%, transparent);
+}
+
+.gaddr-sprint-option--selected {
+  border-color: color-mix(in srgb, var(--accent) 56%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 16%, var(--surface-1));
+}
+
+.gaddr-sprint-option:focus-visible,
+.gaddr-sprint-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: 2px;
+}
+
 .gaddr-slash-menu,
 .gaddr-command-palette {
   border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
@@ -347,6 +417,16 @@ body {
   box-shadow: 0 16px 36px color-mix(in srgb, var(--app-bg) 46%, transparent);
 }
 
+.gaddr-gadfly-card-button {
+  border-color: color-mix(in srgb, var(--border-strong) 72%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  color: var(--app-muted);
+}
+
+.gaddr-gadfly-card-button:hover {
+  background-color: color-mix(in srgb, var(--surface-3) 92%, transparent);
+}
+
 .gaddr-gadfly-prompts {
   border-color: color-mix(in srgb, var(--border-soft) 65%, transparent);
 }
@@ -376,34 +456,41 @@ body {
   color: color-mix(in srgb, var(--app-muted) 84%, transparent);
 }
 
-.gaddr-debug-pane {
+.gaddr-debug-pane,
+.gaddr-research-pane {
   border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
   background-color: color-mix(in srgb, var(--surface-1) 95%, transparent);
   color: var(--app-fg);
   box-shadow: 0 24px 48px color-mix(in srgb, var(--app-bg) 42%, transparent);
 }
 
-.gaddr-debug-pane * {
+.gaddr-debug-pane *,
+.gaddr-research-pane * {
   border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
   color: inherit;
 }
 
 .gaddr-debug-pane header,
-.gaddr-debug-pane > div {
+.gaddr-debug-pane > div,
+.gaddr-research-pane header,
+.gaddr-research-pane > div {
   color: color-mix(in srgb, var(--app-muted) 84%, var(--app-fg));
 }
 
-.gaddr-debug-pane button {
+.gaddr-debug-pane button,
+.gaddr-research-pane button {
   border-color: color-mix(in srgb, var(--border-strong) 74%, transparent);
   background-color: color-mix(in srgb, var(--surface-2) 94%, transparent);
   color: var(--app-muted);
 }
 
-.gaddr-debug-pane button:hover {
+.gaddr-debug-pane button:hover,
+.gaddr-research-pane button:hover {
   background-color: color-mix(in srgb, var(--surface-3) 96%, transparent);
 }
 
-.gaddr-debug-pane article {
+.gaddr-debug-pane article,
+.gaddr-research-pane article {
   border-color: color-mix(in srgb, var(--border-soft) 72%, transparent);
   background-color: color-mix(in srgb, var(--surface-4) 92%, transparent);
   color: var(--app-fg);
@@ -467,6 +554,16 @@ body {
   overflow-wrap: anywhere;
 }
 
+.gaddr-research-source {
+  border-color: color-mix(in srgb, var(--border-soft) 70%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  color: var(--app-fg);
+}
+
+.gaddr-research-source:hover {
+  background-color: color-mix(in srgb, var(--surface-3) 90%, transparent);
+}
+
 .gaddr-debug-inline-button {
   white-space: nowrap;
   flex: none;
@@ -501,6 +598,7 @@ body {
 }
 
 .gaddr-debug-toggle-button {
+  position: fixed;
   border-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
   background-color: color-mix(in srgb, var(--surface-1) 92%, transparent);
   color: var(--app-muted);
@@ -509,6 +607,21 @@ body {
 
 .gaddr-debug-toggle-button:hover {
   background-color: color-mix(in srgb, var(--surface-2) 94%, transparent);
+}
+
+.gaddr-debug-toggle-indicator {
+  position: absolute;
+  right: 0.38rem;
+  top: 0.38rem;
+  height: 0.45rem;
+  width: 0.45rem;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--app-muted-soft) 80%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface-1) 92%, transparent);
+}
+
+.gaddr-debug-toggle-indicator--active {
+  background-color: color-mix(in srgb, var(--accent) 86%, transparent);
 }
 
 .gaddr-command-palette {
@@ -563,6 +676,23 @@ body {
   }
 }
 
+@keyframes gaddr-sprint-chip-complete {
+  0% {
+    box-shadow: 0 10px 26px color-mix(in srgb, var(--app-bg) 46%, transparent);
+    transform: scale(1);
+  }
+
+  35% {
+    box-shadow: 0 14px 32px color-mix(in srgb, var(--accent) 20%, var(--app-bg));
+    transform: scale(1.015);
+  }
+
+  100% {
+    box-shadow: 0 10px 26px color-mix(in srgb, var(--app-bg) 46%, transparent);
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gaddr-modifier-chip {
     animation: none;
@@ -577,6 +707,10 @@ body {
   }
 
   .gaddr-slash-menu {
+    animation: none;
+  }
+
+  .gaddr-sprint-chip--complete {
     animation: none;
   }
 }
