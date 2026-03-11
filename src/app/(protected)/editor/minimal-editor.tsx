@@ -1802,7 +1802,7 @@ export function MinimalEditor() {
 
       const transitionTimer = window.setTimeout(() => {
         setConstellationMode("overview");
-      }, 500);
+      }, 1200);
 
       return () => {
         window.clearTimeout(transitionTimer);
@@ -1822,7 +1822,7 @@ export function MinimalEditor() {
       setConstellationMode("hidden");
       setConstellationBoard(null);
       setFocusedThemeId(null);
-    }, 500);
+    }, 800);
 
     return () => {
       window.clearTimeout(exitTimer);
@@ -2761,11 +2761,11 @@ export function MinimalEditor() {
         ) : null}
         <div
           data-testid="editor-content"
-          className={`gaddr-constellation-editor-pane ${
-            constellationMode === "transition_in" || constellationMode === "overview" || constellationMode === "focus_theme"
-              ? "gaddr-constellation-editor-pane--zoomed"
+          className={
+            constellationMode !== "hidden" && constellationMode !== "transition_out"
+              ? "gaddr-constellation-editor-pane--hidden"
               : ""
-          }`}
+          }
         >
           <EditorContent editor={editor} />
         </div>

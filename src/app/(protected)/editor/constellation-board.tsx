@@ -318,12 +318,12 @@ function ConstellationBoardInner({
     if (focusedThemeId && focusedThemeId !== prevFocusedRef.current) {
       void reactFlowInstance.fitView({
         nodes: [{ id: focusedThemeId }],
-        duration: 400,
+        duration: 600,
         padding: 1.5,
       });
     } else if (!focusedThemeId && prevFocusedRef.current) {
       void reactFlowInstance.fitView({
-        duration: 400,
+        duration: 600,
         padding: 0.2,
       });
     }

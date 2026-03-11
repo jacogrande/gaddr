@@ -742,29 +742,23 @@ body {
   overflow-x: hidden;
 }
 
-/* The editor pane zooms out when constellation is active */
-.gaddr-constellation-editor-pane {
-  transition:
-    transform 500ms cubic-bezier(0.2, 0.7, 0.2, 1),
-    opacity 500ms ease;
-}
-
-.gaddr-constellation-editor-pane--zoomed {
-  transform: scale(0.55);
-  transform-origin: top center;
-  opacity: 0.7;
+/* Hide the editor when constellation is active — keeps Tiptap mounted */
+.gaddr-constellation-editor-pane--hidden {
+  position: absolute;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 
 .gaddr-constellation-flow-container {
   width: 100%;
   height: 80vh;
-  transition: opacity 400ms ease;
+  animation: gaddr-constellation-canvas-in 1100ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .gaddr-constellation-flow-container--exit {
-  opacity: 0;
-  pointer-events: none;
+  animation: gaddr-constellation-canvas-out 700ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
 .gaddr-constellation-flow-container .react-flow {
@@ -817,7 +811,7 @@ body {
 }
 
 .gaddr-constellation-island-enter {
-  animation: gaddr-constellation-island-in 300ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  animation: gaddr-constellation-island-in 800ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 .gaddr-constellation-lane-chip {
@@ -916,29 +910,68 @@ body {
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-soft));
   border-radius: 10px;
   box-shadow: 0 4px 16px color-mix(in srgb, var(--app-bg) 30%, transparent);
+  animation: gaddr-constellation-draft-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 300ms;
+}
+
+@keyframes gaddr-constellation-canvas-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes gaddr-constellation-canvas-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
 }
 
 @keyframes gaddr-constellation-island-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(18px) scale(0.92);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes gaddr-constellation-draft-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gaddr-constellation-editor-pane {
-    transition: none;
+  .gaddr-constellation-flow-container {
+    animation: none;
   }
 
-  .gaddr-constellation-flow-container {
-    transition: none;
+  .gaddr-constellation-flow-container--exit {
+    animation: none;
   }
 
   .gaddr-constellation-island-enter {
+    animation: none;
+  }
+
+  .gaddr-constellation-draft {
     animation: none;
   }
 
