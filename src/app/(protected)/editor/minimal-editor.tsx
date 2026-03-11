@@ -34,6 +34,10 @@ import {
   groupGadflyAnnotations,
   type GadflyAnnotationGroup,
 } from "../../../domain/gadfly/presentation";
+import { buildConstellationBoard } from "../../../domain/gadfly/constellation-builder";
+import type { ConstellationBoard as ConstellationBoardData } from "../../../domain/gadfly/constellation-types";
+import ConstellationBoard from "./constellation-board";
+import type { ConstellationBoardMode } from "./constellation-board-types";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
 const GADFLY_NOTE_ID = "gaddr:editor:phase1";
@@ -622,6 +626,12 @@ export function MinimalEditor() {
   const sprintMenuCloseTimeoutRef = useRef<number | null>(null);
   const sprintPhaseRef = useRef<SprintPhase>("idle");
   const lastEditAtMsRef = useRef(Date.now());
+  const [constellationMode, setConstellationMode] = useState<ConstellationBoardMode>("hidden");
+  const [constellationBoard, setConstellationBoard] = useState<ConstellationBoardData | null>(null);
+  const [focusedThemeId, setFocusedThemeId] = useState<string | null>(null);
+  const constellationBoardCounterRef = useRef(0);
+  const constellationModeRef = useRef<ConstellationBoardMode>("hidden");
+  const hasShownConstellationForSprintRef = useRef(false);
 
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
     try {
@@ -679,6 +689,7 @@ export function MinimalEditor() {
     const option = getSprintOption(optionId);
 
     cancelSprintMenuClose();
+    hasShownConstellationForSprintRef.current = false;
     setSprintNowMs(now);
     setSprintOption(option.id);
     setSprintPhase("running");
@@ -860,6 +871,14 @@ export function MinimalEditor() {
       lastEditAtMsRef.current = now;
       if (sprintPhaseRef.current === "completed") {
         setSprintNowMs(now);
+      }
+      // Exit constellation board when user starts typing
+      const currentConstellationMode = constellationModeRef.current;
+      if (
+        currentConstellationMode === "overview" ||
+        currentConstellationMode === "focus_theme"
+      ) {
+        setConstellationMode("transition_out");
       }
       schedulePersist(current);
     },
@@ -1735,6 +1754,94 @@ export function MinimalEditor() {
   useEffect(() => {
     sprintPhaseRef.current = sprintPhase;
   }, [sprintPhase]);
+
+  useEffect(() => {
+    constellationModeRef.current = constellationMode;
+  }, [constellationMode]);
+
+  // Constellation board entry trigger: sprint completed + user idle
+  useEffect(() => {
+    if (sprintPhase !== "completed") {
+      return;
+    }
+
+    if (sprintWriterActive) {
+      return;
+    }
+
+    if (constellationMode !== "hidden") {
+      return;
+    }
+
+    if (hasShownConstellationForSprintRef.current) {
+      return;
+    }
+
+    if (!editor) {
+      return;
+    }
+
+    hasShownConstellationForSprintRef.current = true;
+    const plainText = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", "\n");
+    constellationBoardCounterRef.current += 1;
+    const boardId = `constellation-${String(constellationBoardCounterRef.current)}`;
+    const result = buildConstellationBoard({
+      noteId: GADFLY_NOTE_ID,
+      docVersion: editor.state.doc.content.size,
+      title: null,
+      plainText,
+      annotations: gadflyAnnotations,
+      generatedAt: new Date().toISOString(),
+      boardId,
+    });
+
+    if (result.ok) {
+      setConstellationBoard(result.value);
+      setFocusedThemeId(null);
+      setConstellationMode("transition_in");
+
+      const transitionTimer = window.setTimeout(() => {
+        setConstellationMode("overview");
+      }, 450);
+
+      return () => {
+        window.clearTimeout(transitionTimer);
+      };
+    }
+
+    return undefined;
+  }, [constellationMode, editor, gadflyAnnotations, sprintPhase, sprintWriterActive]);
+
+  // Constellation board exit transition cleanup
+  useEffect(() => {
+    if (constellationMode !== "transition_out") {
+      return;
+    }
+
+    const exitTimer = window.setTimeout(() => {
+      setConstellationMode("hidden");
+      setConstellationBoard(null);
+      setFocusedThemeId(null);
+    }, 300);
+
+    return () => {
+      window.clearTimeout(exitTimer);
+    };
+  }, [constellationMode]);
+
+  const handleConstellationClose = useCallback(() => {
+    setConstellationMode("transition_out");
+  }, []);
+
+  const handleConstellationFocusTheme = useCallback((themeId: string) => {
+    setFocusedThemeId(themeId);
+    setConstellationMode("focus_theme");
+  }, []);
+
+  const handleConstellationBackToOverview = useCallback(() => {
+    setFocusedThemeId(null);
+    setConstellationMode("overview");
+  }, []);
 
   useEffect(() => {
     if (!shouldTickSprintClock) {
@@ -2638,9 +2745,22 @@ export function MinimalEditor() {
           <BugBeetleIcon size={17} weight="regular" aria-hidden="true" />
         </button>
       ) : null}
-      <div data-testid="editor-content">
+      <div
+        data-testid="editor-content"
+        className={constellationMode !== "hidden" ? "gaddr-editor-content--constellation-active" : ""}
+      >
         <EditorContent editor={editor} />
       </div>
+      {constellationBoard && constellationMode !== "hidden" ? (
+        <ConstellationBoard
+          board={constellationBoard}
+          mode={constellationMode}
+          focusedThemeId={focusedThemeId}
+          onClose={handleConstellationClose}
+          onFocusTheme={handleConstellationFocusTheme}
+          onBackToOverview={handleConstellationBackToOverview}
+        />
+      ) : null}
     </div>
   );
 }

@@ -720,3 +720,245 @@ body {
     caret-color: CanvasText;
   }
 }
+
+/* ── Constellation Review Board ── */
+
+.gaddr-editor-content--constellation-active {
+  transform: scale(0.88) translateY(-1%);
+  opacity: 0.4;
+  pointer-events: none;
+  transition:
+    transform 480ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 480ms ease;
+}
+
+.gaddr-constellation-overlay {
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.gaddr-constellation-overlay--in {
+  animation: gaddr-constellation-in 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.gaddr-constellation-overlay--out {
+  animation: gaddr-constellation-out 300ms ease both;
+}
+
+.gaddr-constellation-draft {
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--app-bg) 40%, transparent);
+}
+
+.gaddr-constellation-island {
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--app-bg) 30%, transparent);
+  transition:
+    transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 280ms ease,
+    box-shadow 280ms ease;
+  cursor: pointer;
+}
+
+.gaddr-constellation-island:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--app-bg) 40%, transparent);
+  transform: translateY(-2px);
+}
+
+.gaddr-constellation-island:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.gaddr-constellation-island--focused {
+  transform: scale(1.05);
+  border-color: var(--accent);
+  box-shadow: 0 10px 32px color-mix(in srgb, var(--accent) 15%, var(--app-bg));
+  z-index: 2;
+}
+
+.gaddr-constellation-island--dimmed {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.gaddr-constellation-island-enter {
+  animation: gaddr-constellation-island-in 300ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.gaddr-constellation-lane-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.gaddr-constellation-lane-chip--supports {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-3));
+  color: var(--accent-strong);
+}
+
+.gaddr-constellation-lane-chip--challenges {
+  background: color-mix(in srgb, var(--highlight-high) 14%, var(--surface-3));
+  color: var(--highlight-high);
+}
+
+.gaddr-constellation-lane-chip--questions {
+  background: color-mix(in srgb, var(--app-muted) 12%, var(--surface-3));
+  color: var(--app-muted);
+}
+
+.gaddr-constellation-lane-chip--sources {
+  background: color-mix(in srgb, var(--border-soft) 18%, var(--surface-3));
+  color: var(--app-muted-soft);
+}
+
+.gaddr-constellation-leverage-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+
+.gaddr-constellation-leverage-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 400ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.gaddr-constellation-edge-line {
+  stroke: var(--border-soft);
+  stroke-width: 1.5;
+  fill: none;
+  opacity: 0.5;
+}
+
+.gaddr-constellation-edge-enter {
+  animation: gaddr-constellation-edge-in 400ms ease both;
+  animation-delay: 350ms;
+}
+
+.gaddr-constellation-close {
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--app-muted);
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+  cursor: pointer;
+}
+
+.gaddr-constellation-close:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--app-fg);
+}
+
+.gaddr-constellation-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.gaddr-constellation-focus-detail {
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--app-bg) 50%, transparent);
+}
+
+.gaddr-constellation-node-row {
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 140ms ease;
+}
+
+.gaddr-constellation-node-row:hover {
+  background: color-mix(in srgb, var(--surface-3) 60%, transparent);
+}
+
+.gaddr-constellation-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+@keyframes gaddr-constellation-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes gaddr-constellation-island-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gaddr-constellation-edge-in {
+  from {
+    stroke-dashoffset: 500;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes gaddr-constellation-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gaddr-editor-content--constellation-active {
+    transition: none;
+  }
+
+  .gaddr-constellation-overlay--in,
+  .gaddr-constellation-overlay--out {
+    animation: none;
+  }
+
+  .gaddr-constellation-island-enter {
+    animation: none;
+  }
+
+  .gaddr-constellation-edge-enter {
+    animation: none;
+  }
+
+  .gaddr-constellation-island {
+    transition: none;
+  }
+
+  .gaddr-constellation-leverage-fill {
+    transition: none;
+  }
+}
