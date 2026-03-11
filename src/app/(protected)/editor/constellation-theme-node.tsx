@@ -85,7 +85,7 @@ function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
   return (
     <div
       className={`${islandClass(theme, focusedThemeId, isHighestLeverage)} gaddr-constellation-island-enter w-52 p-4`}
-      style={{ animationDelay: `${String(600 + index * 120)}ms` }}
+      style={{ animationDelay: `${String(1000 + index * 120)}ms` }}
       onClick={handleClick}
     >
       <Handle type="target" position={Position.Top} className="!invisible" />

@@ -744,22 +744,29 @@ body {
 
 /*
  * Editor pane states during constellation transitions:
- *   --zooming-out : editor shrinks + fades (camera pulls back to reveal constellation)
+ *   --zooming-out : editor shrinks into a card shape, morphing toward the draft node
  *   --hidden      : fully collapsed once zoom-out completes, keeps Tiptap mounted
- *   --zooming-in  : editor grows back in when returning from constellation
+ *   --zooming-in  : editor grows back from card shape when returning from constellation
  */
 .gaddr-constellation-editor-pane {
   position: relative;
   z-index: 2;
+  border-radius: 0;
+  overflow: visible;
   transition:
     transform 1400ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 1400ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 1200ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 1000ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 1000ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .gaddr-constellation-editor-pane--zooming-out {
-  transform: scale(0.2);
-  transform-origin: top center;
+  transform: scale(0.22);
+  transform-origin: center 40vh;
   opacity: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--app-bg) 50%, transparent);
   pointer-events: none;
 }
 
@@ -779,7 +786,7 @@ body {
   width: 100%;
   height: 80vh;
   animation: gaddr-constellation-canvas-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: 200ms;
+  animation-delay: 300ms;
 }
 
 .gaddr-constellation-flow-container--exit {
@@ -935,8 +942,8 @@ body {
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-soft));
   border-radius: 10px;
   box-shadow: 0 4px 16px color-mix(in srgb, var(--app-bg) 30%, transparent);
-  animation: gaddr-constellation-draft-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: 500ms;
+  animation: gaddr-constellation-draft-in 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 900ms;
 }
 
 @keyframes gaddr-constellation-canvas-in {
@@ -985,14 +992,20 @@ body {
 
 @keyframes gaddr-constellation-editor-in {
   from {
-    transform: scale(0.2);
-    transform-origin: top center;
+    transform: scale(0.22);
+    transform-origin: center 40vh;
     opacity: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px color-mix(in srgb, var(--app-bg) 50%, transparent);
   }
   to {
     transform: scale(1);
-    transform-origin: top center;
+    transform-origin: center 40vh;
     opacity: 1;
+    border-radius: 0;
+    overflow: visible;
+    box-shadow: none;
   }
 }
 
