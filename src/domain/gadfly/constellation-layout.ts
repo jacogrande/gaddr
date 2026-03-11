@@ -6,8 +6,8 @@ export type ConstellationLayoutPosition = {
   y: number;
 };
 
-const ELLIPSE_RADIUS_X = 0.32;
-const ELLIPSE_RADIUS_Y = 0.34;
+const ELLIPSE_RADIUS_X = 0.36;
+const ELLIPSE_RADIUS_Y = 0.32;
 const CENTER_X = 0.5;
 const CENTER_Y = 0.5;
 

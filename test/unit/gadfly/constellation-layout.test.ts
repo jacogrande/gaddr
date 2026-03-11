@@ -37,8 +37,8 @@ describe("computeConstellationLayout", () => {
 
     expect(pos.themeId).toBe("t1");
     expect(pos.x).toBeCloseTo(0.5, 2);
-    // y = center(0.5) - radiusY(0.34) = 0.16
-    expect(pos.y).toBeCloseTo(0.16, 2);
+    // y = center(0.5) - radiusY(0.32) = 0.18
+    expect(pos.y).toBeCloseTo(0.18, 2);
   });
 
   test("places 5 themes in radial positions", () => {

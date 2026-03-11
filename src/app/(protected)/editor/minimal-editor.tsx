@@ -1802,7 +1802,7 @@ export function MinimalEditor() {
 
       const transitionTimer = window.setTimeout(() => {
         setConstellationMode("overview");
-      }, 450);
+      }, 500);
 
       return () => {
         window.clearTimeout(transitionTimer);
@@ -1822,7 +1822,7 @@ export function MinimalEditor() {
       setConstellationMode("hidden");
       setConstellationBoard(null);
       setFocusedThemeId(null);
-    }, 300);
+    }, 500);
 
     return () => {
       window.clearTimeout(exitTimer);
@@ -1952,7 +1952,7 @@ export function MinimalEditor() {
           ))}
         </div>
       ) : null}
-      <div className="pointer-events-none fixed right-4 top-4 z-[68] flex justify-end">
+      <div className={`pointer-events-none fixed right-4 top-4 z-[68] flex justify-end ${constellationMode !== "hidden" ? "hidden" : ""}`}>
         <div className="pointer-events-auto flex items-start">
           <div
             ref={sprintMenuRef}
@@ -2746,21 +2746,30 @@ export function MinimalEditor() {
         </button>
       ) : null}
       <div
-        data-testid="editor-content"
-        className={constellationMode !== "hidden" ? "gaddr-editor-content--constellation-active" : ""}
+        className={`gaddr-constellation-stage ${constellationMode !== "hidden" ? "gaddr-constellation-stage--active" : ""}`}
       >
-        <EditorContent editor={editor} />
+        {constellationBoard && constellationMode !== "hidden" ? (
+          <ConstellationBoard
+            key={constellationBoard.id}
+            board={constellationBoard}
+            mode={constellationMode}
+            focusedThemeId={focusedThemeId}
+            onClose={handleConstellationClose}
+            onFocusTheme={handleConstellationFocusTheme}
+            onBackToOverview={handleConstellationBackToOverview}
+          />
+        ) : null}
+        <div
+          data-testid="editor-content"
+          className={`gaddr-constellation-editor-pane ${
+            constellationMode === "transition_in" || constellationMode === "overview" || constellationMode === "focus_theme"
+              ? "gaddr-constellation-editor-pane--zoomed"
+              : ""
+          }`}
+        >
+          <EditorContent editor={editor} />
+        </div>
       </div>
-      {constellationBoard && constellationMode !== "hidden" ? (
-        <ConstellationBoard
-          board={constellationBoard}
-          mode={constellationMode}
-          focusedThemeId={focusedThemeId}
-          onClose={handleConstellationClose}
-          onFocusTheme={handleConstellationFocusTheme}
-          onBackToOverview={handleConstellationBackToOverview}
-        />
-      ) : null}
     </div>
   );
 }
