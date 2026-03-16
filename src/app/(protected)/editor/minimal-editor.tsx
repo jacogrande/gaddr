@@ -623,7 +623,6 @@ export function MinimalEditor() {
   const latestEditorRef = useRef<{ getJSON: () => JSONContent } | null>(null);
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
   const sprintMenuRef = useRef<HTMLDivElement | null>(null);
-  const sprintMenuCloseTimeoutRef = useRef<number | null>(null);
   const sprintPhaseRef = useRef<SprintPhase>("idle");
   const lastEditAtMsRef = useRef(Date.now());
   const [constellationMode, setConstellationMode] = useState<ConstellationBoardMode>("hidden");
@@ -667,28 +666,10 @@ export function MinimalEditor() {
     persistNow(current);
   }, [clearScheduledPersist, persistNow]);
 
-  const cancelSprintMenuClose = useCallback(() => {
-    if (sprintMenuCloseTimeoutRef.current === null) {
-      return;
-    }
-
-    window.clearTimeout(sprintMenuCloseTimeoutRef.current);
-    sprintMenuCloseTimeoutRef.current = null;
-  }, []);
-
-  const scheduleSprintMenuClose = useCallback(() => {
-    cancelSprintMenuClose();
-    sprintMenuCloseTimeoutRef.current = window.setTimeout(() => {
-      setIsSprintMenuOpen(false);
-      sprintMenuCloseTimeoutRef.current = null;
-    }, 140);
-  }, [cancelSprintMenuClose]);
-
   const startSprint = useCallback((optionId: SprintOptionId) => {
     const now = Date.now();
     const option = getSprintOption(optionId);
 
-    cancelSprintMenuClose();
     hasShownConstellationForSprintRef.current = false;
     setSprintNowMs(now);
     setSprintOption(option.id);
@@ -697,7 +678,7 @@ export function MinimalEditor() {
     setPausedSprintRemainingMs(null);
     setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
-  }, [cancelSprintMenuClose]);
+  }, []);
 
   const pauseSprint = useCallback(() => {
     if (sprintPhase !== "running" || sprintEndsAtMs === null) {
@@ -1859,10 +1840,9 @@ export function MinimalEditor() {
   }, []);
 
   const handleConstellationReopen = useCallback(() => {
-    cancelSprintMenuClose();
     setIsSprintMenuOpen(false);
     void openConstellationExploration();
-  }, [cancelSprintMenuClose, openConstellationExploration]);
+  }, [openConstellationExploration]);
 
   useEffect(() => {
     if (!shouldTickSprintClock) {
@@ -1927,15 +1907,8 @@ export function MinimalEditor() {
       return;
     }
 
-    cancelSprintMenuClose();
     setIsSprintMenuOpen(false);
-  }, [cancelSprintMenuClose, isCommandPaletteOpen, slashMenuState]);
-
-  useEffect(() => {
-    return () => {
-      cancelSprintMenuClose();
-    };
-  }, [cancelSprintMenuClose]);
+  }, [isCommandPaletteOpen, slashMenuState]);
 
   if (!editor) {
     return <div className="min-h-[calc(100vh-8.5rem)]" />;
@@ -1995,21 +1968,9 @@ export function MinimalEditor() {
           <div
             ref={sprintMenuRef}
             className="relative"
-            onMouseEnter={() => {
-              cancelSprintMenuClose();
-              setIsSprintMenuOpen(true);
-            }}
-            onMouseLeave={() => {
-              scheduleSprintMenuClose();
-            }}
-            onFocusCapture={() => {
-              cancelSprintMenuClose();
-              setIsSprintMenuOpen(true);
-            }}
             onBlur={(event) => {
               const nextTarget = event.relatedTarget;
               if (!(nextTarget instanceof Node) || !sprintMenuRef.current?.contains(nextTarget)) {
-                cancelSprintMenuClose();
                 setIsSprintMenuOpen(false);
               }
             }}
@@ -2029,7 +1990,6 @@ export function MinimalEditor() {
                       : ""
               }`}
               onClick={() => {
-                cancelSprintMenuClose();
                 setIsSprintMenuOpen((current) => !current);
               }}
             >

@@ -318,7 +318,7 @@ export function buildConstellationExplorationGraph(
     id: `${board.id}:explore-edge:seed:${theme.id}`,
     fromNodeId: seedNode.id,
     toNodeId: theme.id,
-    relation: "emerges_from",
+    relation: "branches_into",
     strength: theme.leverageScore,
   }));
 

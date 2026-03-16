@@ -209,7 +209,7 @@ export type ConstellationNodeFamily =
   | "response";
 
 export type ConstellationEdgeRelation =
-  | "emerges_from"
+  | "branches_into"
   | "supports"
   | "contradicts"
   | "questions"
@@ -240,7 +240,7 @@ export const CONSTELLATION_NODE_FAMILIES: readonly ConstellationNodeFamily[] = [
 ];
 
 export const CONSTELLATION_EDGE_RELATIONS: readonly ConstellationEdgeRelation[] = [
-  "emerges_from",
+  "branches_into",
   "supports",
   "contradicts",
   "questions",

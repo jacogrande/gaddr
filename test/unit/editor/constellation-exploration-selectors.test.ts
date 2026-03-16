@@ -75,8 +75,8 @@ function graph(): ConstellationExplorationGraph {
       node("nested-1", "evidence"),
     ],
     edges: [
-      edge("seed-theme-1", "seed-1", "theme-1", "emerges_from"),
-      edge("seed-theme-2", "seed-1", "theme-2", "emerges_from"),
+      edge("seed-theme-1", "seed-1", "theme-1", "branches_into"),
+      edge("seed-theme-2", "seed-1", "theme-2", "branches_into"),
       edge("theme-counter", "theme-1", "counter-1", "contradicts"),
       edge("theme-evidence", "theme-1", "evidence-1", "supports"),
       edge("theme-question", "theme-1", "question-1", "questions"),

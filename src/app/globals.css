@@ -821,14 +821,6 @@ body {
   outline-offset: 2px;
 }
 
-/* Highest-leverage theme gets a subtle accent treatment */
-.gaddr-constellation-island--primary {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-soft));
-  box-shadow:
-    0 4px 16px color-mix(in srgb, var(--app-bg) 30%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
 .gaddr-constellation-island--focused {
   transform: translateY(-4px) scale(1.03);
   border-color: var(--accent);
@@ -842,51 +834,6 @@ body {
 
 .gaddr-constellation-island-enter {
   animation: gaddr-constellation-island-in 800ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
-}
-
-.gaddr-constellation-lane-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 7px;
-  border-radius: 6px;
-  font-size: var(--constellation-text-xs);
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.gaddr-constellation-lane-chip--supports {
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface-3));
-  color: var(--accent-strong);
-}
-
-.gaddr-constellation-lane-chip--challenges {
-  background: color-mix(in srgb, var(--highlight-high) 14%, var(--surface-3));
-  color: var(--highlight-high);
-}
-
-.gaddr-constellation-lane-chip--questions {
-  background: color-mix(in srgb, var(--app-muted) 12%, var(--surface-3));
-  color: var(--app-muted);
-}
-
-.gaddr-constellation-lane-chip--sources {
-  background: color-mix(in srgb, var(--border-soft) 18%, var(--surface-3));
-  color: var(--app-muted-soft);
-}
-
-.gaddr-constellation-leverage-bar {
-  height: 3px;
-  border-radius: 2px;
-  background: var(--border-soft);
-  overflow: hidden;
-}
-
-.gaddr-constellation-leverage-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-  transition: width 400ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .gaddr-constellation-close {
@@ -968,30 +915,6 @@ body {
 
 .gaddr-constellation-pill {
   padding: 0.28rem 0.6rem;
-}
-
-.gaddr-constellation-focus-detail {
-  background: var(--surface-1);
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  box-shadow: 0 12px 40px color-mix(in srgb, var(--app-bg) 50%, transparent);
-  pointer-events: auto;
-}
-
-.gaddr-constellation-node-row {
-  padding: 6px 8px;
-  border-radius: 6px;
-  transition: background 140ms ease;
-}
-
-.gaddr-constellation-node-row:hover {
-  background: color-mix(in srgb, var(--surface-3) 60%, transparent);
-}
-
-.gaddr-constellation-legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
 }
 
 .gaddr-constellation-draft {
@@ -1092,10 +1015,6 @@ body {
   }
 
   .gaddr-constellation-island {
-    transition: none;
-  }
-
-  .gaddr-constellation-leverage-fill {
     transition: none;
   }
 }

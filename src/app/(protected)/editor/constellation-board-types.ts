@@ -1,10 +1,3 @@
-export type LegacyConstellationBoardMode =
-  | "hidden"
-  | "transition_in"
-  | "overview"
-  | "focus_theme"
-  | "transition_out";
-
 export type ConstellationExplorationBoardMode =
   | "hidden"
   | "transition_in"

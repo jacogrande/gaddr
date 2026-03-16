@@ -4,6 +4,10 @@ import { memo, useCallback } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { ConstellationExplorationNode } from "../../../domain/gadfly/constellation-types";
 import { useConstellationCallbacks } from "./constellation-callbacks-context";
+import {
+  formatConstellationConfidencePercent,
+  formatConstellationSurfacedByLabel,
+} from "./constellation-formatters";
 
 type ThemeNode = Node<{ theme: ConstellationExplorationNode; index: number }, "theme">;
 
@@ -22,23 +26,6 @@ function islandClass(
   }
 
   return `${base} gaddr-constellation-island--dimmed`;
-}
-
-function formatConfidence(score: number): string {
-  return `${String(Math.round(Math.max(0, Math.min(1, score)) * 100))}% confidence`;
-}
-
-function formatSurfacedByLabel(source: ConstellationExplorationNode["provenance"]["surfacedBy"]): string {
-  switch (source) {
-    case "annotation":
-      return "Draft anchors";
-    case "draft":
-      return "Freewrite";
-    case "research":
-      return "Research";
-    case "mock":
-      return "Mock AI";
-  }
 }
 
 function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
@@ -87,9 +74,11 @@ function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
           {theme.summary}
         </p>
         <div className="mt-3 flex flex-wrap gap-1.5">
-          <span className="gaddr-constellation-pill">{formatConfidence(theme.confidenceScore)}</span>
           <span className="gaddr-constellation-pill">
-            {formatSurfacedByLabel(theme.provenance.surfacedBy)}
+            {formatConstellationConfidencePercent(theme.confidenceScore)} confidence
+          </span>
+          <span className="gaddr-constellation-pill">
+            {formatConstellationSurfacedByLabel(theme.provenance.surfacedBy)}
           </span>
         </div>
       </button>

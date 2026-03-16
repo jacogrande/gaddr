@@ -68,7 +68,7 @@ test.describe("editor workflow", () => {
       "I think remote work makes teams stronger because it widens talent access, but I need to pressure test the argument.",
     );
 
-    await page.getByTestId("sprint-chip").hover();
+    await page.getByTestId("sprint-chip").click();
     const sprintMenu = page.getByTestId("sprint-menu");
     await expect(sprintMenu).toBeVisible();
     await sprintMenu.getByRole("button", { name: /5 sec/i }).click();

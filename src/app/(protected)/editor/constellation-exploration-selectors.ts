@@ -4,7 +4,7 @@ import type {
   ConstellationExplorationNode,
 } from "../../../domain/gadfly/constellation-types";
 
-export const CONSTELLATION_CHILD_GROUP_ORDER = [
+const CONSTELLATION_CHILD_GROUP_ORDER = [
   "counterargument",
   "evidence",
   "question",
@@ -15,16 +15,13 @@ export const CONSTELLATION_CHILD_GROUP_ORDER = [
 
 type ConstellationChildGroupFamily = (typeof CONSTELLATION_CHILD_GROUP_ORDER)[number];
 
-export type ConstellationChildNodeGroup = {
+type ConstellationChildNodeGroup = {
   family: ConstellationChildGroupFamily;
   label: string;
   nodes: ConstellationExplorationNode[];
 };
 
-export const CONSTELLATION_CHILD_GROUP_LABELS: Record<
-  ConstellationChildGroupFamily,
-  string
-> = {
+const CONSTELLATION_CHILD_GROUP_LABELS: Record<ConstellationChildGroupFamily, string> = {
   counterargument: "Counterarguments",
   evidence: "Evidence",
   question: "Questions",
@@ -33,10 +30,22 @@ export const CONSTELLATION_CHILD_GROUP_LABELS: Record<
   research_task: "Research Tasks",
 };
 
+const NODE_LOOKUP_CACHE = new WeakMap<
+  ConstellationExplorationGraph,
+  Map<string, ConstellationExplorationNode>
+>();
+
 function createNodeLookup(
   graph: ConstellationExplorationGraph,
 ): Map<string, ConstellationExplorationNode> {
-  return new Map(graph.nodes.map((node) => [node.id, node]));
+  const cachedLookup = NODE_LOOKUP_CACHE.get(graph);
+  if (cachedLookup) {
+    return cachedLookup;
+  }
+
+  const nextLookup = new Map(graph.nodes.map((node) => [node.id, node]));
+  NODE_LOOKUP_CACHE.set(graph, nextLookup);
+  return nextLookup;
 }
 
 export function selectConstellationNodeById(
@@ -47,7 +56,7 @@ export function selectConstellationNodeById(
     return null;
   }
 
-  return graph.nodes.find((node) => node.id === nodeId) ?? null;
+  return createNodeLookup(graph).get(nodeId) ?? null;
 }
 
 export function selectConstellationCanvasNodes(
