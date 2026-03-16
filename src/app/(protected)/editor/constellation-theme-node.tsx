@@ -13,15 +13,15 @@ type ThemeNode = Node<{ theme: ConstellationExplorationNode; index: number }, "t
 
 function islandClass(
   themeId: string,
-  selectedThemeId: string | null,
+  expandedThemeId: string | null,
 ): string {
   const base = "gaddr-constellation-island";
 
-  if (selectedThemeId === null) {
+  if (expandedThemeId === null) {
     return base;
   }
 
-  if (themeId === selectedThemeId) {
+  if (themeId === expandedThemeId) {
     return `${base} gaddr-constellation-island--focused`;
   }
 
@@ -29,30 +29,30 @@ function islandClass(
 }
 
 function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
-  const { onSelectTheme, onClearSelection, selectedThemeId } = useConstellationCallbacks();
+  const { onResetExploration, onSelectNode, expandedThemeId } = useConstellationCallbacks();
 
   const { theme, index } = data;
-  const isSelected = selectedThemeId === theme.id;
+  const isExpanded = expandedThemeId === theme.id;
 
   const handleClick = useCallback(() => {
-    if (isSelected) {
-      onClearSelection();
+    if (isExpanded) {
+      onResetExploration();
     } else {
-      onSelectTheme(theme.id);
+      onSelectNode(theme.id);
     }
-  }, [isSelected, onClearSelection, onSelectTheme, theme.id]);
+  }, [isExpanded, onResetExploration, onSelectNode, theme.id]);
 
   return (
     <div
-      className={`${islandClass(theme.id, selectedThemeId)} gaddr-constellation-island-enter`}
+      className={`${islandClass(theme.id, expandedThemeId)} gaddr-constellation-island-enter`}
       style={{ animationDelay: `${String(1000 + index * 120)}ms` }}
     >
       <Handle type="target" position={Position.Top} className="!invisible" />
       <button
         type="button"
-        aria-pressed={isSelected}
+        aria-pressed={isExpanded}
         data-testid={`constellation-theme-${theme.id}`}
-        className="nodrag w-56 rounded-[inherit] p-4 text-left"
+        className="nodrag nopan w-56 rounded-[inherit] p-4 text-left"
         onClick={handleClick}
       >
         <div

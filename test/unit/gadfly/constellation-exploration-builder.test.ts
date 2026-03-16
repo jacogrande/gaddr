@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildConstellationExplorationGraph,
+  expandConstellationExplorationGraph,
 } from "../../../src/domain/gadfly/constellation-exploration-builder";
 import type { ConstellationBuildInput } from "../../../src/domain/gadfly/constellation-builder";
 import type { GadflyAnnotation } from "../../../src/domain/gadfly/types";
@@ -81,6 +82,7 @@ describe("buildConstellationExplorationGraph", () => {
     expect(mockTheme.provenance.surfacedBy).toBe("mock");
     expect(Array.isArray(mockTheme.provenance.anchorRefs)).toBe(true);
     expect(Array.isArray(mockTheme.provenance.sourceRefs)).toBe(true);
+    expect(mockTheme.generatedFromAction).toBeNull();
     expect(Array.isArray(mockTheme.suggestedBranchActions)).toBe(true);
     expect(mockTheme.suggestedBranchActions.length).toBeGreaterThan(0);
   });
@@ -142,5 +144,35 @@ describe("buildConstellationExplorationGraph", () => {
     for (const edge of result.value.edges) {
       expect(CONSTELLATION_EDGE_RELATIONS).toContain(edge.relation);
     }
+  });
+
+  test("branch expansion appends structural mock nodes with provenance metadata", () => {
+    const result = buildConstellationExplorationGraph(defaultInput());
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const themeNode = result.value.nodes.find((node) => node.family === "theme");
+    expect(themeNode).toBeDefined();
+    if (!themeNode) return;
+
+    const expandedGraph = expandConstellationExplorationGraph({
+      graph: result.value,
+      originNodeId: themeNode.id,
+      actionKind: "find_stronger_evidence",
+      generatedAt: "2026-03-16T00:04:00.000Z",
+    });
+
+    const newNodes = expandedGraph.nodes.filter((node) => node.generatedFromAction === "find_stronger_evidence");
+    const newNodeIds = new Set(newNodes.map((node) => node.id));
+    const newEdges = expandedGraph.edges.filter(
+      (edge) => edge.fromNodeId === themeNode.id && edge.isStructural && newNodeIds.has(edge.toNodeId),
+    );
+
+    expect(expandedGraph.generatedAt).toBe("2026-03-16T00:04:00.000Z");
+    expect(newNodes.length).toBeGreaterThan(0);
+    expect(newNodes.every((node) => node.provenance.surfacedBy === "mock")).toBe(true);
+    expect(newNodes.every((node) => node.whySurfaced.label.length > 0)).toBe(true);
+    expect(newEdges.length).toBeGreaterThanOrEqual(newNodes.length);
   });
 });

@@ -299,6 +299,7 @@ export type ConstellationExplorationNode = {
   provenance: ConstellationProvenance;
   isPinned: boolean;
   isSavedToWorkingSet: boolean;
+  generatedFromAction: ConstellationBranchActionKind | null;
   suggestedBranchActions: ConstellationBranchAction[];
 };
 
@@ -308,6 +309,7 @@ export type ConstellationExplorationEdge = {
   toNodeId: string;
   relation: ConstellationEdgeRelation;
   strength: number;
+  isStructural: boolean;
 };
 
 export type ConstellationWorkingSetItem = {

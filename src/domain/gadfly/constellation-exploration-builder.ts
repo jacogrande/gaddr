@@ -39,6 +39,23 @@ const DEFAULT_GRAPH_ACTIONS: readonly ConstellationBranchActionKind[] = [
   "respond_to_counterargument",
 ];
 
+type ExpandConstellationExplorationGraphInput = {
+  graph: ConstellationExplorationGraph;
+  originNodeId: string;
+  actionKind: ConstellationBranchActionKind;
+  generatedAt?: string;
+};
+
+type MockBranchNodeSpec = {
+  family: Exclude<ConstellationNodeFamily, "seed" | "theme">;
+  title: string;
+  summary: string;
+  confidenceScore: number;
+  whyLabel: string;
+  whyDetail: string;
+  sourceRefs?: ConstellationSourceRef[];
+};
+
 function buildBranchAction(kind: ConstellationBranchActionKind): ConstellationBranchAction {
   return {
     kind,
@@ -54,6 +71,30 @@ function buildSuggestedAction(
     kind,
     label: BRANCH_ACTION_LABELS[kind],
     nodeId,
+  };
+}
+
+function buildMockSourceRef(
+  node: Pick<ConstellationExplorationNode, "id" | "title">,
+  suffix: string,
+  verdict: ConstellationVerdict = "supported",
+): ConstellationSourceRef {
+  const slug = `${node.id}-${suffix}`
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9-]+/g, "-")
+    .replaceAll(/-+/g, "-")
+    .replaceAll(/^-|-$/g, "");
+
+  return {
+    sourceId: `${slug}:source`,
+    researchTaskId: `${slug}:research-task`,
+    title: `${node.title} · ${suffix.replaceAll("_", " ")}`,
+    url: `https://research.mock/${slug}`,
+    domain: "research.mock",
+    pageAge: "2026-03",
+    snippet: `Mock research trail generated while exploring ${node.title}.`,
+    relevanceScore: 0.82,
+    verdict,
   };
 }
 
@@ -247,6 +288,7 @@ function buildThemeNode(theme: ConstellationTheme): ConstellationExplorationNode
     provenance: buildProvenance(surfacedBy, theme.anchorRefs, []),
     isPinned: false,
     isSavedToWorkingSet: false,
+    generatedFromAction: null,
     suggestedBranchActions: branchActionsForFamily("theme"),
   };
 }
@@ -266,6 +308,7 @@ function buildLegacyMappedNode(node: ConstellationNode): ConstellationExploratio
     provenance: buildProvenance(surfacedBy, node.anchorRefs, node.sourceRefs),
     isPinned: node.status === "pinned",
     isSavedToWorkingSet: false,
+    generatedFromAction: null,
     suggestedBranchActions: branchActionsForFamily(family),
   };
 }
@@ -293,6 +336,7 @@ function buildSeedNode(
     provenance: buildProvenance("draft", draft.anchorRefs, []),
     isPinned: false,
     isSavedToWorkingSet: false,
+    generatedFromAction: null,
     suggestedBranchActions: [
       buildBranchAction("find_strongest_objection"),
       buildBranchAction("find_stronger_evidence"),
@@ -320,6 +364,7 @@ export function buildConstellationExplorationGraph(
     toNodeId: theme.id,
     relation: "branches_into",
     strength: theme.leverageScore,
+    isStructural: true,
   }));
 
   const themeEdges: ConstellationExplorationEdge[] = board.nodes.map((node) => ({
@@ -331,6 +376,7 @@ export function buildConstellationExplorationGraph(
       node.verdict,
     ),
     strength: node.confidenceScore,
+    isStructural: true,
   }));
 
   const legacyEdges: ConstellationExplorationEdge[] = board.edges
@@ -341,6 +387,7 @@ export function buildConstellationExplorationGraph(
       toNodeId: edge.toNodeId,
       relation: edge.kind === "challenges" ? "contradicts" : "supports",
       strength: edge.strength,
+      isStructural: false,
     }));
 
   return ok({
@@ -355,4 +402,176 @@ export function buildConstellationExplorationGraph(
       buildSuggestedAction(kind, seedNode.id),
     ),
   });
+}
+
+function buildMockBranchSpecs(
+  originNode: ConstellationExplorationNode,
+  actionKind: ConstellationBranchActionKind,
+): MockBranchNodeSpec[] {
+  switch (actionKind) {
+    case "find_strongest_objection":
+      return [
+        {
+          family: "counterargument",
+          title: `Tough objection to ${originNode.title}`,
+          summary: `A stronger skeptic could argue that ${originNode.summary.toLowerCase()} still leaves a major unresolved weakness.`,
+          confidenceScore: 0.66,
+          whyLabel: "Generated to pressure-test the current branch",
+          whyDetail: `Mock AI explored the strongest objection it could surface against ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "strongest-objection", "mixed")],
+        },
+        {
+          family: "source",
+          title: `Critical source on ${originNode.title}`,
+          summary: `A skeptical source thread the user could inspect before accepting this branch at face value.`,
+          confidenceScore: 0.61,
+          whyLabel: "Generated to ground the objection in outside material",
+          whyDetail: `Mock AI attached a source trail that challenges ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "critical-source", "contradicted")],
+        },
+      ];
+    case "find_stronger_evidence":
+      return [
+        {
+          family: "evidence",
+          title: `Stronger support for ${originNode.title}`,
+          summary: `This branch now has a more concrete supporting point that the user could eventually turn into draft material.`,
+          confidenceScore: 0.78,
+          whyLabel: "Generated to strengthen the current line of reasoning",
+          whyDetail: `Mock AI searched for evidence that could better support ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "supporting-evidence", "supported")],
+        },
+        {
+          family: "source",
+          title: `Supporting source for ${originNode.title}`,
+          summary: `A plausible source artifact attached to the stronger-evidence branch for deeper inspection.`,
+          confidenceScore: 0.74,
+          whyLabel: "Generated to trace where the stronger evidence could come from",
+          whyDetail: `Mock AI paired the evidence branch with a source summary for ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "supporting-source", "supported")],
+        },
+      ];
+    case "ask_deeper_question":
+      return [
+        {
+          family: "question",
+          title: `Deeper question behind ${originNode.title}`,
+          summary: `A follow-up question that exposes what still needs to be understood before this branch is ready for drafting.`,
+          confidenceScore: 0.64,
+          whyLabel: "Generated to deepen the inquiry",
+          whyDetail: `Mock AI pushed beyond the first layer of reasoning around ${originNode.title}.`,
+        },
+        {
+          family: "research_task",
+          title: `Research task for ${originNode.title}`,
+          summary: `A concrete next research step the assistant could eventually run to answer the deeper question.`,
+          confidenceScore: 0.58,
+          whyLabel: "Generated to turn the question into a research step",
+          whyDetail: `Mock AI converted the deeper question into a research task linked to ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "deeper-question-task", "unverified")],
+        },
+      ];
+    case "follow_source":
+      return [
+        {
+          family: "source",
+          title: `Follow-on source from ${originNode.title}`,
+          summary: `A second-hop source summary that extends the current research trail instead of restarting it.`,
+          confidenceScore: 0.68,
+          whyLabel: "Generated to continue the source trail",
+          whyDetail: `Mock AI followed the current source path outward from ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "follow-source", "supported")],
+        },
+        {
+          family: "evidence",
+          title: `Extracted finding from ${originNode.title}`,
+          summary: `A finding pulled out of the followed source so the map grows as argument material, not just links.`,
+          confidenceScore: 0.7,
+          whyLabel: "Generated to capture the next useful takeaway",
+          whyDetail: `Mock AI extracted a usable finding after following the source from ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "follow-source-finding", "supported")],
+        },
+      ];
+    case "respond_to_counterargument":
+      return [
+        {
+          family: "response",
+          title: `Response to ${originNode.title}`,
+          summary: `A draftable answer that directly addresses the counterargument without pretending the objection disappears.`,
+          confidenceScore: 0.71,
+          whyLabel: "Generated to answer the current objection",
+          whyDetail: `Mock AI developed a response path after examining ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "response-path", "mixed")],
+        },
+        {
+          family: "evidence",
+          title: `Evidence backing the response to ${originNode.title}`,
+          summary: `Supporting material that would make the response more credible if the user pulls it into a draft later.`,
+          confidenceScore: 0.69,
+          whyLabel: "Generated to support the new response path",
+          whyDetail: `Mock AI paired the response with evidence that could help rebut ${originNode.title}.`,
+          sourceRefs: [buildMockSourceRef(originNode, "response-evidence", "supported")],
+        },
+      ];
+  }
+}
+
+function buildGeneratedNode(
+  graph: ConstellationExplorationGraph,
+  originNode: ConstellationExplorationNode,
+  actionKind: ConstellationBranchActionKind,
+  spec: MockBranchNodeSpec,
+  index: number,
+): ConstellationExplorationNode {
+  const nodeId = `${graph.id}:branch:${originNode.id}:${actionKind}:${String(index + 1)}:${String(graph.nodes.length + index + 1)}`;
+
+  return {
+    id: nodeId,
+    family: spec.family,
+    title: spec.title,
+    summary: spec.summary,
+    status: "active",
+    confidenceScore: spec.confidenceScore,
+    whySurfaced: {
+      label: spec.whyLabel,
+      detail: spec.whyDetail,
+    },
+    provenance: buildProvenance("mock", [], spec.sourceRefs ?? []),
+    isPinned: false,
+    isSavedToWorkingSet: false,
+    generatedFromAction: actionKind,
+    suggestedBranchActions: branchActionsForFamily(spec.family),
+  };
+}
+
+export function expandConstellationExplorationGraph({
+  graph,
+  originNodeId,
+  actionKind,
+  generatedAt,
+}: ExpandConstellationExplorationGraphInput): ConstellationExplorationGraph {
+  const originNode = graph.nodes.find((node) => node.id === originNodeId);
+  if (!originNode) {
+    return graph;
+  }
+
+  const generatedNodes = buildMockBranchSpecs(originNode, actionKind).map((spec, index) =>
+    buildGeneratedNode(graph, originNode, actionKind, spec, index),
+  );
+
+  const generatedEdges: ConstellationExplorationEdge[] = generatedNodes.map((node, index) => ({
+    id: `${graph.id}:branch-edge:${originNode.id}:${actionKind}:${String(index + 1)}:${node.id}`,
+    fromNodeId: originNode.id,
+    toNodeId: node.id,
+    relation: relationForExplorationFamily(node.family, "supported"),
+    strength: node.confidenceScore,
+    isStructural: true,
+  }));
+
+  return {
+    ...graph,
+    generatedAt: generatedAt ?? graph.generatedAt,
+    nodes: [...graph.nodes, ...generatedNodes],
+    edges: [...graph.edges, ...generatedEdges],
+  };
 }

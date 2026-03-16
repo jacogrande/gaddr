@@ -1,5 +1,6 @@
 import type {
   ConstellationExplorationNode,
+  ConstellationNodeFamily,
   ConstellationProvenanceSource,
 } from "../../../domain/gadfly/constellation-types";
 
@@ -33,6 +34,29 @@ export function formatConstellationSurfacedByLabel(
       return "Research";
     case "mock":
       return "Mock AI";
+  }
+}
+
+export function formatConstellationNodeFamilyLabel(
+  family: ConstellationNodeFamily,
+): string {
+  switch (family) {
+    case "seed":
+      return "Seed";
+    case "theme":
+      return "Theme";
+    case "question":
+      return "Question";
+    case "counterargument":
+      return "Counterargument";
+    case "evidence":
+      return "Evidence";
+    case "source":
+      return "Source";
+    case "research_task":
+      return "Research task";
+    case "response":
+      return "Response";
   }
 }
 

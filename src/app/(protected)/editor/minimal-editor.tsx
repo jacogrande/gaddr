@@ -34,10 +34,17 @@ import {
   groupGadflyAnnotations,
   type GadflyAnnotationGroup,
 } from "../../../domain/gadfly/presentation";
-import { buildConstellationExplorationGraph } from "../../../domain/gadfly/constellation-exploration-builder";
-import type { ConstellationExplorationGraph } from "../../../domain/gadfly/constellation-types";
+import {
+  buildConstellationExplorationGraph,
+  expandConstellationExplorationGraph,
+} from "../../../domain/gadfly/constellation-exploration-builder";
+import type {
+  ConstellationBranchActionKind,
+  ConstellationExplorationGraph,
+} from "../../../domain/gadfly/constellation-types";
 import ConstellationBoard from "./constellation-board";
 import type { ConstellationBoardMode } from "./constellation-board-types";
+import { selectConstellationOwningThemeId } from "./constellation-exploration-selectors";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
 const GADFLY_NOTE_ID = "gaddr:editor:phase1";
@@ -627,10 +634,17 @@ export function MinimalEditor() {
   const lastEditAtMsRef = useRef(Date.now());
   const [constellationMode, setConstellationMode] = useState<ConstellationBoardMode>("hidden");
   const [constellationGraph, setConstellationGraph] = useState<ConstellationExplorationGraph | null>(null);
-  const [selectedThemeId, setSelectedThemeId] = useState<string | null>(null);
+  const [selectedConstellationNodeId, setSelectedConstellationNodeId] = useState<string | null>(null);
+  const [expandedConstellationThemeId, setExpandedConstellationThemeId] = useState<string | null>(null);
+  const [showOnlyCurrentBranch, setShowOnlyCurrentBranch] = useState(false);
+  const [pendingConstellationBranchAction, setPendingConstellationBranchAction] = useState<{
+    nodeId: string;
+    kind: ConstellationBranchActionKind;
+  } | null>(null);
   const constellationGraphCounterRef = useRef(0);
   const constellationModeRef = useRef<ConstellationBoardMode>("hidden");
   const hasShownConstellationForSprintRef = useRef(false);
+  const constellationBranchActionTimeoutRef = useRef<number | null>(null);
 
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
     try {
@@ -1741,6 +1755,30 @@ export function MinimalEditor() {
     constellationModeRef.current = constellationMode;
   }, [constellationMode]);
 
+  useEffect(() => {
+    return () => {
+      if (constellationBranchActionTimeoutRef.current !== null) {
+        window.clearTimeout(constellationBranchActionTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const cancelPendingConstellationBranchAction = useCallback(() => {
+    if (constellationBranchActionTimeoutRef.current !== null) {
+      window.clearTimeout(constellationBranchActionTimeoutRef.current);
+      constellationBranchActionTimeoutRef.current = null;
+    }
+
+    setPendingConstellationBranchAction(null);
+  }, []);
+
+  const resetConstellationExploration = useCallback(() => {
+    cancelPendingConstellationBranchAction();
+    setSelectedConstellationNodeId(null);
+    setExpandedConstellationThemeId(null);
+    setShowOnlyCurrentBranch(false);
+  }, [cancelPendingConstellationBranchAction]);
+
   const openConstellationExploration = useCallback(() => {
     if (!editor) {
       return false;
@@ -1763,11 +1801,14 @@ export function MinimalEditor() {
       return false;
     }
 
+    cancelPendingConstellationBranchAction();
     setConstellationGraph(result.value);
-    setSelectedThemeId(null);
+    setSelectedConstellationNodeId(null);
+    setExpandedConstellationThemeId(null);
+    setShowOnlyCurrentBranch(false);
     setConstellationMode("transition_in");
     return true;
-  }, [editor, gadflyAnnotations]);
+  }, [cancelPendingConstellationBranchAction, editor, gadflyAnnotations]);
 
   // Constellation entry trigger: sprint completed + user idle
   useEffect(() => {
@@ -1819,25 +1860,70 @@ export function MinimalEditor() {
     const exitTimer = window.setTimeout(() => {
       setConstellationMode("hidden");
       setConstellationGraph(null);
-      setSelectedThemeId(null);
+      resetConstellationExploration();
     }, 1100);
 
     return () => {
       window.clearTimeout(exitTimer);
     };
-  }, [constellationMode]);
+  }, [constellationMode, resetConstellationExploration]);
 
   const handleConstellationClose = useCallback(() => {
+    cancelPendingConstellationBranchAction();
     setConstellationMode("transition_out");
+  }, [cancelPendingConstellationBranchAction]);
+
+  const handleConstellationSelectNode = useCallback((nodeId: string) => {
+    if (!constellationGraph) {
+      return;
+    }
+
+    const nextExpandedThemeId = selectConstellationOwningThemeId(constellationGraph, nodeId);
+    const selectedNode = constellationGraph.nodes.find((node) => node.id === nodeId) ?? null;
+    if (!nextExpandedThemeId || !selectedNode) {
+      return;
+    }
+
+    setSelectedConstellationNodeId(nodeId);
+    setExpandedConstellationThemeId(nextExpandedThemeId);
+    setConstellationMode("local_exploration");
+  }, [constellationGraph]);
+
+  const handleConstellationResetExploration = useCallback(() => {
+    resetConstellationExploration();
+    setConstellationMode("atlas_overview");
+  }, [resetConstellationExploration]);
+
+  const handleConstellationToggleShowOnlyCurrentBranch = useCallback(() => {
+    setShowOnlyCurrentBranch((current) => !current);
   }, []);
 
-  const handleConstellationSelectTheme = useCallback((themeId: string) => {
-    setSelectedThemeId((current) => (current === themeId ? null : themeId));
-  }, []);
+  const handleConstellationRunBranchAction = useCallback(
+    (nodeId: string, actionKind: ConstellationBranchActionKind) => {
+      if (pendingConstellationBranchAction !== null) {
+        return;
+      }
 
-  const handleConstellationClearSelection = useCallback(() => {
-    setSelectedThemeId(null);
-  }, []);
+      setPendingConstellationBranchAction({ nodeId, kind: actionKind });
+      constellationBranchActionTimeoutRef.current = window.setTimeout(() => {
+        setConstellationGraph((currentGraph) => {
+          if (!currentGraph) {
+            return currentGraph;
+          }
+
+          return expandConstellationExplorationGraph({
+            graph: currentGraph,
+            originNodeId: nodeId,
+            actionKind,
+            generatedAt: new Date().toISOString(),
+          });
+        });
+        setPendingConstellationBranchAction(null);
+        constellationBranchActionTimeoutRef.current = null;
+      }, 640);
+    },
+    [pendingConstellationBranchAction],
+  );
 
   const handleConstellationReopen = useCallback(() => {
     setIsSprintMenuOpen(false);
@@ -2751,10 +2837,15 @@ export function MinimalEditor() {
             key={constellationGraph.id}
             graph={constellationGraph}
             mode={constellationMode}
-            selectedThemeId={selectedThemeId}
+            selectedNodeId={selectedConstellationNodeId}
+            expandedThemeId={expandedConstellationThemeId}
+            showOnlyCurrentBranch={showOnlyCurrentBranch}
+            pendingBranchAction={pendingConstellationBranchAction}
             onClose={handleConstellationClose}
-            onSelectTheme={handleConstellationSelectTheme}
-            onClearSelection={handleConstellationClearSelection}
+            onSelectNode={handleConstellationSelectNode}
+            onResetExploration={handleConstellationResetExploration}
+            onToggleShowOnlyCurrentBranch={handleConstellationToggleShowOnlyCurrentBranch}
+            onRunBranchAction={handleConstellationRunBranchAction}
           />
         ) : null}
         <div

@@ -3,9 +3,10 @@
 import { createContext, useContext } from "react";
 
 type ConstellationCallbacks = {
-  onSelectTheme: (themeId: string) => void;
-  onClearSelection: () => void;
-  selectedThemeId: string | null;
+  onSelectNode: (nodeId: string) => void;
+  onResetExploration: () => void;
+  selectedNodeId: string | null;
+  expandedThemeId: string | null;
 };
 
 const ConstellationCallbacksContext = createContext<ConstellationCallbacks | null>(null);

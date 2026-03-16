@@ -57,7 +57,7 @@ test.describe("editor workflow", () => {
     });
   });
 
-  test("constellation opens into atlas overview and can be reopened from the sprint area", async ({ page }) => {
+  test("constellation supports local exploration, branching, and atlas reset", async ({ page }) => {
     await page.goto("/editor");
 
     const editor = page.locator(".tiptap.ProseMirror").first();
@@ -85,6 +85,31 @@ test.describe("editor workflow", () => {
     await expect(constellationPanel).toBeVisible();
     await expect(constellationPanel).toContainText("Why this surfaced");
     await expect(constellationPanel).toContainText("Suggested next actions");
+    await expect(page.getByTestId("constellation-reset-button")).toBeVisible();
+
+    const firstPanelChild = page.locator("[data-testid^='constellation-panel-child-']").first();
+    await expect(firstPanelChild).toBeVisible();
+    const firstPanelChildTitle = await firstPanelChild.locator("h4").innerText();
+    await firstPanelChild.click();
+    await expect(constellationPanel).toContainText(firstPanelChildTitle);
+
+    const branchNodeLocator = page.locator("[data-testid^='constellation-node-']");
+    const branchNodeCountBeforeAction = await branchNodeLocator.count();
+    await page.locator("[data-testid^='constellation-action-']").first().click();
+    await expect
+      .poll(async () => branchNodeLocator.count(), { timeout: 5000 })
+      .toBeGreaterThan(branchNodeCountBeforeAction);
+
+    await page.getByTestId("constellation-branch-toggle").click();
+    await expect
+      .poll(async () => page.locator("[data-testid^='constellation-theme-']").count())
+      .toBe(1);
+
+    await page.getByTestId("constellation-reset-button").click();
+    await expect(page.getByTestId("constellation-panel")).toBeHidden();
+    await expect
+      .poll(async () => page.locator("[data-testid^='constellation-theme-']").count())
+      .toBeGreaterThan(1);
 
     await page.getByTestId("constellation-close-button").click();
     await expect(constellationBoard).toBeHidden({ timeout: 4000 });
