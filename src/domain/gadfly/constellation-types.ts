@@ -1,3 +1,5 @@
+// Legacy review-era Constellation types used by the current runtime.
+// Sprint 0 adds exploratory scaffolding below without switching the active UI yet.
 export type ConstellationNodeKind =
   | "claim"
   | "support"
@@ -192,4 +194,141 @@ export type ConstellationBoard = {
   nodes: ConstellationNode[];
   edges: ConstellationEdge[];
   filters: ConstellationFilters;
+};
+
+// Exploratory Constellation model scaffold for Sprint 0.
+
+export type ConstellationNodeFamily =
+  | "seed"
+  | "theme"
+  | "question"
+  | "counterargument"
+  | "evidence"
+  | "source"
+  | "research_task"
+  | "response";
+
+export type ConstellationEdgeRelation =
+  | "emerges_from"
+  | "supports"
+  | "contradicts"
+  | "questions"
+  | "derived_from"
+  | "responds_to"
+  | "expands";
+
+export type ConstellationBranchActionKind =
+  | "find_strongest_objection"
+  | "find_stronger_evidence"
+  | "ask_deeper_question"
+  | "follow_source"
+  | "respond_to_counterargument";
+
+export type ConstellationWorkingSetDisposition = "saved" | "pinned" | "use_in_draft";
+
+export type ConstellationProvenanceSource = "draft" | "annotation" | "research" | "mock";
+
+export const CONSTELLATION_NODE_FAMILIES: readonly ConstellationNodeFamily[] = [
+  "seed",
+  "theme",
+  "question",
+  "counterargument",
+  "evidence",
+  "source",
+  "research_task",
+  "response",
+];
+
+export const CONSTELLATION_EDGE_RELATIONS: readonly ConstellationEdgeRelation[] = [
+  "emerges_from",
+  "supports",
+  "contradicts",
+  "questions",
+  "derived_from",
+  "responds_to",
+  "expands",
+];
+
+export const CONSTELLATION_BRANCH_ACTION_KINDS: readonly ConstellationBranchActionKind[] = [
+  "find_strongest_objection",
+  "find_stronger_evidence",
+  "ask_deeper_question",
+  "follow_source",
+  "respond_to_counterargument",
+];
+
+export const CONSTELLATION_WORKING_SET_DISPOSITIONS: readonly ConstellationWorkingSetDisposition[] = [
+  "saved",
+  "pinned",
+  "use_in_draft",
+];
+
+export const CONSTELLATION_PROVENANCE_SOURCES: readonly ConstellationProvenanceSource[] = [
+  "draft",
+  "annotation",
+  "research",
+  "mock",
+];
+
+export type ConstellationWhySurfaced = {
+  label: string;
+  detail: string | null;
+};
+
+export type ConstellationProvenance = {
+  surfacedBy: ConstellationProvenanceSource;
+  anchorRefs: ConstellationAnchorRef[];
+  sourceRefs: ConstellationSourceRef[];
+  annotationIds: string[];
+  researchTaskIds: string[];
+};
+
+export type ConstellationBranchAction = {
+  kind: ConstellationBranchActionKind;
+  label: string;
+};
+
+export type ConstellationExplorationNode = {
+  id: string;
+  family: ConstellationNodeFamily;
+  title: string;
+  summary: string;
+  status: ConstellationNodeStatus;
+  confidenceScore: number;
+  whySurfaced: ConstellationWhySurfaced;
+  provenance: ConstellationProvenance;
+  isPinned: boolean;
+  isSavedToWorkingSet: boolean;
+  suggestedBranchActions: ConstellationBranchAction[];
+};
+
+export type ConstellationExplorationEdge = {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  relation: ConstellationEdgeRelation;
+  strength: number;
+};
+
+export type ConstellationWorkingSetItem = {
+  nodeId: string;
+  disposition: ConstellationWorkingSetDisposition;
+  addedAt: string;
+};
+
+export type ConstellationSuggestedAction = {
+  kind: ConstellationBranchActionKind;
+  label: string;
+  nodeId: string | null;
+};
+
+export type ConstellationExplorationGraph = {
+  id: string;
+  noteId: string;
+  generatedAt: string;
+  seedNodeId: string;
+  nodes: ConstellationExplorationNode[];
+  edges: ConstellationExplorationEdge[];
+  workingSet: ConstellationWorkingSetItem[];
+  suggestedActions: ConstellationSuggestedAction[];
 };
