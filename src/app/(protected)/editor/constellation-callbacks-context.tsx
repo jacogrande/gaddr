@@ -3,10 +3,9 @@
 import { createContext, useContext } from "react";
 
 type ConstellationCallbacks = {
-  onFocusTheme: (themeId: string) => void;
-  onBackToOverview: () => void;
-  focusedThemeId: string | null;
-  highestLeverageThemeId: string | null;
+  onSelectTheme: (themeId: string) => void;
+  onClearSelection: () => void;
+  selectedThemeId: string | null;
 };
 
 const ConstellationCallbacksContext = createContext<ConstellationCallbacks | null>(null);

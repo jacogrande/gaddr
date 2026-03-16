@@ -56,4 +56,41 @@ test.describe("editor workflow", () => {
       contentType: "image/png",
     });
   });
+
+  test("constellation opens into atlas overview and can be reopened from the sprint area", async ({ page }) => {
+    await page.goto("/editor");
+
+    const editor = page.locator(".tiptap.ProseMirror").first();
+    await expect(editor).toBeVisible();
+
+    await editor.click();
+    await page.keyboard.type(
+      "I think remote work makes teams stronger because it widens talent access, but I need to pressure test the argument.",
+    );
+
+    await page.getByTestId("sprint-chip").hover();
+    const sprintMenu = page.getByTestId("sprint-menu");
+    await expect(sprintMenu).toBeVisible();
+    await sprintMenu.getByRole("button", { name: /5 sec/i }).click();
+
+    const constellationBoard = page.getByTestId("constellation-board");
+    await expect(constellationBoard).toBeVisible({ timeout: 12000 });
+    await expect(page.getByTestId("constellation-seed-node")).toBeVisible();
+
+    const firstTheme = page.locator("[data-testid^='constellation-theme-']").first();
+    await expect(firstTheme).toBeVisible();
+    await firstTheme.click();
+
+    const constellationPanel = page.getByTestId("constellation-panel");
+    await expect(constellationPanel).toBeVisible();
+    await expect(constellationPanel).toContainText("Why this surfaced");
+    await expect(constellationPanel).toContainText("Suggested next actions");
+
+    await page.getByTestId("constellation-close-button").click();
+    await expect(constellationBoard).toBeHidden({ timeout: 4000 });
+    await expect(page.getByTestId("constellation-reopen-button")).toBeVisible();
+
+    await page.getByTestId("constellation-reopen-button").click();
+    await expect(constellationBoard).toBeVisible({ timeout: 5000 });
+  });
 });

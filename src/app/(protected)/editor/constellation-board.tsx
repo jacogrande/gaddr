@@ -1,309 +1,343 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
-  Controls,
-  MiniMap,
   Panel,
-  useNodesState,
-  useReactFlow,
   type Edge,
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { XIcon } from "@phosphor-icons/react";
 import type {
-  ConstellationBoard as ConstellationBoardData,
-  ConstellationLaneKind,
-  ConstellationNode,
-  ConstellationTheme,
+  ConstellationExplorationGraph,
+  ConstellationExplorationNode,
 } from "../../../domain/gadfly/constellation-types";
-import { CONSTELLATION_LANE_KINDS } from "../../../domain/gadfly/constellation-types";
-import { computeConstellationLayout } from "../../../domain/gadfly/constellation-layout";
 import {
-  scaleConstellationPositions,
-  CONSTELLATION_CANVAS_WIDTH,
   CONSTELLATION_CANVAS_HEIGHT,
-  DRAFT_NODE_HALF_WIDTH,
+  CONSTELLATION_CANVAS_WIDTH,
   DRAFT_NODE_HALF_HEIGHT,
+  DRAFT_NODE_HALF_WIDTH,
 } from "./constellation-layout-utils";
-import { ConstellationCallbacksProvider } from "./constellation-callbacks-context";
+import {
+  ConstellationCallbacksProvider,
+} from "./constellation-callbacks-context";
+import {
+  selectConstellationCanvasNodes,
+  selectConstellationGroupedThemeChildren,
+  selectConstellationNodeById,
+  selectConstellationOverviewEdges,
+} from "./constellation-exploration-selectors";
 import ConstellationThemeNode from "./constellation-theme-node";
 import ConstellationDraftNode from "./constellation-draft-node";
 import type { ConstellationBoardMode } from "./constellation-board-types";
 
 type ConstellationBoardProps = {
-  board: ConstellationBoardData;
+  graph: ConstellationExplorationGraph;
   mode: Exclude<ConstellationBoardMode, "hidden">;
-  focusedThemeId: string | null;
+  selectedThemeId: string | null;
   onClose: () => void;
-  onFocusTheme: (themeId: string) => void;
-  onBackToOverview: () => void;
+  onSelectTheme: (themeId: string) => void;
+  onClearSelection: () => void;
 };
 
-const LANE_LABELS: Record<ConstellationLaneKind, string> = {
-  supports: "Supports",
-  challenges: "Challenges",
-  questions: "Questions",
-  sources: "Sources",
+type ThemeCanvasPosition = {
+  id: string;
+  x: number;
+  y: number;
 };
 
-const NODE_KIND_LABELS: Record<ConstellationNode["kind"], string> = {
-  claim: "Claim",
-  support: "Support",
-  challenge: "Challenge",
-  question: "Question",
-  gap: "Gap",
-  source: "Source",
-};
+const ATLAS_RADIUS_X = 0.36;
+const ATLAS_RADIUS_Y = 0.32;
+const ACTION_PREVIEW_LABELS = [
+  "Find strongest objection",
+  "Find stronger evidence",
+  "Ask a deeper question",
+] as const;
 
 const nodeTypes = {
   theme: ConstellationThemeNode,
   draft: ConstellationDraftNode,
 } as const;
 
-function LeverageBar({ score }: { score: number }) {
-  const percent = Math.round(Math.max(0, Math.min(1, score)) * 100);
-  return (
-    <div className="gaddr-constellation-leverage-bar w-full mt-2">
-      <div
-        className="gaddr-constellation-leverage-fill"
-        style={{ width: `${String(percent)}%` }}
-      />
-    </div>
-  );
+function formatConfidenceSummary(score: number): string {
+  const percentage = Math.round(Math.max(0, Math.min(1, score)) * 100);
+
+  if (score >= 0.78) {
+    return `High confidence · ${String(percentage)}%`;
+  }
+
+  if (score >= 0.52) {
+    return `Moderate confidence · ${String(percentage)}%`;
+  }
+
+  return `Emerging confidence · ${String(percentage)}%`;
 }
 
-function FocusedThemeDetail({
-  theme,
-  nodes,
-  onBack,
-}: {
-  theme: ConstellationTheme;
-  nodes: ConstellationNode[];
-  onBack: () => void;
-}) {
-  const laneGroups = useMemo(() => {
-    const groups: Record<ConstellationLaneKind, ConstellationNode[]> = {
-      supports: [],
-      challenges: [],
-      questions: [],
-      sources: [],
-    };
-    for (const node of nodes) {
-      groups[node.lane].push(node);
-    }
-    return groups;
-  }, [nodes]);
+function formatProvenanceSummary(node: ConstellationExplorationNode): string {
+  const parts: string[] = [];
 
+  switch (node.provenance.surfacedBy) {
+    case "annotation":
+      parts.push("Surfaced from anchored draft text");
+      break;
+    case "draft":
+      parts.push("Built directly from the freewrite seed");
+      break;
+    case "research":
+      parts.push("Surfaced from research-backed findings");
+      break;
+    case "mock":
+      parts.push("Scaffolded from the current AI prototype output");
+      break;
+  }
+
+  if (node.provenance.anchorRefs.length > 0) {
+    parts.push(
+      `${String(node.provenance.anchorRefs.length)} anchored span${
+        node.provenance.anchorRefs.length === 1 ? "" : "s"
+      }`,
+    );
+  }
+
+  if (node.provenance.sourceRefs.length > 0) {
+    parts.push(
+      `${String(node.provenance.sourceRefs.length)} source${
+        node.provenance.sourceRefs.length === 1 ? "" : "s"
+      }`,
+    );
+  }
+
+  if (node.provenance.researchTaskIds.length > 0) {
+    parts.push(
+      `${String(node.provenance.researchTaskIds.length)} research task${
+        node.provenance.researchTaskIds.length === 1 ? "" : "s"
+      }`,
+    );
+  }
+
+  return parts.join(" · ");
+}
+
+function computeThemePositions(themeNodes: readonly ConstellationExplorationNode[]): ThemeCanvasPosition[] {
+  if (themeNodes.length === 0) {
+    return [];
+  }
+
+  return themeNodes.map((theme, index) => {
+    const angle = -Math.PI / 2 + (2 * Math.PI * index) / themeNodes.length;
+
+    return {
+      id: theme.id,
+      x: CONSTELLATION_CANVAS_WIDTH * (0.5 + ATLAS_RADIUS_X * Math.cos(angle)),
+      y: CONSTELLATION_CANVAS_HEIGHT * (0.5 + ATLAS_RADIUS_Y * Math.sin(angle)),
+    };
+  });
+}
+
+function ExplorationPanel({
+  selectedTheme,
+  onClearSelection,
+  groupedChildren,
+}: {
+  selectedTheme: ConstellationExplorationNode;
+  onClearSelection: () => void;
+  groupedChildren: ReturnType<typeof selectConstellationGroupedThemeChildren>;
+}) {
   return (
-    <div
-      className="gaddr-constellation-focus-detail p-5 overflow-y-auto"
+    <aside
+      data-testid="constellation-panel"
+      className="gaddr-constellation-panel overflow-y-auto p-5"
       style={{
-        width: "min(28rem, 90vw)",
-        maxHeight: "70vh",
+        width: "min(29rem, 90vw)",
+        maxHeight: "72vh",
       }}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
+          <div
+            className="font-semibold uppercase tracking-[0.12em]"
+            style={{ fontSize: "var(--constellation-text-xs)", color: "var(--app-muted-soft)" }}
+          >
+            Theme Exploration
+          </div>
           <h2
-            className="font-semibold leading-tight"
+            className="mt-2 font-semibold leading-tight"
             style={{ fontSize: "var(--constellation-text-2xl)", color: "var(--heading-2)" }}
           >
-            {theme.title}
+            {selectedTheme.title}
           </h2>
           <p
             className="mt-1 leading-snug"
             style={{ fontSize: "var(--constellation-text-base)", color: "var(--app-muted)" }}
           >
-            {theme.summary}
+            {selectedTheme.summary}
           </p>
         </div>
         <button
           type="button"
           className="gaddr-constellation-close p-1.5 shrink-0"
-          onClick={onBack}
-          aria-label="Back to overview"
+          onClick={onClearSelection}
+          aria-label="Close theme details"
         >
           <XIcon size={16} />
         </button>
       </div>
 
-      <div className="mt-2">
-        <LeverageBar score={theme.leverageScore} />
-      </div>
+      <div className="mt-5 space-y-4">
+        <section>
+          <h3 className="gaddr-constellation-panel-heading">Why this surfaced</h3>
+          <p className="gaddr-constellation-panel-copy">{selectedTheme.whySurfaced.label}</p>
+          {selectedTheme.whySurfaced.detail ? (
+            <p className="gaddr-constellation-panel-copy mt-1 text-[color:var(--app-muted)]">
+              {selectedTheme.whySurfaced.detail}
+            </p>
+          ) : null}
+        </section>
 
-      <div className="mt-4 space-y-4">
-        {CONSTELLATION_LANE_KINDS.map((lane) => {
-          const laneNodes = laneGroups[lane];
-          if (laneNodes.length === 0) return null;
+        <section>
+          <h3 className="gaddr-constellation-panel-heading">Confidence</h3>
+          <p className="gaddr-constellation-panel-copy">
+            {formatConfidenceSummary(selectedTheme.confidenceScore)}
+          </p>
+        </section>
 
-          return (
-            <div key={lane}>
-              <h3
-                className="font-medium mb-1.5"
-                style={{ fontSize: "var(--constellation-text-sm)", color: "var(--app-muted)", letterSpacing: "0.04em" }}
-              >
-                {LANE_LABELS[lane].toUpperCase()}
-              </h3>
-              <div className="space-y-1">
-                {laneNodes.map((node) => (
-                  <div key={node.id} className="gaddr-constellation-node-row">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`gaddr-constellation-lane-chip gaddr-constellation-lane-chip--${lane}`}
-                      >
-                        {NODE_KIND_LABELS[node.kind]}
-                      </span>
-                      <span
-                        className="font-medium"
+        <section>
+          <h3 className="gaddr-constellation-panel-heading">Provenance</h3>
+          <p className="gaddr-constellation-panel-copy">{formatProvenanceSummary(selectedTheme)}</p>
+        </section>
+
+        <section>
+          <h3 className="gaddr-constellation-panel-heading">Suggested next actions</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {ACTION_PREVIEW_LABELS.map((label) => (
+              <span key={label} className="gaddr-constellation-action-chip">
+                {label}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        {groupedChildren.map((group) => (
+          <section key={group.family}>
+            <h3 className="gaddr-constellation-panel-heading">{group.label}</h3>
+            <div className="mt-2 space-y-2">
+              {group.nodes.map((node) => (
+                <article key={node.id} className="gaddr-constellation-panel-card">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h4
+                        className="font-semibold leading-tight"
                         style={{ fontSize: "var(--constellation-text-base)", color: "var(--app-fg)" }}
                       >
                         {node.title}
-                      </span>
+                      </h4>
+                      <p className="gaddr-constellation-panel-copy mt-1">{node.summary}</p>
                     </div>
-                    <p
-                      className="mt-0.5 leading-snug"
-                      style={{ fontSize: "var(--constellation-text-sm)", color: "var(--app-muted)" }}
-                    >
-                      {node.summary}
-                    </p>
+                    <span className="gaddr-constellation-pill shrink-0">
+                      {formatConfidenceSummary(node.confidenceScore)}
+                    </span>
                   </div>
-                ))}
-              </div>
+                  <p className="gaddr-constellation-panel-meta mt-2">
+                    {formatProvenanceSummary(node)}
+                  </p>
+                </article>
+              ))}
             </div>
-          );
-        })}
+          </section>
+        ))}
       </div>
-    </div>
-  );
-}
-
-function Legend() {
-  return (
-    <div
-      className="flex flex-wrap gap-4 items-center justify-center"
-      style={{ fontSize: "var(--constellation-text-xs)", color: "var(--app-muted-soft)" }}
-    >
-      <span className="flex items-center gap-1.5">
-        <span
-          className="gaddr-constellation-legend-dot"
-          style={{ background: "var(--accent)" }}
-        />
-        Supports
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span
-          className="gaddr-constellation-legend-dot"
-          style={{ background: "var(--highlight-high)" }}
-        />
-        Challenges
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span
-          className="gaddr-constellation-legend-dot"
-          style={{ background: "var(--app-muted)" }}
-        />
-        Questions
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span
-          className="gaddr-constellation-legend-dot"
-          style={{ background: "var(--border-soft)" }}
-        />
-        Sources
-      </span>
-    </div>
+    </aside>
   );
 }
 
 function ConstellationBoardInner({
-  board,
+  graph,
   mode,
-  focusedThemeId,
+  selectedThemeId,
   onClose,
-  onFocusTheme,
-  onBackToOverview,
+  onSelectTheme,
+  onClearSelection,
 }: ConstellationBoardProps) {
-  const reactFlowInstance = useReactFlow();
-  const prevFocusedRef = useRef<string | null>(null);
-
-  const highestLeverageThemeId = board.themes[0]?.id ?? null;
-
-  const initialNodes = useMemo((): Node[] => {
-    const normalized = computeConstellationLayout(board.themes);
-    const positions = scaleConstellationPositions(normalized);
-
-    const themeNodes: Node[] = board.themes.map((theme, i) => ({
-      id: theme.id,
-      type: "theme" as const,
-      position: { x: positions[i]?.x ?? 0, y: positions[i]?.y ?? 0 },
-      data: { theme, index: i },
-      draggable: true,
-    }));
-
-    const draftNode: Node = {
-      id: "draft",
-      type: "draft" as const,
-      position: {
-        x: CONSTELLATION_CANVAS_WIDTH / 2 - DRAFT_NODE_HALF_WIDTH,
-        y: CONSTELLATION_CANVAS_HEIGHT / 2 - DRAFT_NODE_HALF_HEIGHT,
-      },
-      data: { draft: board.draft },
-      draggable: true,
-    };
-
-    return [draftNode, ...themeNodes];
-  }, [board]);
-
-  const initialEdges = useMemo((): Edge[] => {
-    return board.edges
-      .filter((edge) => edge.kind === "anchors_to_text" && edge.fromNodeId === "draft")
-      .map((edge) => ({
-        id: edge.id,
-        source: edge.fromNodeId,
-        target: edge.toNodeId,
-        type: "default",
-        animated: false,
-        style: {
-          stroke: "var(--border-soft)",
-          strokeWidth: 1,
-          opacity: 0.4,
-        },
-      }));
-  }, [board.edges]);
-
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-
-  const focusedTheme = useMemo(
-    () =>
-      focusedThemeId
-        ? board.themes.find((theme) => theme.id === focusedThemeId) ?? null
-        : null,
-    [board.themes, focusedThemeId],
+  const canvasNodes = useMemo(() => selectConstellationCanvasNodes(graph), [graph]);
+  const overviewEdges = useMemo(() => selectConstellationOverviewEdges(graph), [graph]);
+  const selectedTheme = useMemo(
+    () => selectConstellationNodeById(graph, selectedThemeId),
+    [graph, selectedThemeId],
+  );
+  const groupedChildren = useMemo(
+    () => selectConstellationGroupedThemeChildren(graph, selectedThemeId),
+    [graph, selectedThemeId],
   );
 
-  const focusedNodes = useMemo(() => {
-    if (!focusedThemeId) return [];
-    return board.nodes.filter((node) => node.themeId === focusedThemeId);
-  }, [board.nodes, focusedThemeId]);
+  const nodes = useMemo((): Node[] => {
+    const seedNode = canvasNodes.find((node) => node.id === graph.seedNodeId) ?? null;
+    const themeNodes = canvasNodes.filter((node) => node.family === "theme");
+    const themePositions = computeThemePositions(themeNodes);
 
-  // Keyboard navigation: Escape to close/back
+    const flowNodes: Node[] = [];
+
+    if (seedNode) {
+      flowNodes.push({
+        id: seedNode.id,
+        type: "draft",
+        position: {
+          x: CONSTELLATION_CANVAS_WIDTH / 2 - DRAFT_NODE_HALF_WIDTH,
+          y: CONSTELLATION_CANVAS_HEIGHT / 2 - DRAFT_NODE_HALF_HEIGHT,
+        },
+        data: { seed: seedNode },
+        draggable: false,
+      });
+    }
+
+    flowNodes.push(
+      ...themeNodes.map((theme, index) => ({
+        id: theme.id,
+        type: "theme" as const,
+        position: {
+          x: themePositions[index]?.x ?? 0,
+          y: themePositions[index]?.y ?? 0,
+        },
+        data: { theme, index },
+        draggable: false,
+      })),
+    );
+
+    return flowNodes;
+  }, [canvasNodes, graph.seedNodeId]);
+
+  const edges = useMemo((): Edge[] => {
+    return overviewEdges.map((edge) => ({
+      id: edge.id,
+      source: edge.fromNodeId,
+      target: edge.toNodeId,
+      type: "default",
+      animated: false,
+      selectable: false,
+      style: {
+        stroke: "color-mix(in srgb, var(--accent) 18%, var(--border-soft))",
+        strokeWidth: 1.2,
+        opacity: 0.72,
+      },
+    }));
+  }, [overviewEdges]);
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (focusedThemeId) {
-          event.preventDefault();
-          onBackToOverview();
-        } else {
-          event.preventDefault();
-          onClose();
-        }
+      if (event.key !== "Escape") {
+        return;
       }
+
+      event.preventDefault();
+      if (selectedThemeId) {
+        onClearSelection();
+        return;
+      }
+
+      onClose();
     },
-    [focusedThemeId, onBackToOverview, onClose],
+    [onClearSelection, onClose, selectedThemeId],
   );
 
   useEffect(() => {
@@ -313,71 +347,53 @@ function ConstellationBoardInner({
     };
   }, [handleKeyDown]);
 
-  // Animate viewport on focus/unfocus
-  useEffect(() => {
-    if (focusedThemeId && focusedThemeId !== prevFocusedRef.current) {
-      void reactFlowInstance.fitView({
-        nodes: [{ id: focusedThemeId }],
-        duration: 600,
-        padding: 1.5,
-      });
-    } else if (!focusedThemeId && prevFocusedRef.current) {
-      void reactFlowInstance.fitView({
-        duration: 600,
-        padding: 0.2,
-      });
-    }
-    prevFocusedRef.current = focusedThemeId;
-  }, [focusedThemeId, reactFlowInstance]);
-
   const isExiting = mode === "transition_out";
-
   const callbacksValue = useMemo(
-    () => ({ onFocusTheme, onBackToOverview, focusedThemeId, highestLeverageThemeId }),
-    [onFocusTheme, onBackToOverview, focusedThemeId, highestLeverageThemeId],
+    () => ({ onSelectTheme, onClearSelection, selectedThemeId }),
+    [onClearSelection, onSelectTheme, selectedThemeId],
   );
 
   return (
     <ConstellationCallbacksProvider value={callbacksValue}>
-      <div className={`gaddr-constellation-flow-container ${isExiting ? "gaddr-constellation-flow-container--exit" : ""}`}>
+      <div
+        data-testid="constellation-board"
+        className={`gaddr-constellation-flow-container ${
+          isExiting ? "gaddr-constellation-flow-container--exit" : ""
+        }`}
+      >
         <ReactFlow
           nodes={nodes}
-          edges={initialEdges}
-          onNodesChange={onNodesChange}
+          edges={edges}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.2 }}
+          fitViewOptions={{ padding: 0.22 }}
           panOnDrag
           zoomOnScroll
           zoomOnPinch
-          nodesDraggable
+          nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable
-          minZoom={0.3}
-          maxZoom={2}
+          minZoom={0.45}
+          maxZoom={1.8}
         >
-          <MiniMap position="bottom-right" />
-          <Controls position="bottom-left" showInteractive={false} />
-          <Panel position="bottom-center">
-            <Legend />
-          </Panel>
           <Panel position="top-right">
             <div className="flex flex-col items-end gap-2">
               <button
                 type="button"
+                data-testid="constellation-close-button"
                 className="gaddr-constellation-close p-2 flex items-center gap-1.5"
                 style={{ fontSize: "var(--constellation-text-base)" }}
                 onClick={onClose}
-                aria-label="Close constellation review"
+                aria-label="Close constellation exploration"
               >
                 <XIcon size={16} />
-                <span>Return to draft</span>
+                <span>Return to freewrite</span>
               </button>
-              {focusedTheme ? (
-                <FocusedThemeDetail
-                  theme={focusedTheme}
-                  nodes={focusedNodes}
-                  onBack={onBackToOverview}
+              {selectedTheme?.family === "theme" ? (
+                <ExplorationPanel
+                  selectedTheme={selectedTheme}
+                  groupedChildren={groupedChildren}
+                  onClearSelection={onClearSelection}
                 />
               ) : null}
             </div>

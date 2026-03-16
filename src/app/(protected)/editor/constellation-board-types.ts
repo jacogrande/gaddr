@@ -13,5 +13,4 @@ export type ConstellationExplorationBoardMode =
   | "draft_prep"
   | "transition_out";
 
-// Keep the active runtime on the legacy mode set until Sprint 1 switches the board UI.
-export type ConstellationBoardMode = LegacyConstellationBoardMode;
+export type ConstellationBoardMode = ConstellationExplorationBoardMode;
