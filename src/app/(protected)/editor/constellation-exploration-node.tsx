@@ -1,24 +1,15 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { ConstellationExplorationNode } from "../../../domain/gadfly/constellation-types";
 import { useConstellationCallbacks } from "./constellation-callbacks-context";
+import type { ConstellationExplorationFlowNode } from "./constellation-flow-nodes";
 import {
   formatConstellationCompactTrustSummary,
   formatConstellationConfidencePercent,
   formatConstellationSignalLabel,
 } from "./constellation-formatters";
-
-type ExplorationNode = Node<
-  {
-    node: ConstellationExplorationNode;
-    index: number;
-    isSelected: boolean;
-    isDimmed: boolean;
-  },
-  "exploration"
->;
 
 function buildNodeClassName(
   node: ConstellationExplorationNode,
@@ -54,7 +45,7 @@ function buildNodeClassName(
   return classes.join(" ");
 }
 
-function ConstellationExplorationNodeCard({ data }: NodeProps<ExplorationNode>) {
+function ConstellationExplorationNodeCard({ data }: NodeProps<ConstellationExplorationFlowNode>) {
   const { focusedCanvasItemId, onFocusCanvasItem, onSelectNode } = useConstellationCallbacks();
   const { node, index, isSelected, isDimmed } = data;
   const isFocused = focusedCanvasItemId === node.id;

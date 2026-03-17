@@ -50,10 +50,8 @@ import type {
 } from "../../../domain/gadfly/constellation-types";
 import ConstellationBoard from "./constellation-board";
 import type { ConstellationBoardMode } from "./constellation-board-types";
-import {
-  buildConstellationTalkingPointsContent,
-  selectConstellationDraftPrepGroups,
-} from "./constellation-draft-prep";
+import { buildConstellationTalkingPointsContent } from "./constellation-draft-prep-content";
+import { selectConstellationDraftPrepGroups } from "./constellation-draft-prep-selectors";
 import { selectConstellationOwningThemeId } from "./constellation-exploration-selectors";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
@@ -616,7 +614,15 @@ function appendConstellationTalkingPointsToEditor(
     return false;
   }
 
-  return editor.chain().focus("end").insertContent(content).run();
+  // Append at the current document boundary regardless of the user's stale selection,
+  // and leave the cursor after the inserted scaffold for continued drafting.
+  const appendPosition = editor.state.doc.content.size;
+
+  return editor
+    .chain()
+    .focus()
+    .insertContentAt(appendPosition, content, { updateSelection: true })
+    .run();
 }
 
 export function MinimalEditor() {
@@ -671,6 +677,14 @@ export function MinimalEditor() {
   const hasShownConstellationForSprintRef = useRef(false);
   const constellationBranchActionTimeoutRef = useRef<number | null>(null);
 
+  const clearConstellationBranchActionTimeout = useCallback(() => {
+    if (constellationBranchActionTimeoutRef.current !== null) {
+      window.clearTimeout(constellationBranchActionTimeoutRef.current);
+      constellationBranchActionTimeoutRef.current = null;
+    }
+    setPendingConstellationBranchAction(null);
+  }, []);
+
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(current.getJSON()));
@@ -709,12 +723,7 @@ export function MinimalEditor() {
     const now = Date.now();
     const option = getSprintOption(optionId);
 
-    if (constellationBranchActionTimeoutRef.current !== null) {
-      window.clearTimeout(constellationBranchActionTimeoutRef.current);
-      constellationBranchActionTimeoutRef.current = null;
-    }
-
-    setPendingConstellationBranchAction(null);
+    clearConstellationBranchActionTimeout();
     setConstellationGraph(null);
     setSelectedConstellationNodeId(null);
     setExpandedConstellationThemeId(null);
@@ -728,7 +737,7 @@ export function MinimalEditor() {
     setPausedSprintRemainingMs(null);
     setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
-  }, []);
+  }, [clearConstellationBranchActionTimeout]);
 
   const pauseSprint = useCallback(() => {
     if (sprintPhase !== "running" || sprintEndsAtMs === null) {
@@ -767,12 +776,7 @@ export function MinimalEditor() {
   }, [pausedSprintRemainingMs, sprintPhase]);
 
   const endSprint = useCallback(() => {
-    if (constellationBranchActionTimeoutRef.current !== null) {
-      window.clearTimeout(constellationBranchActionTimeoutRef.current);
-      constellationBranchActionTimeoutRef.current = null;
-    }
-
-    setPendingConstellationBranchAction(null);
+    clearConstellationBranchActionTimeout();
     setConstellationGraph(null);
     setSelectedConstellationNodeId(null);
     setExpandedConstellationThemeId(null);
@@ -783,7 +787,7 @@ export function MinimalEditor() {
     setPausedSprintRemainingMs(null);
     setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
-  }, []);
+  }, [clearConstellationBranchActionTimeout]);
 
   const addSprintTime = useCallback(() => {
     const now = Date.now();
@@ -1824,21 +1828,14 @@ export function MinimalEditor() {
     };
   }, []);
 
-  const cancelPendingConstellationBranchAction = useCallback(() => {
-    if (constellationBranchActionTimeoutRef.current !== null) {
-      window.clearTimeout(constellationBranchActionTimeoutRef.current);
-      constellationBranchActionTimeoutRef.current = null;
-    }
 
-    setPendingConstellationBranchAction(null);
-  }, []);
 
   const resetConstellationExploration = useCallback(() => {
-    cancelPendingConstellationBranchAction();
+    clearConstellationBranchActionTimeout();
     setSelectedConstellationNodeId(null);
     setExpandedConstellationThemeId(null);
     setShowOnlyCurrentBranch(false);
-  }, [cancelPendingConstellationBranchAction]);
+  }, [clearConstellationBranchActionTimeout]);
 
   const openConstellationExploration = useCallback(() => {
     if (!editor) {
@@ -1846,7 +1843,7 @@ export function MinimalEditor() {
     }
 
     if (constellationGraphRef.current) {
-      cancelPendingConstellationBranchAction();
+      clearConstellationBranchActionTimeout();
       setConstellationMode("transition_in");
       return true;
     }
@@ -1868,7 +1865,7 @@ export function MinimalEditor() {
       return false;
     }
 
-    cancelPendingConstellationBranchAction();
+    clearConstellationBranchActionTimeout();
     setConstellationGraph(result.value);
     setSelectedConstellationNodeId(null);
     setExpandedConstellationThemeId(null);
@@ -1876,7 +1873,7 @@ export function MinimalEditor() {
     setConstellationLastVisibleMode("atlas_overview");
     setConstellationMode("transition_in");
     return true;
-  }, [cancelPendingConstellationBranchAction, editor, gadflyAnnotations]);
+  }, [clearConstellationBranchActionTimeout, editor, gadflyAnnotations]);
 
   // Constellation entry trigger: sprint completed + user idle
   useEffect(() => {
@@ -1935,9 +1932,9 @@ export function MinimalEditor() {
   }, [constellationMode]);
 
   const handleConstellationClose = useCallback(() => {
-    cancelPendingConstellationBranchAction();
+    clearConstellationBranchActionTimeout();
     setConstellationMode("transition_out");
-  }, [cancelPendingConstellationBranchAction]);
+  }, [clearConstellationBranchActionTimeout]);
 
   const handleConstellationSelectNode = useCallback((nodeId: string) => {
     if (!constellationGraph) {
@@ -2065,10 +2062,10 @@ export function MinimalEditor() {
     }
 
     if (appendConstellationTalkingPointsToEditor(editor, talkingPointsContent)) {
-      cancelPendingConstellationBranchAction();
+      clearConstellationBranchActionTimeout();
       setConstellationMode("transition_out");
     }
-  }, [cancelPendingConstellationBranchAction, editor]);
+  }, [clearConstellationBranchActionTimeout, editor]);
 
   const handleConstellationReopen = useCallback(() => {
     setIsSprintMenuOpen(false);

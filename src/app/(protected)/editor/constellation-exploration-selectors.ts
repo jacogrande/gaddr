@@ -46,7 +46,7 @@ type VisibleStructuralChildrenOptions = {
   revealedSummaryParentNodeIds?: ReadonlySet<string>;
 };
 
-export type ConstellationVisibleStructuralChildren = {
+type ConstellationVisibleStructuralChildren = {
   parentNodeId: string | null;
   visibleNodes: ConstellationExplorationNode[];
   hiddenNodes: ConstellationExplorationNode[];
@@ -221,7 +221,7 @@ export function selectConstellationOverviewEdges(
   });
 }
 
-export function selectConstellationNodeChildren(
+function selectConstellationNodeChildren(
   graph: ConstellationExplorationGraph,
   nodeId: string | null,
   options?: {
@@ -391,37 +391,23 @@ export function selectConstellationOwningThemeId(
   return null;
 }
 
-export function selectConstellationVisibleCanvasNodeIds(
+export function selectConstellationVisibleCanvas(
   graph: ConstellationExplorationGraph,
   options: ConstellationCanvasSelectionOptions,
-): string[] {
+): {
+  nodes: ConstellationExplorationNode[];
+  edges: ConstellationExplorationEdge[];
+} {
   const visibleIds = createVisibleNodeIdSet(graph, options);
 
-  return graph.nodes
-    .filter((node) => visibleIds.has(node.id))
-    .map((node) => node.id);
-}
+  return {
+    nodes: graph.nodes.filter((node) => visibleIds.has(node.id)),
+    edges: graph.edges.filter((edge) => {
+      if (!edge.isStructural) {
+        return false;
+      }
 
-export function selectConstellationVisibleCanvasNodes(
-  graph: ConstellationExplorationGraph,
-  options: ConstellationCanvasSelectionOptions,
-): ConstellationExplorationNode[] {
-  const visibleIds = createVisibleNodeIdSet(graph, options);
-
-  return graph.nodes.filter((node) => visibleIds.has(node.id));
-}
-
-export function selectConstellationVisibleCanvasEdges(
-  graph: ConstellationExplorationGraph,
-  options: ConstellationCanvasSelectionOptions,
-): ConstellationExplorationEdge[] {
-  const visibleIds = createVisibleNodeIdSet(graph, options);
-
-  return graph.edges.filter((edge) => {
-    if (!edge.isStructural) {
-      return false;
-    }
-
-    return visibleIds.has(edge.fromNodeId) && visibleIds.has(edge.toNodeId);
-  });
+      return visibleIds.has(edge.fromNodeId) && visibleIds.has(edge.toNodeId);
+    }),
+  };
 }

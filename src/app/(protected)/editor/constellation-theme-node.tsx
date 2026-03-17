@@ -1,16 +1,15 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { ConstellationExplorationNode } from "../../../domain/gadfly/constellation-types";
 import { useConstellationCallbacks } from "./constellation-callbacks-context";
+import type { ConstellationThemeFlowNode } from "./constellation-flow-nodes";
 import {
   formatConstellationCompactTrustSummary,
   formatConstellationConfidencePercent,
   formatConstellationSignalLabel,
 } from "./constellation-formatters";
-
-type ThemeNode = Node<{ theme: ConstellationExplorationNode; index: number }, "theme">;
 
 function islandClass(
   theme: ConstellationExplorationNode,
@@ -41,7 +40,7 @@ function islandClass(
   return classes.join(" ");
 }
 
-function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
+function ConstellationThemeNode({ data }: NodeProps<ConstellationThemeFlowNode>) {
   const {
     expandedThemeId,
     focusedCanvasItemId,

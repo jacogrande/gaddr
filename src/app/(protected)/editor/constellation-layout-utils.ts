@@ -2,6 +2,11 @@ import type { ConstellationLayoutPosition } from "../../../domain/gadfly/constel
 
 export const CONSTELLATION_CANVAS_WIDTH = 1200;
 export const CONSTELLATION_CANVAS_HEIGHT = 900;
+export const CONSTELLATION_BRANCH_BASE_DISTANCE = 206;
+export const CONSTELLATION_BRANCH_DISTANCE_PER_DEPTH = 30;
+export const CONSTELLATION_BRANCH_MIN_SPREAD = Math.PI * 0.34;
+export const CONSTELLATION_BRANCH_MAX_SPREAD = Math.PI * 0.92;
+export const CONSTELLATION_BRANCH_SPREAD_PER_ITEM = 0.38;
 
 /** Half the rendered width of the theme node (w-56 = 224px / 2) */
 export const THEME_NODE_HALF_WIDTH = 112;
@@ -77,4 +82,15 @@ export function computeConstellationBranchPositions(
       y: rootY + Math.sin(angle) * distance,
     };
   });
+}
+
+export function computeConstellationBranchDistance(depth: number): number {
+  return CONSTELLATION_BRANCH_BASE_DISTANCE + depth * CONSTELLATION_BRANCH_DISTANCE_PER_DEPTH;
+}
+
+export function computeConstellationBranchSpread(itemCount: number): number {
+  return Math.min(
+    CONSTELLATION_BRANCH_MAX_SPREAD,
+    Math.max(CONSTELLATION_BRANCH_MIN_SPREAD, itemCount * CONSTELLATION_BRANCH_SPREAD_PER_ITEM),
+  );
 }

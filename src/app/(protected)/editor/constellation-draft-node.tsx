@@ -1,12 +1,10 @@
 "use client";
 
 import { memo } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import type { ConstellationExplorationNode } from "../../../domain/gadfly/constellation-types";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
+import type { ConstellationDraftFlowNode } from "./constellation-flow-nodes";
 
-type DraftNode = Node<{ seed: ConstellationExplorationNode }, "draft">;
-
-function ConstellationDraftNode({ data }: NodeProps<DraftNode>) {
+function ConstellationDraftNode({ data }: NodeProps<ConstellationDraftFlowNode>) {
   const { seed } = data;
   const excerpt =
     seed.summary.length > 220

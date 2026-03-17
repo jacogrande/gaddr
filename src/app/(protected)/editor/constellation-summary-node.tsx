@@ -1,20 +1,11 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useConstellationCallbacks } from "./constellation-callbacks-context";
+import type { ConstellationSummaryFlowNode } from "./constellation-flow-nodes";
 
-type SummaryNode = Node<
-  {
-    summaryNodeId: string;
-    parentNodeId: string;
-    hiddenCount: number;
-    index: number;
-  },
-  "summary"
->;
-
-function ConstellationSummaryNode({ data }: NodeProps<SummaryNode>) {
+function ConstellationSummaryNode({ data }: NodeProps<ConstellationSummaryFlowNode>) {
   const { focusedCanvasItemId, onFocusCanvasItem, onRevealSummaryNode } = useConstellationCallbacks();
   const { hiddenCount, index, parentNodeId, summaryNodeId } = data;
   const isFocused = focusedCanvasItemId === summaryNodeId;
