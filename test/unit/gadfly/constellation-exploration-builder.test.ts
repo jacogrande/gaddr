@@ -3,9 +3,11 @@ import {
   buildConstellationExplorationGraph,
   expandConstellationExplorationGraph,
 } from "../../../src/domain/gadfly/constellation-exploration-builder";
-import type { ConstellationBuildInput } from "../../../src/domain/gadfly/constellation-builder";
 import type { GadflyAnnotation } from "../../../src/domain/gadfly/types";
-import { CONSTELLATION_EDGE_RELATIONS } from "../../../src/domain/gadfly/constellation-types";
+import {
+  CONSTELLATION_EDGE_RELATIONS,
+  type ConstellationBuildInput,
+} from "../../../src/domain/gadfly/constellation-types";
 
 function annotation(
   id: string,
@@ -52,6 +54,15 @@ function defaultInput(overrides?: Partial<ConstellationBuildInput>): Constellati
 }
 
 describe("buildConstellationExplorationGraph", () => {
+  test("rejects empty draft text", () => {
+    const result = buildConstellationExplorationGraph(defaultInput({ plainText: "   \n  " }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.error.field).toBe("plainText");
+  });
+
   test("builds a graph with a seed node and global suggested actions", () => {
     const result = buildConstellationExplorationGraph(defaultInput());
 

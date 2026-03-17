@@ -5,31 +5,50 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { ConstellationExplorationNode } from "../../../domain/gadfly/constellation-types";
 import { useConstellationCallbacks } from "./constellation-callbacks-context";
 import {
+  formatConstellationCompactTrustSummary,
   formatConstellationConfidencePercent,
-  formatConstellationSurfacedByLabel,
+  formatConstellationSignalLabel,
 } from "./constellation-formatters";
 
 type ThemeNode = Node<{ theme: ConstellationExplorationNode; index: number }, "theme">;
 
 function islandClass(
-  themeId: string,
+  theme: ConstellationExplorationNode,
   expandedThemeId: string | null,
+  focusedCanvasItemId: string | null,
 ): string {
   const base = "gaddr-constellation-island";
+  const classes = [base];
 
-  if (expandedThemeId === null) {
-    return base;
+  if (theme.id === expandedThemeId) {
+    classes.push("gaddr-constellation-island--selected");
+  } else if (expandedThemeId !== null) {
+    classes.push("gaddr-constellation-island--dimmed");
   }
 
-  if (themeId === expandedThemeId) {
-    return `${base} gaddr-constellation-island--focused`;
+  if (theme.id === focusedCanvasItemId) {
+    classes.push("gaddr-constellation-island--focused-item");
   }
 
-  return `${base} gaddr-constellation-island--dimmed`;
+  if (theme.isPinned) {
+    classes.push("gaddr-constellation-island--pinned");
+  }
+
+  if (theme.isUsedInDraft) {
+    classes.push("gaddr-constellation-island--draft-ready");
+  }
+
+  return classes.join(" ");
 }
 
 function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
-  const { onResetExploration, onSelectNode, expandedThemeId } = useConstellationCallbacks();
+  const {
+    expandedThemeId,
+    focusedCanvasItemId,
+    onFocusCanvasItem,
+    onResetExploration,
+    onSelectNode,
+  } = useConstellationCallbacks();
 
   const { theme, index } = data;
   const isExpanded = expandedThemeId === theme.id;
@@ -44,7 +63,7 @@ function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
 
   return (
     <div
-      className={`${islandClass(theme.id, expandedThemeId)} gaddr-constellation-island-enter`}
+      className={`${islandClass(theme, expandedThemeId, focusedCanvasItemId)} gaddr-constellation-island-enter`}
       style={{ animationDelay: `${String(1000 + index * 120)}ms` }}
     >
       <Handle type="target" position={Position.Top} className="!invisible" />
@@ -52,14 +71,20 @@ function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
         type="button"
         aria-pressed={isExpanded}
         data-testid={`constellation-theme-${theme.id}`}
+        data-constellation-focus-id={theme.id}
         className="nodrag nopan w-56 rounded-[inherit] p-4 text-left"
+        autoFocus={focusedCanvasItemId === theme.id}
         onClick={handleClick}
+        onFocus={() => {
+          onFocusCanvasItem(theme.id);
+        }}
+        tabIndex={focusedCanvasItemId === theme.id ? 0 : -1}
       >
         <div
           className="font-semibold uppercase tracking-[0.12em]"
           style={{ fontSize: "var(--constellation-text-xs)", color: "var(--app-muted-soft)" }}
         >
-          Theme
+          {formatConstellationSignalLabel(theme.family)}
         </div>
         <h3
           className="mt-2 font-semibold leading-tight"
@@ -73,12 +98,21 @@ function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
         >
           {theme.summary}
         </p>
+        <p
+          className="mt-2 leading-snug"
+          style={{ fontSize: "var(--constellation-text-xs)", color: "var(--app-muted-soft)" }}
+        >
+          {formatConstellationCompactTrustSummary(theme)}
+        </p>
+        <p
+          className="mt-1 line-clamp-2 leading-snug"
+          style={{ fontSize: "var(--constellation-text-xs)", color: "var(--app-muted-soft)" }}
+        >
+          {theme.whySurfaced.label}
+        </p>
         <div className="mt-3 flex flex-wrap gap-1.5">
           <span className="gaddr-constellation-pill">
             {formatConstellationConfidencePercent(theme.confidenceScore)} confidence
-          </span>
-          <span className="gaddr-constellation-pill">
-            {formatConstellationSurfacedByLabel(theme.provenance.surfacedBy)}
           </span>
           {theme.isUsedInDraft ? (
             <span className="gaddr-constellation-pill">In draft</span>

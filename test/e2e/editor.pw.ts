@@ -99,6 +99,15 @@ test.describe("editor workflow", () => {
     await expect
       .poll(async () => branchNodeLocator.count(), { timeout: 5000 })
       .toBeGreaterThan(branchNodeCountBeforeAction);
+    const branchNodeCountAfterFirstAction = await branchNodeLocator.count();
+
+    await page.locator("[data-testid^='constellation-action-']").first().click();
+    const summaryNode = page.locator("[data-testid^='constellation-summary-']").first();
+    await expect(summaryNode).toBeVisible({ timeout: 5000 });
+    await summaryNode.click();
+    await expect
+      .poll(async () => branchNodeLocator.count(), { timeout: 5000 })
+      .toBeGreaterThan(branchNodeCountAfterFirstAction);
 
     await page.getByTestId("constellation-branch-toggle").click();
     await expect
@@ -117,6 +126,48 @@ test.describe("editor workflow", () => {
 
     await page.getByTestId("constellation-reopen-button").click();
     await expect(constellationBoard).toBeVisible({ timeout: 5000 });
+  });
+
+  test("constellation supports reduced-motion keyboard exploration", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/editor");
+
+    const editor = page.locator(".tiptap.ProseMirror").first();
+    await expect(editor).toBeVisible();
+
+    await editor.click();
+    await page.keyboard.type(
+      "I want to inspect the argument map by keyboard so I can move through the exploration flow without relying on a mouse.",
+    );
+
+    await page.getByTestId("sprint-chip").click();
+    const sprintMenu = page.getByTestId("sprint-menu");
+    await expect(sprintMenu).toBeVisible();
+    await sprintMenu.getByRole("button", { name: /5 sec/i }).click();
+
+    const constellationBoard = page.getByTestId("constellation-board");
+    await expect(constellationBoard).toBeVisible({ timeout: 12000 });
+
+    await page.locator("[data-testid^='constellation-theme-']").first().focus();
+    await page.keyboard.press("Enter");
+    const constellationPanel = page.getByTestId("constellation-panel");
+    await expect(constellationPanel).toBeVisible();
+
+    const firstPanelChild = page.locator("[data-testid^='constellation-panel-child-']").first();
+    const firstPanelChildTitle = await firstPanelChild.locator("h4").innerText();
+
+    for (let index = 0; index < 5; index += 1) {
+      await page.keyboard.press("ArrowRight");
+    }
+
+    await page.keyboard.press("Enter");
+    await expect(constellationPanel).toContainText(firstPanelChildTitle);
+
+    await page.keyboard.press("Escape");
+    await expect(constellationPanel).toBeHidden();
+    await page.locator("[data-testid^='constellation-theme-']").first().focus();
+    await page.keyboard.press("Escape");
+    await expect(constellationBoard).toBeHidden({ timeout: 4000 });
   });
 
   test("constellation draft prep collects nodes and appends talking points into the editor", async ({ page }) => {

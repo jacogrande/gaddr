@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Panel,
   ReactFlow,
@@ -37,19 +37,22 @@ import {
   selectConstellationCanvasNodes,
   selectConstellationGroupedNodeChildren,
   selectConstellationNodeById,
-  selectConstellationNodeChildren,
   selectConstellationNodeLineage,
+  selectConstellationVisibleStructuralChildren,
   selectConstellationVisibleCanvasEdges,
   selectConstellationVisibleCanvasNodes,
 } from "./constellation-exploration-selectors";
 import {
+  formatConstellationCompactTrustSummary,
   formatConstellationConfidenceSummary,
-  formatConstellationNodeFamilyLabel,
   formatConstellationProvenanceSummary,
+  formatConstellationSignalLabel,
 } from "./constellation-formatters";
+import { selectNextConstellationFocusableItemId } from "./constellation-keyboard";
 import type { ConstellationBoardMode } from "./constellation-board-types";
 import ConstellationDraftNode from "./constellation-draft-node";
 import ConstellationExplorationNodeCard from "./constellation-exploration-node";
+import ConstellationSummaryNode from "./constellation-summary-node";
 import ConstellationThemeNode from "./constellation-theme-node";
 
 type PendingBranchActionState = {
@@ -85,6 +88,7 @@ const nodeTypes = {
   theme: ConstellationThemeNode,
   draft: ConstellationDraftNode,
   exploration: ConstellationExplorationNodeCard,
+  summary: ConstellationSummaryNode,
 } as const;
 
 function buildPanelTitle(node: ConstellationExplorationNode): string {
@@ -92,7 +96,7 @@ function buildPanelTitle(node: ConstellationExplorationNode): string {
     return "Theme exploration";
   }
 
-  return `${formatConstellationNodeFamilyLabel(node.family)} branch`;
+  return `${formatConstellationSignalLabel(node.family)} branch`;
 }
 
 function DraftPrepDispositionBadge({
@@ -193,6 +197,9 @@ function ExplorationPanel({
           <h3 className="gaddr-constellation-panel-heading">Confidence</h3>
           <p className="gaddr-constellation-panel-copy">
             {formatConstellationConfidenceSummary(selectedNode.confidenceScore)}
+          </p>
+          <p className="gaddr-constellation-panel-meta mt-1">
+            {formatConstellationCompactTrustSummary(selectedNode)}
           </p>
         </section>
 
@@ -313,6 +320,9 @@ function ExplorationPanel({
                       >
                         {node.title}
                       </h4>
+                      <p className="gaddr-constellation-panel-meta mt-1">
+                        {formatConstellationSignalLabel(node.family)} · {formatConstellationCompactTrustSummary(node)}
+                      </p>
                       <p className="gaddr-constellation-panel-copy mt-1">{node.summary}</p>
                     </div>
                     <span className="gaddr-constellation-pill shrink-0">
@@ -437,7 +447,7 @@ function DraftPrepView({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="gaddr-constellation-panel-heading">
-                            {formatConstellationNodeFamilyLabel(item.node.family)}
+                            {formatConstellationSignalLabel(item.node.family)}
                           </div>
                           <h4
                             className="mt-1 font-semibold leading-tight"
@@ -446,6 +456,9 @@ function DraftPrepView({
                             {item.node.title}
                           </h4>
                           <p className="gaddr-constellation-panel-copy mt-1">{item.node.summary}</p>
+                          <p className="gaddr-constellation-panel-meta mt-2">
+                            {item.node.whySurfaced.label}
+                          </p>
                         </div>
                         <span className="gaddr-constellation-pill shrink-0">
                           {formatConstellationConfidenceSummary(item.node.confidenceScore)}
@@ -563,6 +576,12 @@ function ConstellationCanvas({
 >) {
   const boardRef = useRef<HTMLDivElement | null>(null);
   const reactFlow = useReactFlow();
+  const [revealedSummaryParentNodeIds, setRevealedSummaryParentNodeIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [focusedCanvasItemId, setFocusedCanvasItemId] = useState<string | null>(
+    () => selectedNodeId ?? graph.nodes.find((node) => node.family === "theme")?.id ?? null,
+  );
   const draftPrepGroups = useMemo(() => selectConstellationDraftPrepGroups(graph), [graph]);
   const workingSetNodeCount = useMemo(
     () =>
@@ -596,19 +615,21 @@ function ConstellationCanvas({
     () =>
       selectConstellationVisibleCanvasNodes(graph, {
         expandedThemeId,
+        revealedSummaryParentNodeIds,
         selectedNodeId,
         showOnlyCurrentBranch,
       }),
-    [expandedThemeId, graph, selectedNodeId, showOnlyCurrentBranch],
+    [expandedThemeId, graph, revealedSummaryParentNodeIds, selectedNodeId, showOnlyCurrentBranch],
   );
   const visibleCanvasEdges = useMemo(
     () =>
       selectConstellationVisibleCanvasEdges(graph, {
         expandedThemeId,
+        revealedSummaryParentNodeIds,
         selectedNodeId,
         showOnlyCurrentBranch,
       }),
-    [expandedThemeId, graph, selectedNodeId, showOnlyCurrentBranch],
+    [expandedThemeId, graph, revealedSummaryParentNodeIds, selectedNodeId, showOnlyCurrentBranch],
   );
   const selectedLineage = useMemo(
     () => selectConstellationNodeLineage(graph, selectedNodeId),
@@ -623,14 +644,25 @@ function ConstellationCanvas({
     [selectedLineage],
   );
   const activeBranchRootId = selectedNodeId ?? expandedThemeId;
-  const activeBranchChildIds = useMemo(
+  const themeBranchVisibility = useMemo(
     () =>
-      new Set(
-        selectConstellationNodeChildren(graph, activeBranchRootId, {
-          structuralOnly: true,
-        }).map((node) => node.id),
-      ),
-    [activeBranchRootId, graph],
+      selectConstellationVisibleStructuralChildren(graph, {
+        parentNodeId: expandedThemeId,
+        revealedSummaryParentNodeIds,
+      }),
+    [expandedThemeId, graph, revealedSummaryParentNodeIds],
+  );
+  const activeBranchVisibility = useMemo(
+    () =>
+      selectConstellationVisibleStructuralChildren(graph, {
+        parentNodeId: activeBranchRootId,
+        revealedSummaryParentNodeIds,
+      }),
+    [activeBranchRootId, graph, revealedSummaryParentNodeIds],
+  );
+  const activeBranchChildIds = useMemo(
+    () => new Set(activeBranchVisibility.visibleNodes.map((node) => node.id)),
+    [activeBranchVisibility.visibleNodes],
   );
 
   const nodes = useMemo((): Node[] => {
@@ -700,11 +732,12 @@ function ConstellationCanvas({
     const addBranchNodes = (
       rootId: string,
       childNodes: readonly ConstellationExplorationNode[],
+      hiddenChildCount: number,
       parentId: string | null,
       depth: number,
     ) => {
       const rootPosition = centerPositions.get(rootId);
-      if (!rootPosition || childNodes.length === 0) {
+      if (!rootPosition || (childNodes.length === 0 && hiddenChildCount === 0)) {
         return;
       }
 
@@ -716,16 +749,55 @@ function ConstellationCanvas({
             rootPosition.x - CONSTELLATION_CANVAS_WIDTH / 2,
           );
 
-      const positions = computeConstellationBranchPositions(childNodes, {
+      const layoutItems = [
+        ...childNodes.map((childNode) => ({
+          id: childNode.id,
+          kind: "node" as const,
+        })),
+        ...(hiddenChildCount > 0
+          ? [
+              {
+                id: `${rootId}:summary`,
+                kind: "summary" as const,
+              },
+            ]
+          : []),
+      ];
+      const positions = computeConstellationBranchPositions(layoutItems, {
         rootX: rootPosition.x,
         rootY: rootPosition.y,
         outwardAngle,
         distance: 206 + depth * 30,
-        spread: Math.min(Math.PI * 0.92, Math.max(Math.PI * 0.34, childNodes.length * 0.38)),
+        spread: Math.min(Math.PI * 0.92, Math.max(Math.PI * 0.34, layoutItems.length * 0.38)),
       });
 
       for (const [index, position] of positions.entries()) {
-        const childNode = explorationNodeLookup.get(position.nodeId);
+        const layoutItem = layoutItems[index];
+        if (!layoutItem) {
+          continue;
+        }
+
+        if (layoutItem.kind === "summary") {
+          centerPositions.set(layoutItem.id, { x: position.x, y: position.y });
+          flowNodes.push({
+            id: layoutItem.id,
+            type: "summary",
+            position: {
+              x: position.x - EXPLORATION_NODE_HALF_WIDTH,
+              y: position.y - EXPLORATION_NODE_HALF_HEIGHT,
+            },
+            data: {
+              summaryNodeId: layoutItem.id,
+              parentNodeId: rootId,
+              hiddenCount: hiddenChildCount,
+              index,
+            },
+            draggable: false,
+          });
+          continue;
+        }
+
+        const childNode = explorationNodeLookup.get(layoutItem.id);
         if (!childNode || centerPositions.has(childNode.id)) {
           continue;
         }
@@ -753,10 +825,14 @@ function ConstellationCanvas({
       }
     };
 
-    const themeChildren = selectConstellationNodeChildren(graph, expandedThemeId, {
-      structuralOnly: true,
-    }).filter((node) => visibleNodeIds.has(node.id));
-    addBranchNodes(expandedThemeId, themeChildren, graph.seedNodeId, 1);
+    const themeChildren = themeBranchVisibility.visibleNodes.filter((node) => visibleNodeIds.has(node.id));
+    addBranchNodes(
+      expandedThemeId,
+      themeChildren,
+      themeBranchVisibility.hiddenNodes.length,
+      graph.seedNodeId,
+      1,
+    );
 
     for (let index = 3; index < lineage.length; index += 1) {
       const node = lineage[index];
@@ -769,6 +845,7 @@ function ConstellationCanvas({
       addBranchNodes(
         parentNode.id,
         [node],
+        0,
         grandparentNode?.id ?? graph.seedNodeId,
         index - 1,
       );
@@ -782,9 +859,8 @@ function ConstellationCanvas({
 
       addBranchNodes(
         activeBranchRootId,
-        selectConstellationNodeChildren(graph, activeBranchRootId, {
-          structuralOnly: true,
-        }).filter((node) => visibleNodeIds.has(node.id)),
+        activeBranchVisibility.visibleNodes.filter((node) => visibleNodeIds.has(node.id)),
+        activeBranchVisibility.hiddenNodes.length,
         activeRootParentId,
         Math.max(activeLineage.length, 2),
       );
@@ -793,14 +869,23 @@ function ConstellationCanvas({
     return flowNodes;
   }, [
     activeBranchChildIds,
+    activeBranchVisibility.hiddenNodes.length,
+    activeBranchVisibility.visibleNodes,
     activeBranchRootId,
     expandedThemeId,
     graph,
     selectedLineageIds,
     selectedNodeId,
     showOnlyCurrentBranch,
+    themeBranchVisibility.hiddenNodes.length,
+    themeBranchVisibility.visibleNodes,
     visibleNodeIds,
   ]);
+
+  const focusableCanvasItemIds = useMemo(
+    () => nodes.filter((node) => node.type !== "draft").map((node) => node.id),
+    [nodes],
+  );
 
   const edges = useMemo((): Edge[] => {
     return visibleCanvasEdges.map((edge) => {
@@ -834,10 +919,51 @@ function ConstellationCanvas({
   }, []);
 
   useEffect(() => {
+    setRevealedSummaryParentNodeIds(new Set());
+  }, [expandedThemeId]);
+
+  useEffect(() => {
+    setFocusedCanvasItemId((currentFocusedItemId) => {
+      if (focusableCanvasItemIds.length === 0) {
+        return null;
+      }
+
+      if (currentFocusedItemId && focusableCanvasItemIds.includes(currentFocusedItemId)) {
+        return currentFocusedItemId;
+      }
+
+      if (selectedNodeId && focusableCanvasItemIds.includes(selectedNodeId)) {
+        return selectedNodeId;
+      }
+
+      return focusableCanvasItemIds[0] ?? null;
+    });
+  }, [focusableCanvasItemIds, selectedNodeId]);
+
+  useEffect(() => {
+    if (!focusedCanvasItemId) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const element = boardRef.current?.querySelector<HTMLElement>(
+        `[data-constellation-focus-id="${CSS.escape(focusedCanvasItemId)}"]`,
+      );
+      if (element && document.activeElement !== element) {
+        element.focus();
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [focusedCanvasItemId, nodes.length]);
+
+  useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       void reactFlow.fitView({
         duration: 0,
-        padding: expandedThemeId ? 0.18 : 0.22,
+      padding: expandedThemeId ? 0.18 : 0.22,
       });
     });
 
@@ -849,12 +975,21 @@ function ConstellationCanvas({
   const isExiting = mode === "transition_out";
   const callbacksValue = useMemo(
     () => ({
+      focusedCanvasItemId,
+      onFocusCanvasItem: setFocusedCanvasItemId,
+      onRevealSummaryNode: (parentNodeId: string) => {
+        setRevealedSummaryParentNodeIds((currentIds) => {
+          const nextIds = new Set(currentIds);
+          nextIds.add(parentNodeId);
+          return nextIds;
+        });
+      },
       onSelectNode,
       onResetExploration,
       selectedNodeId,
       expandedThemeId,
     }),
-    [expandedThemeId, onResetExploration, onSelectNode, selectedNodeId],
+    [expandedThemeId, focusedCanvasItemId, onResetExploration, onSelectNode, selectedNodeId],
   );
 
   return (
@@ -866,8 +1001,32 @@ function ConstellationCanvas({
         className={`gaddr-constellation-flow-container ${
           isExiting ? "gaddr-constellation-flow-container--exit" : ""
         }`}
-        onKeyDownCapture={(event) => {
+        onKeyDown={(event) => {
           if (event.key !== "Escape") {
+            const target = event.target;
+            const isCanvasItemTarget =
+              target instanceof HTMLElement &&
+              target.closest("[data-constellation-focus-id]") !== null;
+
+            if (
+              (event.key === "ArrowRight" ||
+                event.key === "ArrowDown" ||
+                event.key === "ArrowLeft" ||
+                event.key === "ArrowUp") &&
+              (isCanvasItemTarget || target === boardRef.current)
+            ) {
+              event.preventDefault();
+              const nextItemId = selectNextConstellationFocusableItemId(
+                focusableCanvasItemIds,
+                focusedCanvasItemId,
+                event.key === "ArrowRight" || event.key === "ArrowDown" ? "next" : "previous",
+              );
+
+              if (nextItemId) {
+                setFocusedCanvasItemId(nextItemId);
+              }
+            }
+
             return;
           }
 
@@ -1024,7 +1183,7 @@ function DraftPrepBoard({
       className={`gaddr-constellation-flow-container ${
         mode === "transition_out" ? "gaddr-constellation-flow-container--exit" : ""
       }`}
-      onKeyDownCapture={(event) => {
+      onKeyDown={(event) => {
         if (event.key !== "Escape") {
           return;
         }

@@ -1,23 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { computeConstellationLayout } from "../../../src/domain/gadfly/constellation-layout";
-import type { ConstellationTheme } from "../../../src/domain/gadfly/constellation-types";
 
-function theme(id: string, leverageScore: number): ConstellationTheme {
+function theme(id: string, leverageScore: number): { id: string; leverageScore: number } {
   return {
     id,
-    title: `Theme ${id}`,
-    summary: `Summary for ${id}`,
-    status: "suggested",
-    counts: { supports: 1, challenges: 1, questions: 1, sources: 0 },
     leverageScore,
-    draftCentrality: 0.5,
-    conflictScore: 0.5,
-    evidenceGapScore: 0.5,
-    repetitionScore: 0.5,
-    freshnessScore: 0.5,
-    confidenceScore: 0.7,
-    anchorRefs: [],
-    nodeIds: [],
   };
 }
 

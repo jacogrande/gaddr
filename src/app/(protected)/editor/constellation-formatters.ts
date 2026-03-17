@@ -8,18 +8,20 @@ export function formatConstellationConfidencePercent(score: number): string {
   return `${String(Math.round(Math.max(0, Math.min(1, score)) * 100))}%`;
 }
 
-export function formatConstellationConfidenceSummary(score: number): string {
-  const percentage = formatConstellationConfidencePercent(score);
-
+export function formatConstellationConfidenceBand(score: number): string {
   if (score >= 0.78) {
-    return `High confidence · ${percentage}`;
+    return "High confidence";
   }
 
   if (score >= 0.52) {
-    return `Moderate confidence · ${percentage}`;
+    return "Moderate confidence";
   }
 
-  return `Emerging confidence · ${percentage}`;
+  return "Emerging confidence";
+}
+
+export function formatConstellationConfidenceSummary(score: number): string {
+  return `${formatConstellationConfidenceBand(score)} · ${formatConstellationConfidencePercent(score)}`;
 }
 
 export function formatConstellationSurfacedByLabel(
@@ -37,7 +39,7 @@ export function formatConstellationSurfacedByLabel(
   }
 }
 
-export function formatConstellationNodeFamilyLabel(
+export function formatConstellationSignalLabel(
   family: ConstellationNodeFamily,
 ): string {
   switch (family) {
@@ -46,17 +48,17 @@ export function formatConstellationNodeFamilyLabel(
     case "theme":
       return "Theme";
     case "question":
-      return "Question";
+      return "Open question";
     case "counterargument":
-      return "Counterargument";
+      return "Objection";
     case "evidence":
-      return "Evidence";
+      return "Support";
     case "source":
-      return "Source";
+      return "Source trail";
     case "research_task":
-      return "Research task";
+      return "Research step";
     case "response":
-      return "Response";
+      return "Response path";
   }
 }
 
@@ -105,4 +107,10 @@ export function formatConstellationProvenanceSummary(
   }
 
   return parts.join(" · ");
+}
+
+export function formatConstellationCompactTrustSummary(
+  node: ConstellationExplorationNode,
+): string {
+  return `${formatConstellationSurfacedByLabel(node.provenance.surfacedBy)} · ${formatConstellationConfidenceBand(node.confidenceScore)}`;
 }

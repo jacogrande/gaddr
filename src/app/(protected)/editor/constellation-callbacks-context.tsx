@@ -5,8 +5,11 @@ import { createContext, useContext } from "react";
 type ConstellationCallbacks = {
   onSelectNode: (nodeId: string) => void;
   onResetExploration: () => void;
+  onFocusCanvasItem: (itemId: string) => void;
+  onRevealSummaryNode: (parentNodeId: string) => void;
   selectedNodeId: string | null;
   expandedThemeId: string | null;
+  focusedCanvasItemId: string | null;
 };
 
 const ConstellationCallbacksContext = createContext<ConstellationCallbacks | null>(null);

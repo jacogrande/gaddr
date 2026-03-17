@@ -7,6 +7,7 @@ import {
   selectConstellationThemeChildren,
   selectConstellationVisibleCanvasEdges,
   selectConstellationVisibleCanvasNodeIds,
+  selectConstellationVisibleStructuralChildren,
 } from "../../../src/app/(protected)/editor/constellation-exploration-selectors";
 import type {
   ConstellationExplorationEdge,
@@ -101,6 +102,35 @@ function graph(): ConstellationExplorationGraph {
     ],
     workingSet: [],
     suggestedActions: [],
+  };
+}
+
+function graphWithHiddenGeneratedBranch(): ConstellationExplorationGraph {
+  const baseGraph = graph();
+
+  return {
+    ...baseGraph,
+    nodes: [
+      ...baseGraph.nodes,
+      node("nested-3", "evidence", {
+        confidenceScore: 0.42,
+        generatedFromAction: "find_stronger_evidence",
+      }),
+      node("nested-4", "source", {
+        confidenceScore: 0.41,
+        generatedFromAction: "follow_source",
+      }),
+      node("nested-5", "counterargument", {
+        confidenceScore: 0.39,
+        generatedFromAction: "find_strongest_objection",
+      }),
+    ],
+    edges: [
+      ...baseGraph.edges,
+      edge("nested-extra-3", "nested-1", "nested-3", "supports"),
+      edge("nested-extra-4", "nested-1", "nested-4", "derived_from"),
+      edge("nested-extra-5", "nested-1", "nested-5", "contradicts"),
+    ],
   };
 }
 
@@ -203,6 +233,36 @@ describe("constellation exploration selectors", () => {
       "source-1",
       "response-1",
       "task-1",
+    ]);
+  });
+
+  test("summarizes low-signal generated children until a branch is revealed", () => {
+    const collapsedChildren = selectConstellationVisibleStructuralChildren(
+      graphWithHiddenGeneratedBranch(),
+      {
+        parentNodeId: "nested-1",
+      },
+    );
+    const revealedChildren = selectConstellationVisibleStructuralChildren(
+      graphWithHiddenGeneratedBranch(),
+      {
+        parentNodeId: "nested-1",
+        revealedSummaryParentNodeIds: new Set(["nested-1"]),
+      },
+    );
+
+    expect(collapsedChildren.visibleNodes.map((node) => node.id)).toEqual([
+      "nested-2",
+      "nested-3",
+      "nested-4",
+    ]);
+    expect(collapsedChildren.hiddenNodes.map((node) => node.id)).toEqual(["nested-5"]);
+    expect(revealedChildren.hiddenNodes).toEqual([]);
+    expect(revealedChildren.visibleNodes.map((node) => node.id)).toEqual([
+      "nested-2",
+      "nested-3",
+      "nested-4",
+      "nested-5",
     ]);
   });
 });

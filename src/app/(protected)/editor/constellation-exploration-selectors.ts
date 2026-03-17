@@ -13,6 +13,8 @@ const CONSTELLATION_CHILD_GROUP_ORDER = [
   "research_task",
 ] as const;
 
+const CONSTELLATION_MAX_VISIBLE_GENERATED_CHILDREN = 3;
+
 type ConstellationChildGroupFamily = (typeof CONSTELLATION_CHILD_GROUP_ORDER)[number];
 
 type ConstellationChildNodeGroup = {
@@ -25,14 +27,29 @@ type ConstellationCanvasSelectionOptions = {
   expandedThemeId: string | null;
   selectedNodeId: string | null;
   showOnlyCurrentBranch: boolean;
+  revealedSummaryParentNodeIds?: ReadonlySet<string>;
 };
 
 type GraphIndices = {
   nodeLookup: Map<string, ConstellationExplorationNode>;
+  graphNodeOrder: Map<string, number>;
   outgoingEdges: Map<string, ConstellationExplorationEdge[]>;
   incomingEdges: Map<string, ConstellationExplorationEdge[]>;
   structuralOutgoingEdges: Map<string, ConstellationExplorationEdge[]>;
   structuralIncomingEdges: Map<string, ConstellationExplorationEdge[]>;
+};
+
+type VisibleStructuralChildrenOptions = {
+  parentNodeId: string | null;
+  includeFamilies?: readonly ConstellationExplorationNode["family"][];
+  maxVisibleGeneratedChildren?: number;
+  revealedSummaryParentNodeIds?: ReadonlySet<string>;
+};
+
+export type ConstellationVisibleStructuralChildren = {
+  parentNodeId: string | null;
+  visibleNodes: ConstellationExplorationNode[];
+  hiddenNodes: ConstellationExplorationNode[];
 };
 
 const CONSTELLATION_CHILD_GROUP_LABELS: Record<ConstellationChildGroupFamily, string> = {
@@ -53,6 +70,7 @@ function createGraphIndices(graph: ConstellationExplorationGraph): GraphIndices 
   }
 
   const nodeLookup = new Map(graph.nodes.map((node) => [node.id, node]));
+  const graphNodeOrder = new Map(graph.nodes.map((node, index) => [node.id, index]));
   const outgoingEdges = new Map<string, ConstellationExplorationEdge[]>();
   const incomingEdges = new Map<string, ConstellationExplorationEdge[]>();
   const structuralOutgoingEdges = new Map<string, ConstellationExplorationEdge[]>();
@@ -82,6 +100,7 @@ function createGraphIndices(graph: ConstellationExplorationGraph): GraphIndices 
 
   const nextIndices = {
     nodeLookup,
+    graphNodeOrder,
     outgoingEdges,
     incomingEdges,
     structuralOutgoingEdges,
@@ -89,6 +108,37 @@ function createGraphIndices(graph: ConstellationExplorationGraph): GraphIndices 
   };
   GRAPH_INDEX_CACHE.set(graph, nextIndices);
   return nextIndices;
+}
+
+function orderNodesByGraphPosition(
+  graph: ConstellationExplorationGraph,
+  nodes: readonly ConstellationExplorationNode[],
+): ConstellationExplorationNode[] {
+  const { graphNodeOrder } = createGraphIndices(graph);
+
+  return [...nodes].sort(
+    (left, right) =>
+      (graphNodeOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+      (graphNodeOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
+function rankNodesBySignal(
+  graph: ConstellationExplorationGraph,
+  nodes: readonly ConstellationExplorationNode[],
+): ConstellationExplorationNode[] {
+  const { graphNodeOrder } = createGraphIndices(graph);
+
+  return [...nodes].sort((left, right) => {
+    if (left.confidenceScore !== right.confidenceScore) {
+      return right.confidenceScore - left.confidenceScore;
+    }
+
+    return (
+      (graphNodeOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+      (graphNodeOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+    );
+  });
 }
 
 function createVisibleNodeIdSet(
@@ -119,15 +169,22 @@ function createVisibleNodeIdSet(
     addNodes(lineage);
   } else {
     addNodes(selectConstellationCanvasNodes(graph));
-    addNodes(selectConstellationThemeChildren(graph, options.expandedThemeId));
+    addNodes(
+      selectConstellationVisibleStructuralChildren(graph, {
+        parentNodeId: options.expandedThemeId,
+        includeFamilies: CONSTELLATION_CHILD_GROUP_ORDER,
+        revealedSummaryParentNodeIds: options.revealedSummaryParentNodeIds,
+      }).visibleNodes,
+    );
     addNodes(lineage);
   }
 
   addNodes(
-    selectConstellationNodeChildren(graph, activeBranchRootId, {
-      structuralOnly: true,
+    selectConstellationVisibleStructuralChildren(graph, {
+      parentNodeId: activeBranchRootId,
       includeFamilies: CONSTELLATION_CHILD_GROUP_ORDER,
-    }),
+      revealedSummaryParentNodeIds: options.revealedSummaryParentNodeIds,
+    }).visibleNodes,
   );
 
   return visibleIds;
@@ -147,9 +204,7 @@ export function selectConstellationNodeById(
 export function selectConstellationCanvasNodes(
   graph: ConstellationExplorationGraph,
 ): ConstellationExplorationNode[] {
-  return graph.nodes.filter(
-    (node) => node.id === graph.seedNodeId || node.family === "theme",
-  );
+  return graph.nodes.filter((node) => node.id === graph.seedNodeId || node.family === "theme");
 }
 
 export function selectConstellationOverviewEdges(
@@ -203,6 +258,66 @@ export function selectConstellationNodeChildren(
   }
 
   return children;
+}
+
+export function selectConstellationVisibleStructuralChildren(
+  graph: ConstellationExplorationGraph,
+  options: VisibleStructuralChildrenOptions,
+): ConstellationVisibleStructuralChildren {
+  const { parentNodeId } = options;
+
+  if (!parentNodeId) {
+    return {
+      parentNodeId,
+      visibleNodes: [],
+      hiddenNodes: [],
+    };
+  }
+
+  const allChildren = selectConstellationNodeChildren(graph, parentNodeId, {
+    structuralOnly: true,
+    includeFamilies: options.includeFamilies,
+  });
+  const maxVisibleGeneratedChildren =
+    options.maxVisibleGeneratedChildren ?? CONSTELLATION_MAX_VISIBLE_GENERATED_CHILDREN;
+  const isRevealed = options.revealedSummaryParentNodeIds?.has(parentNodeId) ?? false;
+
+  if (isRevealed) {
+    return {
+      parentNodeId,
+      visibleNodes: allChildren,
+      hiddenNodes: [],
+    };
+  }
+
+  const stableChildren = orderNodesByGraphPosition(graph, allChildren);
+  const generatedChildren = stableChildren.filter((node) => node.generatedFromAction !== null);
+  if (generatedChildren.length <= maxVisibleGeneratedChildren) {
+    return {
+      parentNodeId,
+      visibleNodes: stableChildren,
+      hiddenNodes: [],
+    };
+  }
+
+  const visibleGeneratedIds = new Set(
+    rankNodesBySignal(graph, generatedChildren)
+      .slice(0, maxVisibleGeneratedChildren)
+      .map((node) => node.id),
+  );
+
+  const visibleNodes = stableChildren.filter(
+    (node) => node.generatedFromAction === null || visibleGeneratedIds.has(node.id),
+  );
+  const hiddenNodes = stableChildren.filter(
+    (node) => node.generatedFromAction !== null && !visibleGeneratedIds.has(node.id),
+  );
+
+  return {
+    parentNodeId,
+    visibleNodes,
+    hiddenNodes,
+  };
 }
 
 export function selectConstellationThemeChildren(
