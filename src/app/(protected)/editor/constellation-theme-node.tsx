@@ -80,6 +80,13 @@ function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
           <span className="gaddr-constellation-pill">
             {formatConstellationSurfacedByLabel(theme.provenance.surfacedBy)}
           </span>
+          {theme.isUsedInDraft ? (
+            <span className="gaddr-constellation-pill">In draft</span>
+          ) : null}
+          {theme.isPinned ? <span className="gaddr-constellation-pill">Pinned</span> : null}
+          {theme.isSavedToWorkingSet ? (
+            <span className="gaddr-constellation-pill">Saved</span>
+          ) : null}
         </div>
       </button>
     </div>

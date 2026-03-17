@@ -11,11 +11,13 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ArrowsOutCardinalIcon, CompassToolIcon, XIcon } from "@phosphor-icons/react";
+import { getConstellationNodeDispositions } from "../../../domain/gadfly/constellation-working-set";
 import { computeConstellationLayout } from "../../../domain/gadfly/constellation-layout";
 import type {
   ConstellationBranchActionKind,
   ConstellationExplorationGraph,
   ConstellationExplorationNode,
+  ConstellationWorkingSetDisposition,
 } from "../../../domain/gadfly/constellation-types";
 import {
   CONSTELLATION_CANVAS_HEIGHT,
@@ -30,6 +32,7 @@ import {
   scaleConstellationPositions,
 } from "./constellation-layout-utils";
 import { ConstellationCallbacksProvider } from "./constellation-callbacks-context";
+import { buildConstellationTalkingPointsContent, selectConstellationDraftPrepGroups } from "./constellation-draft-prep";
 import {
   selectConstellationCanvasNodes,
   selectConstellationGroupedNodeChildren,
@@ -66,6 +69,16 @@ type ConstellationBoardProps = {
   onResetExploration: () => void;
   onToggleShowOnlyCurrentBranch: () => void;
   onRunBranchAction: (nodeId: string, actionKind: ConstellationBranchActionKind) => void;
+  onSetWorkingSetDisposition: (
+    nodeId: string,
+    disposition: ConstellationWorkingSetDisposition,
+    enabled: boolean,
+  ) => void;
+  onRemoveNodeFromWorkingSet: (nodeId: string) => void;
+  onEnterDraftPrep: () => void;
+  onExitDraftPrep: () => void;
+  onSwapDraftPrepItemOrder: (leftNodeId: string, rightNodeId: string) => void;
+  onStartFirstDraft: () => void;
 };
 
 const nodeTypes = {
@@ -82,23 +95,49 @@ function buildPanelTitle(node: ConstellationExplorationNode): string {
   return `${formatConstellationNodeFamilyLabel(node.family)} branch`;
 }
 
+function DraftPrepDispositionBadge({
+  label,
+}: {
+  label: string;
+}) {
+  return <span className="gaddr-constellation-pill">{label}</span>;
+}
+
 function ExplorationPanel({
   selectedNode,
   selectedNodeId,
   pendingBranchAction,
   groupedChildren,
+  selectedDispositions,
+  workingSetNodeCount,
   onResetExploration,
   onRunBranchAction,
   onSelectNode,
+  onSetWorkingSetDisposition,
+  onRemoveNodeFromWorkingSet,
+  onEnterDraftPrep,
 }: {
   selectedNode: ConstellationExplorationNode;
   selectedNodeId: string | null;
   pendingBranchAction: PendingBranchActionState;
   groupedChildren: ReturnType<typeof selectConstellationGroupedNodeChildren>;
+  selectedDispositions: Set<ConstellationWorkingSetDisposition>;
+  workingSetNodeCount: number;
   onResetExploration: () => void;
   onRunBranchAction: (nodeId: string, actionKind: ConstellationBranchActionKind) => void;
   onSelectNode: (nodeId: string) => void;
+  onSetWorkingSetDisposition: (
+    nodeId: string,
+    disposition: ConstellationWorkingSetDisposition,
+    enabled: boolean,
+  ) => void;
+  onRemoveNodeFromWorkingSet: (nodeId: string) => void;
+  onEnterDraftPrep: () => void;
 }) {
+  const isSaved = selectedDispositions.has("saved");
+  const isPinned = selectedDispositions.has("pinned");
+  const isUsedInDraft = selectedDispositions.has("use_in_draft");
+
   return (
     <aside
       data-testid="constellation-panel"
@@ -164,6 +203,63 @@ function ExplorationPanel({
           </p>
         </section>
 
+        <section>
+          <h3 className="gaddr-constellation-panel-heading">Working set</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="gaddr-constellation-action-chip"
+              aria-pressed={isSaved}
+              onClick={() => {
+                onSetWorkingSetDisposition(selectedNode.id, "saved", !isSaved);
+              }}
+            >
+              {isSaved ? "Saved" : "Save to working set"}
+            </button>
+            <button
+              type="button"
+              className="gaddr-constellation-action-chip"
+              aria-pressed={isPinned}
+              onClick={() => {
+                onSetWorkingSetDisposition(selectedNode.id, "pinned", !isPinned);
+              }}
+            >
+              {isPinned ? "Pinned" : "Pin"}
+            </button>
+            <button
+              type="button"
+              className="gaddr-constellation-action-chip"
+              aria-pressed={isUsedInDraft}
+              onClick={() => {
+                onSetWorkingSetDisposition(selectedNode.id, "use_in_draft", !isUsedInDraft);
+              }}
+            >
+              {isUsedInDraft ? "In draft" : "Use in draft"}
+            </button>
+            {selectedDispositions.size > 0 ? (
+              <button
+                type="button"
+                className="gaddr-constellation-action-chip"
+                onClick={() => {
+                  onRemoveNodeFromWorkingSet(selectedNode.id);
+                }}
+              >
+                Remove from working set
+              </button>
+            ) : null}
+            {workingSetNodeCount > 0 ? (
+              <button
+                type="button"
+                data-testid="constellation-open-draft-prep"
+                className="gaddr-constellation-action-chip"
+                onClick={onEnterDraftPrep}
+              >
+                Go to draft prep
+              </button>
+            ) : null}
+          </div>
+        </section>
+
         {selectedNode.suggestedBranchActions.length > 0 ? (
           <section>
             <h3 className="gaddr-constellation-panel-heading">Suggested next actions</h3>
@@ -223,6 +319,11 @@ function ExplorationPanel({
                       {formatConstellationConfidenceSummary(node.confidenceScore)}
                     </span>
                   </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-left">
+                    {node.isUsedInDraft ? <DraftPrepDispositionBadge label="In draft" /> : null}
+                    {node.isPinned ? <DraftPrepDispositionBadge label="Pinned" /> : null}
+                    {node.isSavedToWorkingSet ? <DraftPrepDispositionBadge label="Saved" /> : null}
+                  </div>
                   <p className="gaddr-constellation-panel-meta mt-2 text-left">
                     {formatConstellationProvenanceSummary(node)}
                   </p>
@@ -236,7 +337,212 @@ function ExplorationPanel({
   );
 }
 
-function ConstellationBoardInner({
+function DraftPrepView({
+  graph,
+  onSelectNode,
+  onSetWorkingSetDisposition,
+  onRemoveNodeFromWorkingSet,
+  onSwapDraftPrepItemOrder,
+}: {
+  graph: ConstellationExplorationGraph;
+  onSelectNode: (nodeId: string) => void;
+  onSetWorkingSetDisposition: (
+    nodeId: string,
+    disposition: ConstellationWorkingSetDisposition,
+    enabled: boolean,
+  ) => void;
+  onRemoveNodeFromWorkingSet: (nodeId: string) => void;
+  onSwapDraftPrepItemOrder: (leftNodeId: string, rightNodeId: string) => void;
+}) {
+  const draftPrepGroups = useMemo(() => selectConstellationDraftPrepGroups(graph), [graph]);
+
+  if (draftPrepGroups.length === 0) {
+    return (
+      <section
+        data-testid="constellation-draft-prep"
+        className="gaddr-constellation-panel gaddr-constellation-draft-prep flex h-full items-center justify-center p-8"
+      >
+        <div className="max-w-xl text-center">
+          <div className="gaddr-constellation-panel-heading">Draft prep</div>
+          <h2
+            className="mt-2 font-semibold"
+            style={{ fontSize: "var(--constellation-text-2xl)", color: "var(--heading-2)" }}
+          >
+            Nothing collected yet
+          </h2>
+          <p className="gaddr-constellation-panel-copy mt-3">
+            Save nodes or mark them as use in draft while exploring, then return here to shape the first draft.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section
+      data-testid="constellation-draft-prep"
+      className="gaddr-constellation-draft-prep mx-auto flex h-full w-full max-w-6xl flex-col gap-5 p-5"
+    >
+      <header className="gaddr-constellation-panel p-5">
+        <div className="gaddr-constellation-panel-heading">Draft prep</div>
+        <h2
+          className="mt-2 font-semibold"
+          style={{ fontSize: "var(--constellation-text-2xl)", color: "var(--heading-2)" }}
+        >
+          Shape the first draft from collected branches
+        </h2>
+        <p className="gaddr-constellation-panel-copy mt-2">
+          Review saved findings, promote the strongest ideas into draft-ready talking points, and trim anything that should stay exploratory.
+        </p>
+      </header>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {draftPrepGroups.map((group) => {
+          const draftItemIds = group.items
+            .filter((item) => item.isUsedInDraft)
+            .map((item) => item.node.id);
+
+          return (
+            <section key={group.theme?.id ?? "ungrouped"} className="gaddr-constellation-panel p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="gaddr-constellation-panel-heading">
+                    {group.theme ? "Theme group" : "Collected group"}
+                  </div>
+                  <h3
+                    className="mt-2 font-semibold"
+                    style={{ fontSize: "var(--constellation-text-xl)", color: "var(--app-fg)" }}
+                  >
+                    {group.theme?.title ?? "Collected nodes"}
+                  </h3>
+                </div>
+                <span className="gaddr-constellation-pill">{group.items.length} items</span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {group.items.map((item) => {
+                  const draftIndex = draftItemIds.indexOf(item.node.id);
+                  const previousDraftNodeId = draftIndex > 0 ? draftItemIds[draftIndex - 1] ?? null : null;
+                  const nextDraftNodeId =
+                    draftIndex >= 0 && draftIndex < draftItemIds.length - 1
+                      ? draftItemIds[draftIndex + 1] ?? null
+                      : null;
+
+                  return (
+                    <article
+                      key={item.node.id}
+                      className="gaddr-constellation-panel-card"
+                      data-testid={`constellation-draft-item-${item.node.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="gaddr-constellation-panel-heading">
+                            {formatConstellationNodeFamilyLabel(item.node.family)}
+                          </div>
+                          <h4
+                            className="mt-1 font-semibold leading-tight"
+                            style={{ fontSize: "var(--constellation-text-base)", color: "var(--app-fg)" }}
+                          >
+                            {item.node.title}
+                          </h4>
+                          <p className="gaddr-constellation-panel-copy mt-1">{item.node.summary}</p>
+                        </div>
+                        <span className="gaddr-constellation-pill shrink-0">
+                          {formatConstellationConfidenceSummary(item.node.confidenceScore)}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {item.isUsedInDraft ? <DraftPrepDispositionBadge label="In draft" /> : null}
+                        {item.isPinned ? <DraftPrepDispositionBadge label="Pinned" /> : null}
+                        {item.isSaved ? <DraftPrepDispositionBadge label="Saved" /> : null}
+                      </div>
+
+                      <p className="gaddr-constellation-panel-meta mt-3">
+                        {formatConstellationProvenanceSummary(item.node)}
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="gaddr-constellation-action-chip"
+                          aria-pressed={item.isUsedInDraft}
+                          onClick={() => {
+                            onSetWorkingSetDisposition(item.node.id, "use_in_draft", !item.isUsedInDraft);
+                          }}
+                        >
+                          {item.isUsedInDraft ? "In draft" : "Use in draft"}
+                        </button>
+                        <button
+                          type="button"
+                          className="gaddr-constellation-action-chip"
+                          aria-pressed={item.isPinned}
+                          onClick={() => {
+                            onSetWorkingSetDisposition(item.node.id, "pinned", !item.isPinned);
+                          }}
+                        >
+                          {item.isPinned ? "Pinned" : "Pin"}
+                        </button>
+                        <button
+                          type="button"
+                          className="gaddr-constellation-action-chip"
+                          onClick={() => {
+                            onRemoveNodeFromWorkingSet(item.node.id);
+                          }}
+                        >
+                          Remove
+                        </button>
+                        {item.isUsedInDraft ? (
+                          <>
+                            <button
+                              type="button"
+                              className="gaddr-constellation-action-chip"
+                              disabled={previousDraftNodeId === null}
+                              onClick={() => {
+                                if (previousDraftNodeId) {
+                                  onSwapDraftPrepItemOrder(item.node.id, previousDraftNodeId);
+                                }
+                              }}
+                            >
+                              Move up
+                            </button>
+                            <button
+                              type="button"
+                              className="gaddr-constellation-action-chip"
+                              disabled={nextDraftNodeId === null}
+                              onClick={() => {
+                                if (nextDraftNodeId) {
+                                  onSwapDraftPrepItemOrder(item.node.id, nextDraftNodeId);
+                                }
+                              }}
+                            >
+                              Move down
+                            </button>
+                          </>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="gaddr-constellation-action-chip"
+                          onClick={() => {
+                            onSelectNode(item.node.id);
+                          }}
+                        >
+                          Return to node
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ConstellationCanvas({
   graph,
   mode,
   selectedNodeId,
@@ -248,12 +554,39 @@ function ConstellationBoardInner({
   onResetExploration,
   onToggleShowOnlyCurrentBranch,
   onRunBranchAction,
-}: ConstellationBoardProps) {
+  onSetWorkingSetDisposition,
+  onRemoveNodeFromWorkingSet,
+  onEnterDraftPrep,
+}: Omit<
+  ConstellationBoardProps,
+  "onExitDraftPrep" | "onSwapDraftPrepItemOrder" | "onStartFirstDraft"
+>) {
   const boardRef = useRef<HTMLDivElement | null>(null);
   const reactFlow = useReactFlow();
+  const draftPrepGroups = useMemo(() => selectConstellationDraftPrepGroups(graph), [graph]);
+  const workingSetNodeCount = useMemo(
+    () =>
+      draftPrepGroups.reduce((total, group) => total + group.items.length, 0),
+    [draftPrepGroups],
+  );
+  const useInDraftCount = useMemo(
+    () =>
+      draftPrepGroups.reduce(
+        (total, group) => total + group.items.filter((item) => item.isUsedInDraft).length,
+        0,
+      ),
+    [draftPrepGroups],
+  );
   const selectedNode = useMemo(
     () => selectConstellationNodeById(graph, selectedNodeId),
     [graph, selectedNodeId],
+  );
+  const selectedDispositions = useMemo(
+    () =>
+      new Set(
+        selectedNode ? getConstellationNodeDispositions(graph, selectedNode.id) : [],
+      ),
+    [graph, selectedNode],
   );
   const groupedChildren = useMemo(
     () => selectConstellationGroupedNodeChildren(graph, selectedNodeId),
@@ -591,6 +924,16 @@ function ConstellationBoardInner({
                     </button>
                   </>
                 ) : null}
+                {workingSetNodeCount > 0 ? (
+                  <button
+                    type="button"
+                    className="gaddr-constellation-close gaddr-constellation-toolbar-button p-2"
+                    data-testid="constellation-draft-prep-button"
+                    onClick={onEnterDraftPrep}
+                  >
+                    <span>Draft prep ({workingSetNodeCount})</span>
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   data-testid="constellation-close-button"
@@ -609,10 +952,22 @@ function ConstellationBoardInner({
                   selectedNodeId={selectedNodeId}
                   pendingBranchAction={pendingBranchAction}
                   groupedChildren={groupedChildren}
+                  selectedDispositions={selectedDispositions}
+                  workingSetNodeCount={workingSetNodeCount}
                   onResetExploration={onResetExploration}
                   onRunBranchAction={onRunBranchAction}
                   onSelectNode={onSelectNode}
+                  onSetWorkingSetDisposition={onSetWorkingSetDisposition}
+                  onRemoveNodeFromWorkingSet={onRemoveNodeFromWorkingSet}
+                  onEnterDraftPrep={onEnterDraftPrep}
                 />
+              ) : useInDraftCount > 0 ? (
+                <div className="gaddr-constellation-panel px-4 py-3 text-right">
+                  <div className="gaddr-constellation-panel-heading">Draft prep ready</div>
+                  <p className="gaddr-constellation-panel-copy mt-1">
+                    {useInDraftCount} draft-ready point{useInDraftCount === 1 ? "" : "s"} collected so far.
+                  </p>
+                </div>
               ) : null}
             </div>
           </Panel>
@@ -620,6 +975,136 @@ function ConstellationBoardInner({
       </div>
     </ConstellationCallbacksProvider>
   );
+}
+
+function DraftPrepBoard({
+  graph,
+  mode,
+  onClose,
+  onExitDraftPrep,
+  onSelectNode,
+  onSetWorkingSetDisposition,
+  onRemoveNodeFromWorkingSet,
+  onSwapDraftPrepItemOrder,
+  onStartFirstDraft,
+}: Pick<
+  ConstellationBoardProps,
+  | "graph"
+  | "mode"
+  | "onClose"
+  | "onExitDraftPrep"
+  | "onSelectNode"
+  | "onSetWorkingSetDisposition"
+  | "onRemoveNodeFromWorkingSet"
+  | "onSwapDraftPrepItemOrder"
+  | "onStartFirstDraft"
+>) {
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const draftPrepGroups = useMemo(() => selectConstellationDraftPrepGroups(graph), [graph]);
+  const useInDraftCount = useMemo(
+    () =>
+      draftPrepGroups.reduce(
+        (total, group) => total + group.items.filter((item) => item.isUsedInDraft).length,
+        0,
+      ),
+    [draftPrepGroups],
+  );
+  const canStartFirstDraft =
+    buildConstellationTalkingPointsContent(draftPrepGroups).length > 0;
+
+  useEffect(() => {
+    boardRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      ref={boardRef}
+      tabIndex={-1}
+      data-testid="constellation-board"
+      className={`gaddr-constellation-flow-container ${
+        mode === "transition_out" ? "gaddr-constellation-flow-container--exit" : ""
+      }`}
+      onKeyDownCapture={(event) => {
+        if (event.key !== "Escape") {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        onExitDraftPrep();
+      }}
+    >
+      <div className="pointer-events-auto absolute right-4 top-4 z-20 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          data-testid="constellation-back-to-exploration"
+          className="gaddr-constellation-close gaddr-constellation-toolbar-button p-2"
+          onClick={onExitDraftPrep}
+        >
+          <span>Back to exploration</span>
+        </button>
+        <button
+          type="button"
+          data-testid="constellation-start-first-draft"
+          className="gaddr-constellation-close gaddr-constellation-toolbar-button p-2"
+          onClick={onStartFirstDraft}
+          disabled={!canStartFirstDraft}
+        >
+          <span>Start first draft</span>
+        </button>
+        <button
+          type="button"
+          data-testid="constellation-close-button"
+          className="gaddr-constellation-close gaddr-constellation-toolbar-button p-2"
+          onClick={onClose}
+        >
+          <XIcon size={16} />
+          <span>Return to freewrite</span>
+        </button>
+      </div>
+
+      <div className="h-full overflow-y-auto pt-20">
+        <DraftPrepView
+          graph={graph}
+          onSelectNode={(nodeId) => {
+            onSelectNode(nodeId);
+            onExitDraftPrep();
+          }}
+          onSetWorkingSetDisposition={onSetWorkingSetDisposition}
+          onRemoveNodeFromWorkingSet={onRemoveNodeFromWorkingSet}
+          onSwapDraftPrepItemOrder={onSwapDraftPrepItemOrder}
+        />
+        <div className="pointer-events-none fixed bottom-5 right-5 z-10">
+          <div className="gaddr-constellation-panel px-4 py-3 text-right">
+            <div className="gaddr-constellation-panel-heading">Draft-ready points</div>
+            <p className="gaddr-constellation-panel-copy mt-1">
+              {useInDraftCount} marked for the first draft.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConstellationBoardInner(props: ConstellationBoardProps) {
+  if (props.mode === "draft_prep") {
+    return (
+      <DraftPrepBoard
+        graph={props.graph}
+        mode={props.mode}
+        onClose={props.onClose}
+        onExitDraftPrep={props.onExitDraftPrep}
+        onSelectNode={props.onSelectNode}
+        onSetWorkingSetDisposition={props.onSetWorkingSetDisposition}
+        onRemoveNodeFromWorkingSet={props.onRemoveNodeFromWorkingSet}
+        onSwapDraftPrepItemOrder={props.onSwapDraftPrepItemOrder}
+        onStartFirstDraft={props.onStartFirstDraft}
+      />
+    );
+  }
+
+  return <ConstellationCanvas {...props} />;
 }
 
 export default function ConstellationBoard(props: ConstellationBoardProps) {

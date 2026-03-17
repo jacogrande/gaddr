@@ -118,4 +118,58 @@ test.describe("editor workflow", () => {
     await page.getByTestId("constellation-reopen-button").click();
     await expect(constellationBoard).toBeVisible({ timeout: 5000 });
   });
+
+  test("constellation draft prep collects nodes and appends talking points into the editor", async ({ page }) => {
+    await page.goto("/editor");
+
+    const editor = page.locator(".tiptap.ProseMirror").first();
+    await expect(editor).toBeVisible();
+
+    await editor.click();
+    await page.keyboard.type(
+      "Remote work expands access to talent, but I need to collect the best evidence and objections before drafting.",
+    );
+
+    await page.getByTestId("sprint-chip").click();
+    const sprintMenu = page.getByTestId("sprint-menu");
+    await expect(sprintMenu).toBeVisible();
+    await sprintMenu.getByRole("button", { name: /5 sec/i }).click();
+
+    const constellationBoard = page.getByTestId("constellation-board");
+    await expect(constellationBoard).toBeVisible({ timeout: 12000 });
+
+    const firstTheme = page.locator("[data-testid^='constellation-theme-']").first();
+    await firstTheme.click();
+
+    const constellationPanel = page.getByTestId("constellation-panel");
+    await expect(constellationPanel).toBeVisible();
+    await constellationPanel.getByRole("button", { name: "Use in draft" }).click();
+    await constellationPanel.getByRole("button", { name: "Pin" }).click();
+
+    const firstPanelChild = page.locator("[data-testid^='constellation-panel-child-']").first();
+    await firstPanelChild.click();
+    await expect(constellationPanel).toBeVisible();
+    await constellationPanel.getByRole("button", { name: "Use in draft" }).click();
+
+    await page.getByTestId("constellation-open-draft-prep").click();
+
+    const draftPrep = page.getByTestId("constellation-draft-prep");
+    await expect(draftPrep).toBeVisible();
+    await expect(page.locator("[data-testid^='constellation-draft-item-']")).toHaveCount(2);
+
+    const secondDraftItem = page.locator("[data-testid^='constellation-draft-item-']").nth(1);
+    await secondDraftItem.getByRole("button", { name: "Move up" }).click();
+
+    const firstDraftItem = page.locator("[data-testid^='constellation-draft-item-']").first();
+    await firstDraftItem.getByRole("button", { name: "Remove" }).click();
+    await expect(page.locator("[data-testid^='constellation-draft-item-']")).toHaveCount(1);
+
+    await page.getByTestId("constellation-start-first-draft").click();
+    await expect(constellationBoard).toBeHidden({ timeout: 4000 });
+    await expect(page.getByTestId("editor-content")).toBeVisible();
+    await expect(page.locator(".tiptap")).toContainText("First Draft Prep");
+    await expect(page.locator(".tiptap")).toContainText(
+      "Remote work expands access to talent, but I need to collect the best evidence and objections before drafting.",
+    );
+  });
 });

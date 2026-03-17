@@ -93,6 +93,9 @@ function ConstellationExplorationNodeCard({ data }: NodeProps<ExplorationNode>) 
           <span className="gaddr-constellation-pill">
             {formatConstellationSurfacedByLabel(node.provenance.surfacedBy)}
           </span>
+          {node.isUsedInDraft ? <span className="gaddr-constellation-pill">In draft</span> : null}
+          {node.isPinned ? <span className="gaddr-constellation-pill">Pinned</span> : null}
+          {node.isSavedToWorkingSet ? <span className="gaddr-constellation-pill">Saved</span> : null}
           {node.generatedFromAction ? (
             <span className="gaddr-constellation-pill">
               {node.generatedFromAction.replaceAll("_", " ")}

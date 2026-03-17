@@ -38,12 +38,22 @@ import {
   buildConstellationExplorationGraph,
   expandConstellationExplorationGraph,
 } from "../../../domain/gadfly/constellation-exploration-builder";
+import {
+  removeConstellationNodeFromWorkingSet,
+  setConstellationWorkingSetDisposition,
+  swapConstellationUseInDraftItemOrder,
+} from "../../../domain/gadfly/constellation-working-set";
 import type {
   ConstellationBranchActionKind,
   ConstellationExplorationGraph,
+  ConstellationWorkingSetDisposition,
 } from "../../../domain/gadfly/constellation-types";
 import ConstellationBoard from "./constellation-board";
 import type { ConstellationBoardMode } from "./constellation-board-types";
+import {
+  buildConstellationTalkingPointsContent,
+  selectConstellationDraftPrepGroups,
+} from "./constellation-draft-prep";
 import { selectConstellationOwningThemeId } from "./constellation-exploration-selectors";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
@@ -598,6 +608,17 @@ function loadDoc(): JSONContent {
   }
 }
 
+function appendConstellationTalkingPointsToEditor(
+  editor: TiptapEditor,
+  content: readonly JSONContent[],
+): boolean {
+  if (content.length === 0) {
+    return false;
+  }
+
+  return editor.chain().focus("end").insertContent(content).run();
+}
+
 export function MinimalEditor() {
   const [activeModifiers, setActiveModifiers] = useState<ModifierBadge[]>([]);
   const [displayModifiers, setDisplayModifiers] = useState<DisplayModifierBadge[]>([]);
@@ -641,8 +662,12 @@ export function MinimalEditor() {
     nodeId: string;
     kind: ConstellationBranchActionKind;
   } | null>(null);
+  const [constellationLastVisibleMode, setConstellationLastVisibleMode] = useState<
+    "atlas_overview" | "local_exploration" | "draft_prep"
+  >("atlas_overview");
   const constellationGraphCounterRef = useRef(0);
   const constellationModeRef = useRef<ConstellationBoardMode>("hidden");
+  const constellationGraphRef = useRef<ConstellationExplorationGraph | null>(null);
   const hasShownConstellationForSprintRef = useRef(false);
   const constellationBranchActionTimeoutRef = useRef<number | null>(null);
 
@@ -684,6 +709,17 @@ export function MinimalEditor() {
     const now = Date.now();
     const option = getSprintOption(optionId);
 
+    if (constellationBranchActionTimeoutRef.current !== null) {
+      window.clearTimeout(constellationBranchActionTimeoutRef.current);
+      constellationBranchActionTimeoutRef.current = null;
+    }
+
+    setPendingConstellationBranchAction(null);
+    setConstellationGraph(null);
+    setSelectedConstellationNodeId(null);
+    setExpandedConstellationThemeId(null);
+    setShowOnlyCurrentBranch(false);
+    setConstellationLastVisibleMode("atlas_overview");
     hasShownConstellationForSprintRef.current = false;
     setSprintNowMs(now);
     setSprintOption(option.id);
@@ -731,6 +767,17 @@ export function MinimalEditor() {
   }, [pausedSprintRemainingMs, sprintPhase]);
 
   const endSprint = useCallback(() => {
+    if (constellationBranchActionTimeoutRef.current !== null) {
+      window.clearTimeout(constellationBranchActionTimeoutRef.current);
+      constellationBranchActionTimeoutRef.current = null;
+    }
+
+    setPendingConstellationBranchAction(null);
+    setConstellationGraph(null);
+    setSelectedConstellationNodeId(null);
+    setExpandedConstellationThemeId(null);
+    setShowOnlyCurrentBranch(false);
+    setConstellationLastVisibleMode("atlas_overview");
     setSprintPhase("idle");
     setSprintEndsAtMs(null);
     setPausedSprintRemainingMs(null);
@@ -875,6 +922,11 @@ export function MinimalEditor() {
         currentConstellationMode === "draft_prep"
       ) {
         setConstellationMode("transition_out");
+      } else if (
+        currentConstellationMode === "hidden" &&
+        constellationGraphRef.current !== null
+      ) {
+        clearConstellationSession();
       }
       schedulePersist(current);
     },
@@ -1756,6 +1808,20 @@ export function MinimalEditor() {
   }, [constellationMode]);
 
   useEffect(() => {
+    constellationGraphRef.current = constellationGraph;
+  }, [constellationGraph]);
+
+  useEffect(() => {
+    if (
+      constellationMode === "atlas_overview" ||
+      constellationMode === "local_exploration" ||
+      constellationMode === "draft_prep"
+    ) {
+      setConstellationLastVisibleMode(constellationMode);
+    }
+  }, [constellationMode]);
+
+  useEffect(() => {
     return () => {
       if (constellationBranchActionTimeoutRef.current !== null) {
         window.clearTimeout(constellationBranchActionTimeoutRef.current);
@@ -1779,9 +1845,21 @@ export function MinimalEditor() {
     setShowOnlyCurrentBranch(false);
   }, [cancelPendingConstellationBranchAction]);
 
+  const clearConstellationSession = useCallback(() => {
+    resetConstellationExploration();
+    setConstellationGraph(null);
+    setConstellationLastVisibleMode("atlas_overview");
+  }, [resetConstellationExploration]);
+
   const openConstellationExploration = useCallback(() => {
     if (!editor) {
       return false;
+    }
+
+    if (constellationGraphRef.current) {
+      cancelPendingConstellationBranchAction();
+      setConstellationMode("transition_in");
+      return true;
     }
 
     const plainText = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", "\n");
@@ -1806,6 +1884,7 @@ export function MinimalEditor() {
     setSelectedConstellationNodeId(null);
     setExpandedConstellationThemeId(null);
     setShowOnlyCurrentBranch(false);
+    setConstellationLastVisibleMode("atlas_overview");
     setConstellationMode("transition_in");
     return true;
   }, [cancelPendingConstellationBranchAction, editor, gadflyAnnotations]);
@@ -1843,13 +1922,13 @@ export function MinimalEditor() {
     }
 
     const transitionTimer = window.setTimeout(() => {
-      setConstellationMode("atlas_overview");
+      setConstellationMode(constellationLastVisibleMode);
     }, 1500);
 
     return () => {
       window.clearTimeout(transitionTimer);
     };
-  }, [constellationMode]);
+  }, [constellationLastVisibleMode, constellationMode]);
 
   // Constellation board exit transition cleanup
   useEffect(() => {
@@ -1859,14 +1938,12 @@ export function MinimalEditor() {
 
     const exitTimer = window.setTimeout(() => {
       setConstellationMode("hidden");
-      setConstellationGraph(null);
-      resetConstellationExploration();
     }, 1100);
 
     return () => {
       window.clearTimeout(exitTimer);
     };
-  }, [constellationMode, resetConstellationExploration]);
+  }, [constellationMode]);
 
   const handleConstellationClose = useCallback(() => {
     cancelPendingConstellationBranchAction();
@@ -1898,6 +1975,68 @@ export function MinimalEditor() {
     setShowOnlyCurrentBranch((current) => !current);
   }, []);
 
+  const handleConstellationSetWorkingSetDisposition = useCallback(
+    (
+      nodeId: string,
+      disposition: ConstellationWorkingSetDisposition,
+      enabled: boolean,
+    ) => {
+      setConstellationGraph((currentGraph) => {
+        if (!currentGraph) {
+          return currentGraph;
+        }
+
+        return setConstellationWorkingSetDisposition({
+          graph: currentGraph,
+          nodeId,
+          disposition,
+          enabled,
+          addedAt: new Date().toISOString(),
+        });
+      });
+    },
+    [],
+  );
+
+  const handleConstellationRemoveNodeFromWorkingSet = useCallback((nodeId: string) => {
+    setConstellationGraph((currentGraph) => {
+      if (!currentGraph) {
+        return currentGraph;
+      }
+
+      return removeConstellationNodeFromWorkingSet(currentGraph, nodeId);
+    });
+  }, []);
+
+  const handleConstellationEnterDraftPrep = useCallback(() => {
+    if (!constellationGraphRef.current || constellationGraphRef.current.workingSet.length === 0) {
+      return;
+    }
+
+    setConstellationMode("draft_prep");
+  }, []);
+
+  const handleConstellationExitDraftPrep = useCallback(() => {
+    setConstellationMode(
+      expandedConstellationThemeId || selectedConstellationNodeId
+        ? "local_exploration"
+        : "atlas_overview",
+    );
+  }, [expandedConstellationThemeId, selectedConstellationNodeId]);
+
+  const handleConstellationSwapDraftPrepItemOrder = useCallback(
+    (leftNodeId: string, rightNodeId: string) => {
+      setConstellationGraph((currentGraph) => {
+        if (!currentGraph) {
+          return currentGraph;
+        }
+
+        return swapConstellationUseInDraftItemOrder(currentGraph, leftNodeId, rightNodeId);
+      });
+    },
+    [],
+  );
+
   const handleConstellationRunBranchAction = useCallback(
     (nodeId: string, actionKind: ConstellationBranchActionKind) => {
       if (pendingConstellationBranchAction !== null) {
@@ -1924,6 +2063,23 @@ export function MinimalEditor() {
     },
     [pendingConstellationBranchAction],
   );
+
+  const handleConstellationStartFirstDraft = useCallback(() => {
+    if (!editor || !constellationGraphRef.current) {
+      return;
+    }
+
+    const draftPrepGroups = selectConstellationDraftPrepGroups(constellationGraphRef.current);
+    const talkingPointsContent = buildConstellationTalkingPointsContent(draftPrepGroups);
+    if (talkingPointsContent.length === 0) {
+      return;
+    }
+
+    if (appendConstellationTalkingPointsToEditor(editor, talkingPointsContent)) {
+      cancelPendingConstellationBranchAction();
+      setConstellationMode("transition_out");
+    }
+  }, [cancelPendingConstellationBranchAction, editor]);
 
   const handleConstellationReopen = useCallback(() => {
     setIsSprintMenuOpen(false);
@@ -2846,6 +3002,12 @@ export function MinimalEditor() {
             onResetExploration={handleConstellationResetExploration}
             onToggleShowOnlyCurrentBranch={handleConstellationToggleShowOnlyCurrentBranch}
             onRunBranchAction={handleConstellationRunBranchAction}
+            onSetWorkingSetDisposition={handleConstellationSetWorkingSetDisposition}
+            onRemoveNodeFromWorkingSet={handleConstellationRemoveNodeFromWorkingSet}
+            onEnterDraftPrep={handleConstellationEnterDraftPrep}
+            onExitDraftPrep={handleConstellationExitDraftPrep}
+            onSwapDraftPrepItemOrder={handleConstellationSwapDraftPrepItemOrder}
+            onStartFirstDraft={handleConstellationStartFirstDraft}
           />
         ) : null}
         <div

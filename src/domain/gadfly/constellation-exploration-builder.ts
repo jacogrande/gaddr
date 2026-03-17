@@ -288,6 +288,7 @@ function buildThemeNode(theme: ConstellationTheme): ConstellationExplorationNode
     provenance: buildProvenance(surfacedBy, theme.anchorRefs, []),
     isPinned: false,
     isSavedToWorkingSet: false,
+    isUsedInDraft: false,
     generatedFromAction: null,
     suggestedBranchActions: branchActionsForFamily("theme"),
   };
@@ -308,6 +309,7 @@ function buildLegacyMappedNode(node: ConstellationNode): ConstellationExploratio
     provenance: buildProvenance(surfacedBy, node.anchorRefs, node.sourceRefs),
     isPinned: node.status === "pinned",
     isSavedToWorkingSet: false,
+    isUsedInDraft: false,
     generatedFromAction: null,
     suggestedBranchActions: branchActionsForFamily(family),
   };
@@ -336,6 +338,7 @@ function buildSeedNode(
     provenance: buildProvenance("draft", draft.anchorRefs, []),
     isPinned: false,
     isSavedToWorkingSet: false,
+    isUsedInDraft: false,
     generatedFromAction: null,
     suggestedBranchActions: [
       buildBranchAction("find_strongest_objection"),
@@ -539,6 +542,7 @@ function buildGeneratedNode(
     provenance: buildProvenance("mock", [], spec.sourceRefs ?? []),
     isPinned: false,
     isSavedToWorkingSet: false,
+    isUsedInDraft: false,
     generatedFromAction: actionKind,
     suggestedBranchActions: branchActionsForFamily(spec.family),
   };

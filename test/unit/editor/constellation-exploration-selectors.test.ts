@@ -39,6 +39,7 @@ function node(
     },
     isPinned: false,
     isSavedToWorkingSet: false,
+    isUsedInDraft: false,
     generatedFromAction: null,
     suggestedBranchActions: [],
     ...overrides,
