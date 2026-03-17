@@ -146,6 +146,40 @@ describe("buildConstellationExplorationGraph", () => {
     expect(annotationNode.whySurfaced.label).toBe("Surfaced from anchored draft text");
   });
 
+  test("uses all annotations and distributes them across the initial theme structure", () => {
+    const result = buildConstellationExplorationGraph(defaultInput({
+      annotations: [
+        annotation("ann-1", 0, 10, { category: "clarity" }),
+        annotation("ann-2", 11, 20, { category: "evidence" }),
+        annotation("ann-3", 21, 30, { category: "tone" }),
+        annotation("ann-4", 31, 40, { category: "logic" }),
+        annotation("ann-5", 41, 50, {
+          category: "evidence",
+          research: {
+            needsFactCheck: true,
+            factCheckNote: "Needs a stronger source trail",
+            tasks: [],
+          },
+        }),
+        annotation("ann-6", 51, 60, { category: "structure" }),
+      ],
+    }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const annotationNodes = result.value.nodes.filter((node) => node.id.includes(":annotation:"));
+    const annotationNodeIds = new Set(annotationNodes.map((node) => node.id));
+    const parentThemeIds = new Set(
+      result.value.edges
+        .filter((edge) => edge.isStructural && annotationNodeIds.has(edge.toNodeId))
+        .map((edge) => edge.fromNodeId),
+    );
+
+    expect(annotationNodes).toHaveLength(6);
+    expect(parentThemeIds.size).toBeGreaterThan(1);
+  });
+
   test("all exploratory edges use allowed relation values", () => {
     const result = buildConstellationExplorationGraph(defaultInput());
 

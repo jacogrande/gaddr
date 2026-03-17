@@ -54,6 +54,12 @@ type ExpandConstellationExplorationGraphInput = {
   generatedAt?: string;
 };
 
+type BuildAnnotation = ConstellationBuildInput["annotations"][number];
+type ThemeAnnotationBucket = {
+  anchorRefs: ConstellationAnchorRef[];
+  annotations: BuildAnnotation[];
+};
+
 type MockBranchNodeSpec = {
   family: Exclude<ConstellationNodeFamily, "seed" | "theme">;
   title: string;
@@ -505,6 +511,47 @@ function buildThemeNode(
   };
 }
 
+function buildAnnotationAnchorRef(annotation: BuildAnnotation): ConstellationAnchorRef {
+  return {
+    annotationId: annotation.id,
+    from: annotation.anchor.from,
+    to: annotation.anchor.to,
+    quote: annotation.anchor.quote,
+  };
+}
+
+function annotationHasSourceTrail(annotation: BuildAnnotation): boolean {
+  return annotation.research.tasks.some((task) => (task.result?.sources.length ?? 0) > 0);
+}
+
+function selectThemeCandidatesForAnnotation(annotation: BuildAnnotation): number[] {
+  const baseCandidates = (() => {
+    switch (annotation.category) {
+      case "evidence":
+        return [1];
+      case "tone":
+        return [2];
+      case "logic":
+        return [0, 3];
+      case "structure":
+        return [0, 3];
+      case "clarity":
+        return [0, 2];
+    }
+  })();
+
+  const hasResearchPressure =
+    annotation.research.needsFactCheck ||
+    annotation.research.tasks.some((task) => task.kind === "fact_check" || task.kind === "context") ||
+    annotationHasSourceTrail(annotation);
+
+  if (!hasResearchPressure) {
+    return baseCandidates;
+  }
+
+  return [...new Set([4, ...baseCandidates])];
+}
+
 function buildTemplateNode(
   themeNode: ConstellationExplorationNode,
   nodeIndex: number,
@@ -538,7 +585,7 @@ function buildTemplateNode(
 }
 
 function mapAnnotationToFamily(
-  annotation: ConstellationBuildInput["annotations"][number],
+  annotation: BuildAnnotation,
 ): Exclude<ConstellationNodeFamily, "seed" | "theme"> {
   if (annotation.research.needsFactCheck) {
     return "research_task";
@@ -556,7 +603,7 @@ function mapAnnotationToFamily(
 }
 
 function buildAnnotationSourceRefs(
-  annotation: ConstellationBuildInput["annotations"][number],
+  annotation: BuildAnnotation,
   nodeId: string,
 ): ConstellationSourceRef[] {
   const sourceRefs: ConstellationSourceRef[] = [];
@@ -586,15 +633,10 @@ function buildAnnotationSourceRefs(
 
 function buildAnnotationNode(
   themeNode: ConstellationExplorationNode,
-  annotation: ConstellationBuildInput["annotations"][number],
+  annotation: BuildAnnotation,
 ): ConstellationExplorationNode {
   const family = mapAnnotationToFamily(annotation);
-  const anchorRef: ConstellationAnchorRef = {
-    annotationId: annotation.id,
-    from: annotation.anchor.from,
-    to: annotation.anchor.to,
-    quote: annotation.anchor.quote,
-  };
+  const anchorRef = buildAnnotationAnchorRef(annotation);
   const sourceRefs = buildAnnotationSourceRefs(annotation, `${themeNode.id}:annotation:${annotation.id}`);
   const surfacedBy = sourceRefs.length > 0 ? "research" : "annotation";
 
@@ -619,6 +661,28 @@ function buildThemeStructure(input: ConstellationBuildInput): {
   themes: ConstellationExplorationNode[];
   themeChildren: Map<string, ConstellationExplorationNode[]>;
 } {
+  const annotationBuckets: ThemeAnnotationBucket[] = MOCK_THEME_TEMPLATES.map(() => ({
+    anchorRefs: [],
+    annotations: [],
+  }));
+  const allocationCountByCandidateSet = new Map<string, number>();
+
+  for (const annotation of input.annotations) {
+    const candidateIndices = selectThemeCandidatesForAnnotation(annotation);
+    const allocationKey = candidateIndices.join(":");
+    const currentAllocationCount = allocationCountByCandidateSet.get(allocationKey) ?? 0;
+    const themeIndex =
+      candidateIndices[currentAllocationCount % candidateIndices.length] ?? 0;
+    allocationCountByCandidateSet.set(allocationKey, currentAllocationCount + 1);
+
+    const bucket = annotationBuckets[themeIndex] ?? annotationBuckets[0];
+    if (!bucket) {
+      continue;
+    }
+    bucket.anchorRefs.push(buildAnnotationAnchorRef(annotation));
+    bucket.annotations.push(annotation);
+  }
+
   const themes: Array<{
     node: ConstellationExplorationNode;
     children: ConstellationExplorationNode[];
@@ -626,22 +690,16 @@ function buildThemeStructure(input: ConstellationBuildInput): {
   }> = [];
 
   for (const [themeIndex, template] of MOCK_THEME_TEMPLATES.entries()) {
-    const anchorRefs =
-      themeIndex === 0
-        ? input.annotations.slice(0, 3).map((annotation) => ({
-            annotationId: annotation.id,
-            from: annotation.anchor.from,
-            to: annotation.anchor.to,
-            quote: annotation.anchor.quote,
-          }))
-        : [];
+    const bucket = annotationBuckets[themeIndex] ?? annotationBuckets[0];
+    if (!bucket) {
+      continue;
+    }
+    const anchorRefs = bucket.anchorRefs;
     const themeNode = buildThemeNode(input, template, themeIndex, anchorRefs);
     const templateNodes = template.nodes.map((node, nodeIndex) => buildTemplateNode(themeNode, nodeIndex, node));
 
-    if (themeIndex === 0) {
-      for (const annotation of input.annotations.slice(0, 3)) {
-        templateNodes.push(buildAnnotationNode(themeNode, annotation));
-      }
+    for (const annotation of bucket.annotations) {
+      templateNodes.push(buildAnnotationNode(themeNode, annotation));
     }
 
     themes.push({
