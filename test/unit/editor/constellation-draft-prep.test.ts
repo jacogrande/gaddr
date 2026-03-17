@@ -1,105 +1,38 @@
 import { describe, expect, test } from "bun:test";
+import { buildConstellationTalkingPointsContent } from "../../../src/app/(protected)/editor/constellation-draft-prep-content";
+import { selectConstellationDraftPrepGroups } from "../../../src/app/(protected)/editor/constellation-draft-prep-selectors";
+import type { ConstellationExplorationGraph } from "../../../src/domain/gadfly/constellation-types";
 import {
-  buildConstellationTalkingPointsContent,
-  selectConstellationDraftPrepGroups,
-} from "../../../src/app/(protected)/editor/constellation-draft-prep";
-import type {
-  ConstellationExplorationEdge,
-  ConstellationExplorationGraph,
-  ConstellationExplorationNode,
-  ConstellationWorkingSetItem,
-} from "../../../src/domain/gadfly/constellation-types";
-
-function node(
-  id: string,
-  family: ConstellationExplorationNode["family"],
-  overrides?: Partial<ConstellationExplorationNode>,
-): ConstellationExplorationNode {
-  return {
-    id,
-    family,
-    title: id,
-    summary: `Summary for ${id}`,
-    status: "active",
-    confidenceScore: 0.7,
-    whySurfaced: {
-      label: `Why ${id}`,
-      detail: null,
-    },
-    provenance: {
-      surfacedBy: "mock",
-      anchorRefs: [],
-      sourceRefs: [],
-      annotationIds: [],
-      researchTaskIds: [],
-    },
-    isPinned: false,
-    isSavedToWorkingSet: false,
-    isUsedInDraft: false,
-    generatedFromAction: null,
-    suggestedBranchActions: [],
-    ...overrides,
-  };
-}
-
-function edge(
-  id: string,
-  fromNodeId: string,
-  toNodeId: string,
-  relation: ConstellationExplorationEdge["relation"],
-): ConstellationExplorationEdge {
-  return {
-    id,
-    fromNodeId,
-    toNodeId,
-    relation,
-    strength: 0.7,
-    isStructural: true,
-  };
-}
-
-function workingSetItem(
-  nodeId: string,
-  disposition: ConstellationWorkingSetItem["disposition"],
-  order: number | null,
-): ConstellationWorkingSetItem {
-  return {
-    nodeId,
-    disposition,
-    addedAt: "2026-03-16T00:00:00.000Z",
-    order,
-  };
-}
+  createConstellationEdge,
+  createConstellationGraph,
+  createConstellationNode,
+  createConstellationWorkingSetItem,
+} from "../fixtures/constellation-fixtures";
 
 function graph(): ConstellationExplorationGraph {
-  return {
-    id: "graph-1",
-    noteId: "note-1",
-    generatedAt: "2026-03-16T00:00:00.000Z",
-    seedNodeId: "seed-1",
+  return createConstellationGraph({
     nodes: [
-      node("seed-1", "seed"),
-      node("theme-1", "theme", { title: "Theme One" }),
-      node("theme-2", "theme", { title: "Theme Two" }),
-      node("evidence-1", "evidence", { title: "Evidence One" }),
-      node("counter-1", "counterargument", { title: "Counter One" }),
-      node("source-1", "source", { title: "Source One" }),
+      createConstellationNode("seed-1", "seed"),
+      createConstellationNode("theme-1", "theme", { title: "Theme One" }),
+      createConstellationNode("theme-2", "theme", { title: "Theme Two" }),
+      createConstellationNode("evidence-1", "evidence", { title: "Evidence One", isUsedInDraft: true }),
+      createConstellationNode("counter-1", "counterargument", { title: "Counter One", isSavedToWorkingSet: true }),
+      createConstellationNode("source-1", "source", { title: "Source One", isUsedInDraft: true, isPinned: true }),
     ],
     edges: [
-      edge("seed-theme-1", "seed-1", "theme-1", "branches_into"),
-      edge("seed-theme-2", "seed-1", "theme-2", "branches_into"),
-      edge("theme-1-evidence", "theme-1", "evidence-1", "supports"),
-      edge("theme-1-counter", "theme-1", "counter-1", "contradicts"),
-      edge("theme-2-source", "theme-2", "source-1", "derived_from"),
+      createConstellationEdge("seed-theme-1", "seed-1", "theme-1", "branches_into"),
+      createConstellationEdge("seed-theme-2", "seed-1", "theme-2", "branches_into"),
+      createConstellationEdge("theme-1-evidence", "theme-1", "evidence-1", "supports"),
+      createConstellationEdge("theme-1-counter", "theme-1", "counter-1", "contradicts"),
+      createConstellationEdge("theme-2-source", "theme-2", "source-1", "derived_from"),
     ],
     workingSet: [
-      workingSetItem("evidence-1", "use_in_draft", 1),
-      workingSetItem("counter-1", "saved", null),
-      workingSetItem("source-1", "use_in_draft", 0),
-      workingSetItem("source-1", "pinned", null),
+      createConstellationWorkingSetItem("evidence-1", "use_in_draft", 1),
+      createConstellationWorkingSetItem("counter-1", "saved", null),
+      createConstellationWorkingSetItem("source-1", "use_in_draft", 0),
+      createConstellationWorkingSetItem("source-1", "pinned", null),
     ],
-    suggestedActions: [],
-  };
+  });
 }
 
 describe("constellation draft prep", () => {

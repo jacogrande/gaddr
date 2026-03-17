@@ -5,104 +5,49 @@ import {
   selectConstellationNodeLineage,
   selectConstellationOverviewEdges,
   selectConstellationThemeChildren,
-  selectConstellationVisibleCanvasEdges,
-  selectConstellationVisibleCanvasNodeIds,
+  selectConstellationVisibleCanvas,
   selectConstellationVisibleStructuralChildren,
 } from "../../../src/app/(protected)/editor/constellation-exploration-selectors";
-import type {
-  ConstellationExplorationEdge,
-  ConstellationExplorationGraph,
-  ConstellationExplorationNode,
-} from "../../../src/domain/gadfly/constellation-types";
-
-function node(
-  id: string,
-  family: ConstellationExplorationNode["family"],
-  overrides?: Partial<ConstellationExplorationNode>,
-): ConstellationExplorationNode {
-  return {
-    id,
-    family,
-    title: id,
-    summary: `Summary for ${id}`,
-    status: "active",
-    confidenceScore: 0.7,
-    whySurfaced: {
-      label: `Why ${id}`,
-      detail: null,
-    },
-    provenance: {
-      surfacedBy: "mock",
-      anchorRefs: [],
-      sourceRefs: [],
-      annotationIds: [],
-      researchTaskIds: [],
-    },
-    isPinned: false,
-    isSavedToWorkingSet: false,
-    isUsedInDraft: false,
-    generatedFromAction: null,
-    suggestedBranchActions: [],
-    ...overrides,
-  };
-}
-
-function edge(
-  id: string,
-  fromNodeId: string,
-  toNodeId: string,
-  relation: ConstellationExplorationEdge["relation"],
-  isStructural = true,
-): ConstellationExplorationEdge {
-  return {
-    id,
-    fromNodeId,
-    toNodeId,
-    relation,
-    strength: 0.7,
-    isStructural,
-  };
-}
+import type { ConstellationExplorationGraph } from "../../../src/domain/gadfly/constellation-types";
+import {
+  createConstellationEdge,
+  createConstellationGraph,
+  createConstellationNode,
+} from "../fixtures/constellation-fixtures";
 
 function graph(): ConstellationExplorationGraph {
-  return {
-    id: "graph-1",
-    noteId: "note-1",
-    generatedAt: "2026-03-16T00:00:00.000Z",
-    seedNodeId: "seed-1",
+  return createConstellationGraph({
     nodes: [
-      node("seed-1", "seed"),
-      node("theme-1", "theme"),
-      node("theme-2", "theme"),
-      node("counter-1", "counterargument"),
-      node("evidence-1", "evidence"),
-      node("question-1", "question"),
-      node("source-1", "source"),
-      node("response-1", "response"),
-      node("task-1", "research_task"),
-      node("nested-1", "evidence", {
+      createConstellationNode("seed-1", "seed"),
+      createConstellationNode("theme-1", "theme"),
+      createConstellationNode("theme-2", "theme"),
+      createConstellationNode("counter-1", "counterargument"),
+      createConstellationNode("evidence-1", "evidence"),
+      createConstellationNode("question-1", "question"),
+      createConstellationNode("source-1", "source"),
+      createConstellationNode("response-1", "response"),
+      createConstellationNode("task-1", "research_task"),
+      createConstellationNode("nested-1", "evidence", {
         generatedFromAction: "find_stronger_evidence",
       }),
-      node("nested-2", "question", {
+      createConstellationNode("nested-2", "question", {
         generatedFromAction: "ask_deeper_question",
       }),
     ],
     edges: [
-      edge("seed-theme-1", "seed-1", "theme-1", "branches_into"),
-      edge("seed-theme-2", "seed-1", "theme-2", "branches_into"),
-      edge("theme-counter", "theme-1", "counter-1", "contradicts"),
-      edge("theme-evidence", "theme-1", "evidence-1", "supports"),
-      edge("theme-question", "theme-1", "question-1", "questions"),
-      edge("theme-source", "theme-1", "source-1", "derived_from"),
-      edge("theme-response", "theme-1", "response-1", "responds_to"),
-      edge("theme-task", "theme-1", "task-1", "expands"),
-      edge("evidence-nested", "evidence-1", "nested-1", "supports"),
-      edge("nested-question", "nested-1", "nested-2", "questions"),
-      edge("legacy-cross-link", "question-1", "response-1", "supports", false),
+      createConstellationEdge("seed-theme-1", "seed-1", "theme-1", "branches_into"),
+      createConstellationEdge("seed-theme-2", "seed-1", "theme-2", "branches_into"),
+      createConstellationEdge("theme-counter", "theme-1", "counter-1", "contradicts"),
+      createConstellationEdge("theme-evidence", "theme-1", "evidence-1", "supports"),
+      createConstellationEdge("theme-question", "theme-1", "question-1", "questions"),
+      createConstellationEdge("theme-source", "theme-1", "source-1", "derived_from"),
+      createConstellationEdge("theme-response", "theme-1", "response-1", "responds_to"),
+      createConstellationEdge("theme-task", "theme-1", "task-1", "expands"),
+      createConstellationEdge("evidence-nested", "evidence-1", "nested-1", "supports"),
+      createConstellationEdge("nested-question", "nested-1", "nested-2", "questions"),
+      createConstellationEdge("legacy-cross-link", "question-1", "response-1", "supports", false),
     ],
-    workingSet: [],
-    suggestedActions: [],
-  };
+  });
 }
 
 function graphWithHiddenGeneratedBranch(): ConstellationExplorationGraph {
@@ -112,24 +57,24 @@ function graphWithHiddenGeneratedBranch(): ConstellationExplorationGraph {
     ...baseGraph,
     nodes: [
       ...baseGraph.nodes,
-      node("nested-3", "evidence", {
+      createConstellationNode("nested-3", "evidence", {
         confidenceScore: 0.42,
         generatedFromAction: "find_stronger_evidence",
       }),
-      node("nested-4", "source", {
+      createConstellationNode("nested-4", "source", {
         confidenceScore: 0.41,
         generatedFromAction: "follow_source",
       }),
-      node("nested-5", "counterargument", {
+      createConstellationNode("nested-5", "counterargument", {
         confidenceScore: 0.39,
         generatedFromAction: "find_strongest_objection",
       }),
     ],
     edges: [
       ...baseGraph.edges,
-      edge("nested-extra-3", "nested-1", "nested-3", "supports"),
-      edge("nested-extra-4", "nested-1", "nested-4", "derived_from"),
-      edge("nested-extra-5", "nested-1", "nested-5", "contradicts"),
+      createConstellationEdge("nested-extra-3", "nested-1", "nested-3", "supports"),
+      createConstellationEdge("nested-extra-4", "nested-1", "nested-4", "derived_from"),
+      createConstellationEdge("nested-extra-5", "nested-1", "nested-5", "contradicts"),
     ],
   };
 }
@@ -181,13 +126,13 @@ describe("constellation exploration selectors", () => {
   });
 
   test("shows atlas context plus the active local branch during exploration", () => {
-    const visibleNodeIds = selectConstellationVisibleCanvasNodeIds(graph(), {
+    const { nodes: visibleNodes } = selectConstellationVisibleCanvas(graph(), {
       expandedThemeId: "theme-1",
       selectedNodeId: "nested-1",
       showOnlyCurrentBranch: false,
     });
 
-    expect(visibleNodeIds).toEqual([
+    expect(visibleNodes.map((node) => node.id)).toEqual([
       "seed-1",
       "theme-1",
       "theme-2",
@@ -203,18 +148,13 @@ describe("constellation exploration selectors", () => {
   });
 
   test("show-only-current-branch collapses atlas siblings and non-branch nodes", () => {
-    const visibleNodeIds = selectConstellationVisibleCanvasNodeIds(graph(), {
-      expandedThemeId: "theme-1",
-      selectedNodeId: "nested-1",
-      showOnlyCurrentBranch: true,
-    });
-    const visibleEdges = selectConstellationVisibleCanvasEdges(graph(), {
+    const { nodes: visibleNodes, edges: visibleEdges } = selectConstellationVisibleCanvas(graph(), {
       expandedThemeId: "theme-1",
       selectedNodeId: "nested-1",
       showOnlyCurrentBranch: true,
     });
 
-    expect(visibleNodeIds).toEqual(["seed-1", "theme-1", "evidence-1", "nested-1", "nested-2"]);
+    expect(visibleNodes.map((node) => node.id)).toEqual(["seed-1", "theme-1", "evidence-1", "nested-1", "nested-2"]);
     expect(visibleEdges.map((edge) => edge.id)).toEqual([
       "seed-theme-1",
       "theme-evidence",

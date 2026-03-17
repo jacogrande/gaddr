@@ -4,58 +4,19 @@ import {
   setConstellationWorkingSetDisposition,
   swapConstellationUseInDraftItemOrder,
 } from "../../../src/domain/gadfly/constellation-working-set";
-import type {
-  ConstellationExplorationGraph,
-  ConstellationExplorationNode,
-} from "../../../src/domain/gadfly/constellation-types";
-
-function node(
-  id: string,
-  family: ConstellationExplorationNode["family"],
-): ConstellationExplorationNode {
-  return {
-    id,
-    family,
-    title: id,
-    summary: `Summary for ${id}`,
-    status: "active",
-    confidenceScore: 0.72,
-    whySurfaced: {
-      label: `Why ${id}`,
-      detail: null,
-    },
-    provenance: {
-      surfacedBy: "mock",
-      anchorRefs: [],
-      sourceRefs: [],
-      annotationIds: [],
-      researchTaskIds: [],
-    },
-    isPinned: false,
-    isSavedToWorkingSet: false,
-    isUsedInDraft: false,
-    generatedFromAction: null,
-    suggestedBranchActions: [],
-  };
-}
+import type { ConstellationExplorationGraph } from "../../../src/domain/gadfly/constellation-types";
+import { createConstellationGraph, createConstellationNode } from "../fixtures/constellation-fixtures";
 
 function graph(): ConstellationExplorationGraph {
-  return {
-    id: "graph-1",
-    noteId: "note-1",
-    generatedAt: "2026-03-16T00:00:00.000Z",
-    seedNodeId: "seed-1",
+  return createConstellationGraph({
     nodes: [
-      node("seed-1", "seed"),
-      node("theme-1", "theme"),
-      node("evidence-1", "evidence"),
-      node("counter-1", "counterargument"),
-      node("question-1", "question"),
+      createConstellationNode("seed-1", "seed", { confidenceScore: 0.72 }),
+      createConstellationNode("theme-1", "theme", { confidenceScore: 0.72 }),
+      createConstellationNode("evidence-1", "evidence", { confidenceScore: 0.72 }),
+      createConstellationNode("counter-1", "counterargument", { confidenceScore: 0.72 }),
+      createConstellationNode("question-1", "question", { confidenceScore: 0.72 }),
     ],
-    edges: [],
-    workingSet: [],
-    suggestedActions: [],
-  };
+  });
 }
 
 describe("constellation working set", () => {
