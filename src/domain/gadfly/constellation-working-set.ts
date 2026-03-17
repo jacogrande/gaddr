@@ -90,8 +90,7 @@ export function setConstellationWorkingSetDisposition({
   addedAt,
 }: SetConstellationWorkingSetDispositionInput): ConstellationExplorationGraph {
   const timestamp = addedAt ?? graph.generatedAt;
-  const existingItems = normalizeUseInDraftOrder(graph.workingSet);
-  const nextItems = existingItems.filter(
+  const nextItems = graph.workingSet.filter(
     (item) => !(item.nodeId === nodeId && item.disposition === disposition),
   );
 

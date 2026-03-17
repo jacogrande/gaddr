@@ -286,7 +286,7 @@ function buildAnchorRefs(input: ConstellationBuildInput): ConstellationAnchorRef
 function buildSeedSummary(input: ConstellationBuildInput): string {
   const trimmedText = input.plainText.trim();
   const excerpt = truncateText(trimmedText, EXCERPT_MAX_LENGTH);
-  const wordCount = trimmedText.split(/\s+/).filter((word) => word.length > 0).length;
+  const wordCount = trimmedText.split(/\s+/).length;
   return `${excerpt} (${String(wordCount)} words)`;
 }
 
