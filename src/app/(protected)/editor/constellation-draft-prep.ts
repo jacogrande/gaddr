@@ -34,7 +34,9 @@ function createWorkingSetState(graph: ConstellationExplorationGraph): {
   const draftOrderByNodeId = new Map<string, number>();
 
   for (const item of graph.workingSet) {
-    savedNodeIds.add(item.nodeId);
+    if (item.disposition === "saved") {
+      savedNodeIds.add(item.nodeId);
+    }
 
     if (item.disposition === "pinned") {
       pinnedNodeIds.add(item.nodeId);

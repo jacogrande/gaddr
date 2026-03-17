@@ -81,21 +81,32 @@ describe("constellation working set", () => {
       enabled: true,
       addedAt: "2026-03-16T00:00:03.000Z",
     });
+    const fullyUpdatedGraph = setConstellationWorkingSetDisposition({
+      graph: draftGraph,
+      nodeId: "counter-1",
+      disposition: "pinned",
+      enabled: true,
+      addedAt: "2026-03-16T00:00:04.000Z",
+    });
 
-    const savedNode = draftGraph.nodes.find((item) => item.id === "evidence-1");
-    const draftNode = draftGraph.nodes.find((item) => item.id === "question-1");
+    const savedNode = fullyUpdatedGraph.nodes.find((item) => item.id === "evidence-1");
+    const draftNode = fullyUpdatedGraph.nodes.find((item) => item.id === "question-1");
+    const pinnedNode = fullyUpdatedGraph.nodes.find((item) => item.id === "counter-1");
 
     expect(savedNode?.isSavedToWorkingSet).toBe(true);
     expect(savedNode?.isPinned).toBe(true);
     expect(savedNode?.isUsedInDraft).toBe(false);
-    expect(draftNode?.isSavedToWorkingSet).toBe(true);
+    expect(draftNode?.isSavedToWorkingSet).toBe(false);
     expect(draftNode?.isUsedInDraft).toBe(true);
-    expect(draftGraph.workingSet.map((item) => item.disposition)).toEqual([
+    expect(pinnedNode?.isPinned).toBe(true);
+    expect(pinnedNode?.isSavedToWorkingSet).toBe(false);
+    expect(fullyUpdatedGraph.workingSet.map((item) => item.disposition)).toEqual([
       "saved",
       "pinned",
       "use_in_draft",
+      "pinned",
     ]);
-    expect(draftGraph.workingSet.find((item) => item.nodeId === "question-1")?.order).toBe(0);
+    expect(fullyUpdatedGraph.workingSet.find((item) => item.nodeId === "question-1")?.order).toBe(0);
   });
 
   test("removing a node clears all of its working set dispositions and normalizes draft order", () => {

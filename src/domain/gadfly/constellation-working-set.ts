@@ -66,7 +66,7 @@ function syncGraphNodesWithWorkingSet(
       return {
         ...node,
         isPinned: node.status === "pinned" || dispositions.has("pinned"),
-        isSavedToWorkingSet: dispositions.size > 0,
+        isSavedToWorkingSet: dispositions.has("saved"),
         isUsedInDraft: dispositions.has("use_in_draft"),
       };
     }),

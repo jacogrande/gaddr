@@ -109,7 +109,9 @@ describe("constellation draft prep", () => {
     expect(groups.map((group) => group.theme?.id)).toEqual(["theme-1", "theme-2"]);
     expect(groups[0]?.items.map((item) => item.node.id)).toEqual(["evidence-1", "counter-1"]);
     expect(groups[1]?.items.map((item) => item.node.id)).toEqual(["source-1"]);
+    expect(groups[0]?.items[1]?.isSaved).toBe(true);
     expect(groups[1]?.items[0]?.isPinned).toBe(true);
+    expect(groups[1]?.items[0]?.isSaved).toBe(false);
     expect(groups[1]?.items[0]?.isUsedInDraft).toBe(true);
   });
 
