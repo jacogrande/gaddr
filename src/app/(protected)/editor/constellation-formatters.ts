@@ -8,7 +8,7 @@ export function formatConstellationConfidencePercent(score: number): string {
   return `${String(Math.round(Math.max(0, Math.min(1, score)) * 100))}%`;
 }
 
-export function formatConstellationConfidenceBand(score: number): string {
+function formatConstellationConfidenceBand(score: number): string {
   if (score >= 0.78) {
     return "High confidence";
   }
@@ -24,7 +24,7 @@ export function formatConstellationConfidenceSummary(score: number): string {
   return `${formatConstellationConfidenceBand(score)} · ${formatConstellationConfidencePercent(score)}`;
 }
 
-export function formatConstellationSurfacedByLabel(
+function formatConstellationSurfacedByLabel(
   source: ConstellationProvenanceSource,
 ): string {
   switch (source) {

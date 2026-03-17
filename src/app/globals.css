@@ -33,6 +33,14 @@
   --highlight-low: #b49368;
   --highlight-medium: #b17845;
   --highlight-high: #99542f;
+  --constellation-pinned: #a56419;
+  --constellation-draft-ready: #eef6ee;
+  --constellation-counterargument: #9e2f2f;
+  --constellation-evidence: #1f6b53;
+  --constellation-question: #866d17;
+  --constellation-source: #265e88;
+  --constellation-response: #6e4b8f;
+  --constellation-research-task: #495970;
   --theme-toggle-border: color-mix(in srgb, var(--border-strong) 80%, transparent);
   --theme-toggle-bg: color-mix(in srgb, var(--surface-1) 92%, transparent);
   --theme-toggle-fg: var(--app-muted);
@@ -71,6 +79,14 @@ html[data-theme="dark"] {
   --highlight-low: #9d7a4d;
   --highlight-medium: #c28544;
   --highlight-high: #d46a49;
+  --constellation-pinned: #d3a46a;
+  --constellation-draft-ready: #38503d;
+  --constellation-counterargument: #cc7777;
+  --constellation-evidence: #5ea98a;
+  --constellation-question: #c1a256;
+  --constellation-source: #67a7d9;
+  --constellation-response: #ae8cd4;
+  --constellation-research-task: #8ea3be;
 }
 
 html,
@@ -838,11 +854,11 @@ body {
 }
 
 .gaddr-constellation-island--pinned {
-  border-color: color-mix(in srgb, #a56419 38%, var(--border-strong));
+  border-color: color-mix(in srgb, var(--constellation-pinned) 38%, var(--border-strong));
 }
 
 .gaddr-constellation-island--draft-ready {
-  background: linear-gradient(180deg, color-mix(in srgb, #eef6ee 72%, var(--surface-2)) 0%, var(--surface-2) 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--constellation-draft-ready) 72%, var(--surface-2)) 0%, var(--surface-2) 100%);
 }
 
 .gaddr-constellation-island-enter {
@@ -1014,35 +1030,35 @@ body {
 }
 
 .gaddr-constellation-branch-node--pinned {
-  box-shadow: 0 16px 32px color-mix(in srgb, #a56419 16%, transparent);
+  box-shadow: 0 16px 32px color-mix(in srgb, var(--constellation-pinned) 16%, transparent);
 }
 
 .gaddr-constellation-branch-node--draft-ready {
-  background: linear-gradient(180deg, color-mix(in srgb, #eef6ee 72%, var(--surface-2)) 0%, var(--surface-2) 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--constellation-draft-ready) 72%, var(--surface-2)) 0%, var(--surface-2) 100%);
 }
 
 .gaddr-constellation-branch-node--counterargument {
-  border-color: color-mix(in srgb, #9e2f2f 28%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--constellation-counterargument) 28%, var(--border-soft));
 }
 
 .gaddr-constellation-branch-node--evidence {
-  border-color: color-mix(in srgb, #1f6b53 30%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--constellation-evidence) 30%, var(--border-soft));
 }
 
 .gaddr-constellation-branch-node--question {
-  border-color: color-mix(in srgb, #866d17 32%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--constellation-question) 32%, var(--border-soft));
 }
 
 .gaddr-constellation-branch-node--source {
-  border-color: color-mix(in srgb, #265e88 30%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--constellation-source) 30%, var(--border-soft));
 }
 
 .gaddr-constellation-branch-node--response {
-  border-color: color-mix(in srgb, #6e4b8f 26%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--constellation-response) 26%, var(--border-soft));
 }
 
 .gaddr-constellation-branch-node--research-task {
-  border-color: color-mix(in srgb, #495970 28%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--constellation-research-task) 28%, var(--border-soft));
 }
 
 .gaddr-constellation-summary-node {
