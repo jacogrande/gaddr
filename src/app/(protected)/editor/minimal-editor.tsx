@@ -922,11 +922,6 @@ export function MinimalEditor() {
         currentConstellationMode === "draft_prep"
       ) {
         setConstellationMode("transition_out");
-      } else if (
-        currentConstellationMode === "hidden" &&
-        constellationGraphRef.current !== null
-      ) {
-        clearConstellationSession();
       }
       schedulePersist(current);
     },
@@ -1844,12 +1839,6 @@ export function MinimalEditor() {
     setExpandedConstellationThemeId(null);
     setShowOnlyCurrentBranch(false);
   }, [cancelPendingConstellationBranchAction]);
-
-  const clearConstellationSession = useCallback(() => {
-    resetConstellationExploration();
-    setConstellationGraph(null);
-    setConstellationLastVisibleMode("atlas_overview");
-  }, [resetConstellationExploration]);
 
   const openConstellationExploration = useCallback(() => {
     if (!editor) {

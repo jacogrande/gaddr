@@ -73,7 +73,6 @@ function ConstellationThemeNode({ data }: NodeProps<ThemeNode>) {
         data-testid={`constellation-theme-${theme.id}`}
         data-constellation-focus-id={theme.id}
         className="nodrag nopan w-56 rounded-[inherit] p-4 text-left"
-        autoFocus={focusedCanvasItemId === theme.id}
         onClick={handleClick}
         onFocus={() => {
           onFocusCanvasItem(theme.id);

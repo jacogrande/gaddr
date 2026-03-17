@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Panel,
   ReactFlow,
@@ -915,10 +915,6 @@ function ConstellationCanvas({
   }, [activeBranchRootId, selectedLineageIds, showOnlyCurrentBranch, visibleCanvasEdges]);
 
   useEffect(() => {
-    boardRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
     setRevealedSummaryParentNodeIds(new Set());
   }, [expandedThemeId]);
 
@@ -940,24 +936,49 @@ function ConstellationCanvas({
     });
   }, [focusableCanvasItemIds, selectedNodeId]);
 
+  const scheduleCanvasItemFocus = useCallback((itemId: string | null) => {
+    let frameId = 0;
+    let attemptsRemaining = 8;
+
+    const focusCanvasItem = () => {
+      if (!itemId) {
+        boardRef.current?.focus();
+        return;
+      }
+
+      const element = boardRef.current?.querySelector<HTMLElement>(
+        `[data-constellation-focus-id="${CSS.escape(itemId)}"]`,
+      );
+      if (element) {
+        if (document.activeElement !== element) {
+          element.focus();
+        }
+        return;
+      }
+
+      if (attemptsRemaining <= 0) {
+        boardRef.current?.focus();
+        return;
+      }
+
+      attemptsRemaining -= 1;
+      frameId = window.requestAnimationFrame(focusCanvasItem);
+    };
+
+    frameId = window.requestAnimationFrame(focusCanvasItem);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, []);
+
   useEffect(() => {
     if (!focusedCanvasItemId) {
       return;
     }
 
-    const frameId = window.requestAnimationFrame(() => {
-      const element = boardRef.current?.querySelector<HTMLElement>(
-        `[data-constellation-focus-id="${CSS.escape(focusedCanvasItemId)}"]`,
-      );
-      if (element && document.activeElement !== element) {
-        element.focus();
-      }
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [focusedCanvasItemId, nodes.length]);
+    return scheduleCanvasItemFocus(focusedCanvasItemId);
+  }, [focusableCanvasItemIds, focusedCanvasItemId, mode, scheduleCanvasItemFocus]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -1033,7 +1054,11 @@ function ConstellationCanvas({
           event.preventDefault();
           event.stopPropagation();
           if (selectedNodeId || expandedThemeId) {
+            const nextFocusItemId = expandedThemeId ?? focusableCanvasItemIds[0] ?? null;
+            boardRef.current?.focus();
+            setFocusedCanvasItemId(nextFocusItemId);
             onResetExploration();
+            scheduleCanvasItemFocus(nextFocusItemId);
             return;
           }
 

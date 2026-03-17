@@ -147,8 +147,8 @@ test.describe("editor workflow", () => {
 
     const constellationBoard = page.getByTestId("constellation-board");
     await expect(constellationBoard).toBeVisible({ timeout: 12000 });
+    await expect(page.locator("[data-testid^='constellation-theme-']").first()).toBeFocused();
 
-    await page.locator("[data-testid^='constellation-theme-']").first().focus();
     await page.keyboard.press("Enter");
     const constellationPanel = page.getByTestId("constellation-panel");
     await expect(constellationPanel).toBeVisible();
@@ -165,9 +165,43 @@ test.describe("editor workflow", () => {
 
     await page.keyboard.press("Escape");
     await expect(constellationPanel).toBeHidden();
-    await page.locator("[data-testid^='constellation-theme-']").first().focus();
     await page.keyboard.press("Escape");
     await expect(constellationBoard).toBeHidden({ timeout: 4000 });
+  });
+
+  test("constellation preserves the session graph after closing, typing, and reopening", async ({ page }) => {
+    await page.goto("/editor");
+
+    const editor = page.locator(".tiptap.ProseMirror").first();
+    await expect(editor).toBeVisible();
+
+    await editor.click();
+    await page.keyboard.type(
+      "I want to collect a few exploratory branches, then keep freewriting without losing the constellation session.",
+    );
+
+    await page.getByTestId("sprint-chip").click();
+    const sprintMenu = page.getByTestId("sprint-menu");
+    await expect(sprintMenu).toBeVisible();
+    await sprintMenu.getByRole("button", { name: /5 sec/i }).click();
+
+    const constellationBoard = page.getByTestId("constellation-board");
+    await expect(constellationBoard).toBeVisible({ timeout: 12000 });
+
+    await page.locator("[data-testid^='constellation-theme-']").first().click();
+    const constellationPanel = page.getByTestId("constellation-panel");
+    await expect(constellationPanel).toBeVisible();
+    await constellationPanel.getByRole("button", { name: "Use in draft" }).click();
+
+    await page.getByTestId("constellation-close-button").click();
+    await expect(constellationBoard).toBeHidden({ timeout: 4000 });
+
+    await editor.click();
+    await page.keyboard.type(" Another sentence after closing the board.");
+
+    await page.getByTestId("constellation-reopen-button").click();
+    await expect(constellationBoard).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId("constellation-draft-prep-button")).toContainText("(1)");
   });
 
   test("constellation draft prep collects nodes and appends talking points into the editor", async ({ page }) => {
