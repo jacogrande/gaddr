@@ -10,7 +10,7 @@ export default async function ProtectedLayout({
   const session = await requireSession();
 
   if (isErr(session)) {
-    redirect("/sign-in");
+    redirect("/sign-in?callbackUrl=/editor");
   }
 
   return children;
