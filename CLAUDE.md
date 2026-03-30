@@ -19,20 +19,13 @@ gaddr is a "Micro-Essay Continuous Learning Studio" — a SaaS platform where us
 ## Commands
 
 ```bash
-bun install              # Install dependencies
-bun run dev              # Start dev server
+bun run dev              # Start dev server (Turbopack, port 8080)
 bun run build            # Production build
-bun run lint             # ESLint (boundaries, purity, type-checked rules)
-bun run typecheck        # TypeScript type checking
-bun run knip             # Dead code detection
-bun run check            # All checks: typecheck + lint + knip
-bun test                 # Run all tests
-bun test <path>          # Run a single test file
-```
-
-Database migrations (once ORM is chosen):
-```bash
-bun run db:migrate       # Run migrations
+bun run check            # Verification gate: typecheck + lint (runs on agent stop)
+bun run knip             # Dead code detection (run manually)
+bun test                 # Unit tests (domain/ only, <5s)
+bun run test:e2e         # Playwright E2E tests
+bun run db:migrate       # Drizzle migrations
 bun run db:push          # Push schema changes
 ```
 
@@ -61,25 +54,11 @@ All of these are enforced at lint time. The build fails on any violation.
 - Exhaustive `switch` on discriminated unions (`switch-exhaustiveness-check`).
 - No floating promises, no `!` non-null assertions, no loose equality.
 
-### Data Flow
-
-```
-Client -> Next.js Server Actions / Route Handlers -> Railway Postgres
-Auth flow -> Better Auth routes -> Railway Postgres
-Coach review -> POST /api/review -> LLM -> Zod-validated JSON response
-```
-
 ### Testing
 
-- `bun test` — unit tests for `domain/` only. Must run under 5 seconds.
-- `playwright test` — E2E tests organized by user workflow, run on every PR.
+- Unit tests (`test/unit/`) — domain/ only, pure functions, no mocks. Must run under 5 seconds.
+- E2E tests (`test/e2e/`) — Playwright, organized by user workflow. Playwright MCP is available for browser interaction.
 - Contract tests — LLM response validation, nightly schedule.
-
-### MVP Database Schema
-
-**essays:** id (UUID), user_id, title, content, status ('draft'|'published'), created_at, updated_at, published_at
-
-Post-MVP tables: essay_versions, annotations, evidence_cards, objections
 
 ## The Authorship Rule (Hard Constraint)
 
@@ -95,18 +74,7 @@ All assistant responses must be **structured JSON** validated with Zod. Reject a
 
 ## Auth (Better Auth)
 
-- MVP: OAuth only (Google + GitHub) — no email vendor needed initially
-- DB-backed sessions in Postgres
-- Protect routes via Next.js middleware + server-side checks
-- See `.agents/skills/better-auth-best-practices/SKILL.md` for detailed integration patterns
-
-## Key Design Principles
-
-- **Practice > Performance:** micro-essays are reps, not final exams — encourage quick drafts and frequent revision
-- **Coaching > Generating:** LLM diagnoses issues and suggests actions; the user fixes their own writing
-- **Constraints create craft:** fixed time/scope, variable outcome (10-min sprints, word limits, required counterarguments)
-- **Evidence over vibes:** every claim should link to evidence cards; citation mismatches are flagged
-- **Reward learning behaviors:** revision after feedback, adding evidence, addressing counterarguments — not volume or engagement
+OAuth only (Google + GitHub), DB-backed sessions in Postgres. See `.agents/skills/better-auth-best-practices/SKILL.md` for integration patterns.
 
 ## Editor Performance Constraint (P0)
 
@@ -116,8 +84,11 @@ All assistant responses must be **structured JSON** validated with Zod. Reject a
 
 ## Reference Docs
 
-- `docs/architecture.md` — full architecture document, dependency rules, testing strategy, feature workflow
+Read these before making design or architecture decisions — they are the system of record:
+
+- `docs/architecture.md` — dependency rules, data flow, testing strategy, feature workflow
+- `docs/product-and-design-philosophy.md` — design principles, UX patterns, metrics
 - `docs/infra.md` — infrastructure plan and deployment checklist
-- `docs/product-and-design-philosophy.md` — full product philosophy, UX patterns, metrics
 - `docs/business-model.md` — revenue tiers, unit economics, GTM
+- `docs/gadfly-technical-design.md` — LLM coaching pipeline design
 - `.agents/skills/better-auth-best-practices/SKILL.md` — Better Auth integration guide
