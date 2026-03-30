@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { computeConstellationFlowNodesFromGraph } from "../../../src/app/(protected)/editor/constellation-flow-nodes";
+import {
+  computeConstellationFlowNodesFromGraph,
+  getConstellationEdgeHandles,
+} from "../../../src/app/(protected)/editor/constellation-flow-nodes";
 import {
   selectConstellationNodeLineage,
   selectConstellationVisibleCanvas,
@@ -110,5 +113,43 @@ describe("computeConstellationFlowNodesFromGraph", () => {
     expect(nodes.some((node) => node.id === "nested-1")).toBe(true);
     expect(nodes.some((node) => node.id === "nested-2")).toBe(true);
     expect(nodes.some((node) => node.id === "evidence-1:summary")).toBe(true);
+  });
+
+  test("routes atlas edges from the nearest card side", () => {
+    const graphData = graph();
+    const visibleCanvas = selectConstellationVisibleCanvas(graphData, {
+      expandedThemeId: null,
+      selectedNodeId: null,
+      showOnlyCurrentBranch: false,
+    });
+
+    const nodes = computeConstellationFlowNodesFromGraph({
+      graph: graphData,
+      visibleNodeIds: new Set(visibleCanvas.nodes.map((node) => node.id)),
+      expandedThemeId: null,
+      selectedNodeId: null,
+      showOnlyCurrentBranch: false,
+      selectedLineage: [],
+      selectedLineageIds: new Set(),
+      activeBranchRootId: null,
+      activeBranchChildIds: new Set(),
+      themeBranchChildren: [],
+      themeBranchHiddenCount: 0,
+      activeBranchChildren: [],
+      activeBranchHiddenCount: 0,
+    });
+    const seedNode = nodes.find((node) => node.id === "seed-1");
+    const topThemeNode = nodes.find((node) => node.id === "theme-1");
+
+    expect(seedNode).toBeDefined();
+    expect(topThemeNode).toBeDefined();
+    if (!seedNode || !topThemeNode) {
+      return;
+    }
+
+    expect(getConstellationEdgeHandles(seedNode, topThemeNode)).toEqual({
+      sourceSide: "top",
+      targetSide: "bottom",
+    });
   });
 });

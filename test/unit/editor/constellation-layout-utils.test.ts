@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  computeConstellationBranchPositions,
   scaleConstellationPositions,
   CONSTELLATION_CANVAS_WIDTH,
   CONSTELLATION_CANVAS_HEIGHT,
+  EXPLORATION_NODE_HALF_HEIGHT,
+  EXPLORATION_NODE_HALF_WIDTH,
+  THEME_NODE_HALF_HEIGHT,
+  THEME_NODE_HALF_WIDTH,
 } from "../../../src/app/(protected)/editor/constellation-layout-utils";
 import { computeConstellationLayout } from "../../../src/domain/gadfly/constellation-layout";
 
@@ -64,6 +69,66 @@ describe("scaleConstellationPositions", () => {
       expect(pos.x).toBeLessThanOrEqual(CONSTELLATION_CANVAS_WIDTH);
       expect(pos.y).toBeGreaterThanOrEqual(0);
       expect(pos.y).toBeLessThanOrEqual(CONSTELLATION_CANVAS_HEIGHT);
+    }
+  });
+
+  test("keeps larger atlas theme cards from overlapping after scaling", () => {
+    const themes = Array.from({ length: 10 }, (_, index) => theme(`t${String(index + 1)}`, 1));
+    const scaled = scaleConstellationPositions(computeConstellationLayout(themes));
+
+    for (let leftIndex = 0; leftIndex < scaled.length; leftIndex += 1) {
+      const left = scaled[leftIndex];
+      if (!left) {
+        continue;
+      }
+
+      for (let rightIndex = leftIndex + 1; rightIndex < scaled.length; rightIndex += 1) {
+        const right = scaled[rightIndex];
+        if (!right) {
+          continue;
+        }
+
+        const overlapsHorizontally =
+          Math.abs(left.x - right.x) < THEME_NODE_HALF_WIDTH * 2;
+        const overlapsVertically =
+          Math.abs(left.y - right.y) < THEME_NODE_HALF_HEIGHT * 2;
+
+        expect(overlapsHorizontally && overlapsVertically).toBeFalse();
+      }
+    }
+  });
+
+  test("fans branch children out without overlapping their cards", () => {
+    const positions = computeConstellationBranchPositions(
+      [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+      {
+        rootX: CONSTELLATION_CANVAS_WIDTH / 2,
+        rootY: CONSTELLATION_CANVAS_HEIGHT / 2,
+        outwardAngle: 0,
+        distance: 236,
+        spread: Math.PI * 0.92,
+      },
+    );
+
+    for (let leftIndex = 0; leftIndex < positions.length; leftIndex += 1) {
+      const left = positions[leftIndex];
+      if (!left) {
+        continue;
+      }
+
+      for (let rightIndex = leftIndex + 1; rightIndex < positions.length; rightIndex += 1) {
+        const right = positions[rightIndex];
+        if (!right) {
+          continue;
+        }
+
+        const overlapsHorizontally =
+          Math.abs(left.x - right.x) < EXPLORATION_NODE_HALF_WIDTH * 2;
+        const overlapsVertically =
+          Math.abs(left.y - right.y) < EXPLORATION_NODE_HALF_HEIGHT * 2;
+
+        expect(overlapsHorizontally && overlapsVertically).toBeFalse();
+      }
     }
   });
 });

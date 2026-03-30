@@ -24,8 +24,8 @@ describe("computeConstellationLayout", () => {
 
     expect(pos.themeId).toBe("t1");
     expect(pos.x).toBeCloseTo(0.5, 2);
-    // y = center(0.5) - radiusY(0.32) = 0.18
-    expect(pos.y).toBeCloseTo(0.18, 2);
+    // y = center(0.5) - radiusY(0.29) = 0.21
+    expect(pos.y).toBeCloseTo(0.21, 2);
   });
 
   test("places 5 themes in radial positions", () => {
@@ -127,5 +127,18 @@ describe("computeConstellationLayout", () => {
     const unique = new Set(coords);
 
     expect(unique.size).toBe(positions.length);
+  });
+
+  test("splits larger theme sets across staggered rings", () => {
+    const themes = Array.from({ length: 10 }, (_, index) => theme(`t${String(index + 1)}`, 1));
+
+    const positions = computeConstellationLayout(themes);
+    const distancesFromCenter = positions.map((position) =>
+      Math.hypot(position.x - 0.5, position.y - 0.5).toFixed(2),
+    );
+    const distinctRings = new Set(distancesFromCenter);
+
+    expect(positions).toHaveLength(10);
+    expect(distinctRings.size).toBeGreaterThan(1);
   });
 });
