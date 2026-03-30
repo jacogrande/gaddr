@@ -34,25 +34,6 @@ import {
   groupGadflyAnnotations,
   type GadflyAnnotationGroup,
 } from "../../../domain/gadfly/presentation";
-import {
-  buildConstellationExplorationGraph,
-  expandConstellationExplorationGraph,
-} from "../../../domain/gadfly/constellation-exploration-builder";
-import {
-  removeConstellationNodeFromWorkingSet,
-  setConstellationWorkingSetDisposition,
-  swapConstellationUseInDraftItemOrder,
-} from "../../../domain/gadfly/constellation-working-set";
-import type {
-  ConstellationBranchActionKind,
-  ConstellationExplorationGraph,
-  ConstellationWorkingSetDisposition,
-} from "../../../domain/gadfly/constellation-types";
-import ConstellationBoard from "./constellation-board";
-import type { ConstellationBoardMode } from "./constellation-board-types";
-import { buildConstellationTalkingPointsContent } from "./constellation-draft-prep-content";
-import { selectConstellationDraftPrepGroups } from "./constellation-draft-prep-selectors";
-import { selectConstellationOwningThemeId } from "./constellation-exploration-selectors";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
 const GADFLY_NOTE_ID = "gaddr:editor:phase1";
@@ -606,24 +587,8 @@ function loadDoc(): JSONContent {
   }
 }
 
-function appendConstellationTalkingPointsToEditor(
-  editor: TiptapEditor,
-  content: readonly JSONContent[],
-): boolean {
-  if (content.length === 0) {
-    return false;
-  }
-
-  // Append at the current document boundary regardless of the user's stale selection,
-  // and leave the cursor after the inserted scaffold for continued drafting.
-  const appendPosition = editor.state.doc.content.size;
-
-  return editor
-    .chain()
-    .focus()
-    .insertContentAt(appendPosition, content, { updateSelection: true })
-    .run();
-}
+/** Post-sprint board modes: editor zooms out, node grid animates in. */
+type BoardMode = "hidden" | "transition_in" | "visible" | "transition_out";
 
 export function MinimalEditor() {
   const [activeModifiers, setActiveModifiers] = useState<ModifierBadge[]>([]);
@@ -659,31 +624,9 @@ export function MinimalEditor() {
   const sprintMenuRef = useRef<HTMLDivElement | null>(null);
   const sprintPhaseRef = useRef<SprintPhase>("idle");
   const lastEditAtMsRef = useRef(Date.now());
-  const [constellationMode, setConstellationMode] = useState<ConstellationBoardMode>("hidden");
-  const [constellationGraph, setConstellationGraph] = useState<ConstellationExplorationGraph | null>(null);
-  const [selectedConstellationNodeId, setSelectedConstellationNodeId] = useState<string | null>(null);
-  const [expandedConstellationThemeId, setExpandedConstellationThemeId] = useState<string | null>(null);
-  const [showOnlyCurrentBranch, setShowOnlyCurrentBranch] = useState(false);
-  const [pendingConstellationBranchAction, setPendingConstellationBranchAction] = useState<{
-    nodeId: string;
-    kind: ConstellationBranchActionKind;
-  } | null>(null);
-  const [constellationLastVisibleMode, setConstellationLastVisibleMode] = useState<
-    "atlas_overview" | "local_exploration" | "draft_prep"
-  >("atlas_overview");
-  const constellationGraphCounterRef = useRef(0);
-  const constellationModeRef = useRef<ConstellationBoardMode>("hidden");
-  const constellationGraphRef = useRef<ConstellationExplorationGraph | null>(null);
-  const hasShownConstellationForSprintRef = useRef(false);
-  const constellationBranchActionTimeoutRef = useRef<number | null>(null);
-
-  const clearConstellationBranchActionTimeout = useCallback(() => {
-    if (constellationBranchActionTimeoutRef.current !== null) {
-      window.clearTimeout(constellationBranchActionTimeoutRef.current);
-      constellationBranchActionTimeoutRef.current = null;
-    }
-    setPendingConstellationBranchAction(null);
-  }, []);
+  const [boardMode, setBoardMode] = useState<BoardMode>("hidden");
+  const boardModeRef = useRef<BoardMode>("hidden");
+  const hasShownBoardForSprintRef = useRef(false);
 
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
     try {
@@ -723,13 +666,8 @@ export function MinimalEditor() {
     const now = Date.now();
     const option = getSprintOption(optionId);
 
-    clearConstellationBranchActionTimeout();
-    setConstellationGraph(null);
-    setSelectedConstellationNodeId(null);
-    setExpandedConstellationThemeId(null);
-    setShowOnlyCurrentBranch(false);
-    setConstellationLastVisibleMode("atlas_overview");
-    hasShownConstellationForSprintRef.current = false;
+    setBoardMode("hidden");
+    hasShownBoardForSprintRef.current = false;
     setSprintNowMs(now);
     setSprintOption(option.id);
     setSprintPhase("running");
@@ -737,7 +675,7 @@ export function MinimalEditor() {
     setPausedSprintRemainingMs(null);
     setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
-  }, [clearConstellationBranchActionTimeout]);
+  }, []);
 
   const pauseSprint = useCallback(() => {
     if (sprintPhase !== "running" || sprintEndsAtMs === null) {
@@ -776,18 +714,13 @@ export function MinimalEditor() {
   }, [pausedSprintRemainingMs, sprintPhase]);
 
   const endSprint = useCallback(() => {
-    clearConstellationBranchActionTimeout();
-    setConstellationGraph(null);
-    setSelectedConstellationNodeId(null);
-    setExpandedConstellationThemeId(null);
-    setShowOnlyCurrentBranch(false);
-    setConstellationLastVisibleMode("atlas_overview");
+    setBoardMode("hidden");
     setSprintPhase("idle");
     setSprintEndsAtMs(null);
     setPausedSprintRemainingMs(null);
     setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
-  }, [clearConstellationBranchActionTimeout]);
+  }, []);
 
   const addSprintTime = useCallback(() => {
     const now = Date.now();
@@ -918,14 +851,9 @@ export function MinimalEditor() {
       if (sprintPhaseRef.current === "completed") {
         setSprintNowMs(now);
       }
-      // Exit constellation board when user starts typing
-      const currentConstellationMode = constellationModeRef.current;
-      if (
-        currentConstellationMode === "atlas_overview" ||
-        currentConstellationMode === "local_exploration" ||
-        currentConstellationMode === "draft_prep"
-      ) {
-        setConstellationMode("transition_out");
+      // Exit board when user starts typing
+      if (boardModeRef.current === "visible") {
+        setBoardMode("transition_out");
       }
       schedulePersist(current);
     },
@@ -1776,7 +1704,7 @@ export function MinimalEditor() {
         return `Paused ${formatSprintRemainingLabel(sprintRemainingMs)}`;
       case "completed":
         if (sprintCompletedAtMs === null || !sprintWriterActive) {
-          return "Explore ready";
+          return "Done";
         }
 
         return formatOvertimeLabel(Math.max(0, sprintNowMs - sprintCompletedAtMs));
@@ -1792,7 +1720,7 @@ export function MinimalEditor() {
       case "paused":
         return "Resume when you want more protected drafting time.";
       case "completed":
-        return "Constellation stays available when you are ready to explore the argument map.";
+        return "Sprint complete. Your node grid is ready.";
       case "idle":
         return "Pick a length to start freewriting.";
     }
@@ -1803,274 +1731,44 @@ export function MinimalEditor() {
   }, [sprintPhase]);
 
   useEffect(() => {
-    constellationModeRef.current = constellationMode;
-  }, [constellationMode]);
+    boardModeRef.current = boardMode;
+  }, [boardMode]);
 
+
+
+  // Board entry trigger: sprint completed + user idle
   useEffect(() => {
-    constellationGraphRef.current = constellationGraph;
-  }, [constellationGraph]);
+    if (sprintPhase !== "completed") return;
+    if (sprintWriterActive) return;
+    if (boardMode !== "hidden") return;
+    if (hasShownBoardForSprintRef.current) return;
+    if (!editor) return;
 
+    hasShownBoardForSprintRef.current = true;
+    setBoardMode("transition_in");
+  }, [boardMode, editor, sprintPhase, sprintWriterActive]);
+
+  // Board transition_in → visible after zoom-out completes
   useEffect(() => {
-    if (
-      constellationMode === "atlas_overview" ||
-      constellationMode === "local_exploration" ||
-      constellationMode === "draft_prep"
-    ) {
-      setConstellationLastVisibleMode(constellationMode);
-    }
-  }, [constellationMode]);
+    if (boardMode !== "transition_in") return;
 
-  useEffect(() => {
-    return () => {
-      if (constellationBranchActionTimeoutRef.current !== null) {
-        window.clearTimeout(constellationBranchActionTimeoutRef.current);
-      }
-    };
-  }, []);
-
-
-
-  const resetConstellationExploration = useCallback(() => {
-    clearConstellationBranchActionTimeout();
-    setSelectedConstellationNodeId(null);
-    setExpandedConstellationThemeId(null);
-    setShowOnlyCurrentBranch(false);
-  }, [clearConstellationBranchActionTimeout]);
-
-  const openConstellationExploration = useCallback(() => {
-    if (!editor) {
-      return false;
-    }
-
-    if (constellationGraphRef.current) {
-      clearConstellationBranchActionTimeout();
-      setConstellationMode("transition_in");
-      return true;
-    }
-
-    const plainText = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n", "\n");
-    constellationGraphCounterRef.current += 1;
-    const boardId = `constellation-${String(constellationGraphCounterRef.current)}`;
-    const result = buildConstellationExplorationGraph({
-      noteId: GADFLY_NOTE_ID,
-      docVersion: editor.state.doc.content.size,
-      title: null,
-      plainText,
-      annotations: gadflyAnnotations,
-      generatedAt: new Date().toISOString(),
-      boardId,
-    });
-
-    if (!result.ok) {
-      return false;
-    }
-
-    clearConstellationBranchActionTimeout();
-    setConstellationGraph(result.value);
-    setSelectedConstellationNodeId(null);
-    setExpandedConstellationThemeId(null);
-    setShowOnlyCurrentBranch(false);
-    setConstellationLastVisibleMode("atlas_overview");
-    setConstellationMode("transition_in");
-    return true;
-  }, [clearConstellationBranchActionTimeout, editor, gadflyAnnotations]);
-
-  // Constellation entry trigger: sprint completed + user idle
-  useEffect(() => {
-    if (sprintPhase !== "completed") {
-      return;
-    }
-
-    if (sprintWriterActive) {
-      return;
-    }
-
-    if (constellationMode !== "hidden") {
-      return;
-    }
-
-    if (hasShownConstellationForSprintRef.current) {
-      return;
-    }
-
-    if (!editor) {
-      return;
-    }
-
-    if (openConstellationExploration()) {
-      hasShownConstellationForSprintRef.current = true;
-    }
-  }, [constellationMode, editor, openConstellationExploration, sprintPhase, sprintWriterActive]);
-
-  useEffect(() => {
-    if (constellationMode !== "transition_in") {
-      return;
-    }
-
-    const transitionTimer = window.setTimeout(() => {
-      setConstellationMode(constellationLastVisibleMode);
+    const timer = window.setTimeout(() => {
+      setBoardMode("visible");
     }, 1500);
 
-    return () => {
-      window.clearTimeout(transitionTimer);
-    };
-  }, [constellationLastVisibleMode, constellationMode]);
+    return () => { window.clearTimeout(timer); };
+  }, [boardMode]);
 
-  // Constellation board exit transition cleanup
+  // Board transition_out → hidden after zoom-in completes
   useEffect(() => {
-    if (constellationMode !== "transition_out") {
-      return;
-    }
+    if (boardMode !== "transition_out") return;
 
-    const exitTimer = window.setTimeout(() => {
-      setConstellationMode("hidden");
+    const timer = window.setTimeout(() => {
+      setBoardMode("hidden");
     }, 1100);
 
-    return () => {
-      window.clearTimeout(exitTimer);
-    };
-  }, [constellationMode]);
-
-  const handleConstellationClose = useCallback(() => {
-    clearConstellationBranchActionTimeout();
-    setConstellationMode("transition_out");
-  }, [clearConstellationBranchActionTimeout]);
-
-  const handleConstellationSelectNode = useCallback((nodeId: string) => {
-    if (!constellationGraph) {
-      return;
-    }
-
-    const nextExpandedThemeId = selectConstellationOwningThemeId(constellationGraph, nodeId);
-    const selectedNode = constellationGraph.nodes.find((node) => node.id === nodeId) ?? null;
-    if (!nextExpandedThemeId || !selectedNode) {
-      return;
-    }
-
-    setSelectedConstellationNodeId(nodeId);
-    setExpandedConstellationThemeId(nextExpandedThemeId);
-    setConstellationMode("local_exploration");
-  }, [constellationGraph]);
-
-  const handleConstellationResetExploration = useCallback(() => {
-    resetConstellationExploration();
-    setConstellationMode("atlas_overview");
-  }, [resetConstellationExploration]);
-
-  const handleConstellationToggleShowOnlyCurrentBranch = useCallback(() => {
-    setShowOnlyCurrentBranch((current) => !current);
-  }, []);
-
-  const handleConstellationSetWorkingSetDisposition = useCallback(
-    (
-      nodeId: string,
-      disposition: ConstellationWorkingSetDisposition,
-      enabled: boolean,
-    ) => {
-      setConstellationGraph((currentGraph) => {
-        if (!currentGraph) {
-          return currentGraph;
-        }
-
-        return setConstellationWorkingSetDisposition({
-          graph: currentGraph,
-          nodeId,
-          disposition,
-          enabled,
-          addedAt: new Date().toISOString(),
-        });
-      });
-    },
-    [],
-  );
-
-  const handleConstellationRemoveNodeFromWorkingSet = useCallback((nodeId: string) => {
-    setConstellationGraph((currentGraph) => {
-      if (!currentGraph) {
-        return currentGraph;
-      }
-
-      return removeConstellationNodeFromWorkingSet(currentGraph, nodeId);
-    });
-  }, []);
-
-  const handleConstellationEnterDraftPrep = useCallback(() => {
-    if (!constellationGraphRef.current || constellationGraphRef.current.workingSet.length === 0) {
-      return;
-    }
-
-    setConstellationMode("draft_prep");
-  }, []);
-
-  const handleConstellationExitDraftPrep = useCallback(() => {
-    setConstellationMode(
-      expandedConstellationThemeId || selectedConstellationNodeId
-        ? "local_exploration"
-        : "atlas_overview",
-    );
-  }, [expandedConstellationThemeId, selectedConstellationNodeId]);
-
-  const handleConstellationSwapDraftPrepItemOrder = useCallback(
-    (leftNodeId: string, rightNodeId: string) => {
-      setConstellationGraph((currentGraph) => {
-        if (!currentGraph) {
-          return currentGraph;
-        }
-
-        return swapConstellationUseInDraftItemOrder(currentGraph, leftNodeId, rightNodeId);
-      });
-    },
-    [],
-  );
-
-  const handleConstellationRunBranchAction = useCallback(
-    (nodeId: string, actionKind: ConstellationBranchActionKind) => {
-      if (pendingConstellationBranchAction !== null) {
-        return;
-      }
-
-      setPendingConstellationBranchAction({ nodeId, kind: actionKind });
-      constellationBranchActionTimeoutRef.current = window.setTimeout(() => {
-        setConstellationGraph((currentGraph) => {
-          if (!currentGraph) {
-            return currentGraph;
-          }
-
-          return expandConstellationExplorationGraph({
-            graph: currentGraph,
-            originNodeId: nodeId,
-            actionKind,
-            generatedAt: new Date().toISOString(),
-          });
-        });
-        setPendingConstellationBranchAction(null);
-        constellationBranchActionTimeoutRef.current = null;
-      }, 640);
-    },
-    [pendingConstellationBranchAction],
-  );
-
-  const handleConstellationStartFirstDraft = useCallback(() => {
-    if (!editor || !constellationGraphRef.current) {
-      return;
-    }
-
-    const draftPrepGroups = selectConstellationDraftPrepGroups(constellationGraphRef.current);
-    const talkingPointsContent = buildConstellationTalkingPointsContent(draftPrepGroups);
-    if (talkingPointsContent.length === 0) {
-      return;
-    }
-
-    if (appendConstellationTalkingPointsToEditor(editor, talkingPointsContent)) {
-      clearConstellationBranchActionTimeout();
-      setConstellationMode("transition_out");
-    }
-  }, [clearConstellationBranchActionTimeout, editor]);
-
-  const handleConstellationReopen = useCallback(() => {
-    setIsSprintMenuOpen(false);
-    void openConstellationExploration();
-  }, [openConstellationExploration]);
+    return () => { window.clearTimeout(timer); };
+  }, [boardMode]);
 
   useEffect(() => {
     if (!shouldTickSprintClock) {
@@ -2142,10 +1840,10 @@ export function MinimalEditor() {
     return <div className="min-h-[calc(100vh-8.5rem)]" />;
   }
 
-  const showConstellationReopen =
+  const showBoardReopen =
     sprintPhase === "completed" &&
-    constellationMode === "hidden" &&
-    hasShownConstellationForSprintRef.current;
+    boardMode === "hidden" &&
+    hasShownBoardForSprintRef.current;
 
   return (
     <div
@@ -2179,14 +1877,17 @@ export function MinimalEditor() {
           ))}
         </div>
       ) : null}
-      <div className={`pointer-events-none fixed right-4 top-4 z-[68] flex justify-end ${constellationMode !== "hidden" ? "hidden" : ""}`}>
+      <div className={`pointer-events-none fixed right-4 top-4 z-[68] flex justify-end ${boardMode !== "hidden" ? "hidden" : ""}`}>
         <div className="pointer-events-auto flex items-start gap-2">
-          {showConstellationReopen ? (
+          {showBoardReopen ? (
             <button
               type="button"
-              data-testid="constellation-reopen-button"
+              data-testid="board-reopen-button"
               className="gaddr-sprint-chip gaddr-sprint-chip--complete rounded-full border px-2.5 py-1.5 text-left transition-all"
-              onClick={handleConstellationReopen}
+              onClick={() => {
+                setIsSprintMenuOpen(false);
+                setBoardMode("transition_in");
+              }}
             >
               <span className="whitespace-nowrap text-[0.72rem] font-semibold leading-4 text-[var(--app-fg)]">
                 Explore
@@ -2972,40 +2673,24 @@ export function MinimalEditor() {
         </button>
       ) : null}
       <div
-        className={`gaddr-constellation-stage ${constellationMode !== "hidden" ? "gaddr-constellation-stage--active" : ""}`}
+        className={`gaddr-constellation-stage ${boardMode !== "hidden" ? "gaddr-constellation-stage--active" : ""}`}
       >
-        {constellationGraph && constellationMode !== "hidden" ? (
-          <ConstellationBoard
-            key={constellationGraph.id}
-            graph={constellationGraph}
-            mode={constellationMode}
-            selectedNodeId={selectedConstellationNodeId}
-            expandedThemeId={expandedConstellationThemeId}
-            showOnlyCurrentBranch={showOnlyCurrentBranch}
-            pendingBranchAction={pendingConstellationBranchAction}
-            onClose={handleConstellationClose}
-            onSelectNode={handleConstellationSelectNode}
-            onResetExploration={handleConstellationResetExploration}
-            onToggleShowOnlyCurrentBranch={handleConstellationToggleShowOnlyCurrentBranch}
-            onRunBranchAction={handleConstellationRunBranchAction}
-            onSetWorkingSetDisposition={handleConstellationSetWorkingSetDisposition}
-            onRemoveNodeFromWorkingSet={handleConstellationRemoveNodeFromWorkingSet}
-            onEnterDraftPrep={handleConstellationEnterDraftPrep}
-            onExitDraftPrep={handleConstellationExitDraftPrep}
-            onSwapDraftPrepItemOrder={handleConstellationSwapDraftPrepItemOrder}
-            onStartFirstDraft={handleConstellationStartFirstDraft}
-          />
+        {boardMode === "visible" ? (
+          <div
+            className="gaddr-constellation-flow-container flex items-center justify-center"
+            data-testid="node-grid"
+          >
+            {/* Node grid placeholder — constellation rework goes here */}
+          </div>
         ) : null}
         <div
           data-testid="editor-content"
           className={`gaddr-constellation-editor-pane${
-            constellationMode === "transition_in"
+            boardMode === "transition_in"
               ? " gaddr-constellation-editor-pane--zooming-out"
-              : constellationMode === "atlas_overview" ||
-                  constellationMode === "local_exploration" ||
-                  constellationMode === "draft_prep"
+              : boardMode === "visible"
                 ? " gaddr-constellation-editor-pane--hidden"
-                : constellationMode === "transition_out"
+                : boardMode === "transition_out"
                   ? " gaddr-constellation-editor-pane--zooming-in"
                   : ""
           }`}
