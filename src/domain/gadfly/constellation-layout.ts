@@ -8,10 +8,24 @@ type ConstellationLayoutItem = {
   id: string;
 };
 
-const ELLIPSE_RADIUS_X = 0.36;
-const ELLIPSE_RADIUS_Y = 0.32;
+const SINGLE_RING_MAX_ITEMS = 7;
+const INNER_RING_RADIUS_X = 0.34;
+const INNER_RING_RADIUS_Y = 0.29;
+const OUTER_RING_RADIUS_X = 0.4;
+const OUTER_RING_RADIUS_Y = 0.35;
 const CENTER_X = 0.5;
 const CENTER_Y = 0.5;
+const START_ANGLE = -Math.PI / 2;
+
+function computeRingSizes(itemCount: number): number[] {
+  if (itemCount <= SINGLE_RING_MAX_ITEMS) {
+    return [itemCount];
+  }
+
+  const outerRingCount = Math.floor(itemCount / 2);
+  const innerRingCount = itemCount - outerRingCount;
+  return [innerRingCount, outerRingCount];
+}
 
 export function computeConstellationLayout(
   items: readonly ConstellationLayoutItem[],
@@ -20,18 +34,32 @@ export function computeConstellationLayout(
     return [];
   }
 
-  // Items are expected to arrive in display priority order.
-  // Place the first item at 12 o'clock, proceeding clockwise.
-  const count = items.length;
-  const startAngle = -Math.PI / 2; // 12 o'clock
+  const ringSizes = computeRingSizes(items.length);
+  const layout: ConstellationLayoutPosition[] = [];
+  let itemOffset = 0;
 
-  return items.map((item, index) => {
-    const angle = startAngle + (2 * Math.PI * index) / count;
+  for (const [ringIndex, ringSize] of ringSizes.entries()) {
+    const radiusX = ringIndex === 0 ? INNER_RING_RADIUS_X : OUTER_RING_RADIUS_X;
+    const radiusY = ringIndex === 0 ? INNER_RING_RADIUS_Y : OUTER_RING_RADIUS_Y;
+    const angleOffset =
+      ringIndex === 0 || ringSize <= 1 ? 0 : Math.PI / ringSize;
 
-    return {
-      themeId: item.id,
-      x: CENTER_X + ELLIPSE_RADIUS_X * Math.cos(angle),
-      y: CENTER_Y + ELLIPSE_RADIUS_Y * Math.sin(angle),
-    };
-  });
+    for (let index = 0; index < ringSize; index += 1) {
+      const item = items[itemOffset + index];
+      if (!item) {
+        continue;
+      }
+
+      const angle = START_ANGLE + angleOffset + (2 * Math.PI * index) / ringSize;
+      layout.push({
+        themeId: item.id,
+        x: CENTER_X + radiusX * Math.cos(angle),
+        y: CENTER_Y + radiusY * Math.sin(angle),
+      });
+    }
+
+    itemOffset += ringSize;
+  }
+
+  return layout;
 }
