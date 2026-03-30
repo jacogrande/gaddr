@@ -11,6 +11,24 @@ test("unauthenticated /editor requests redirect to /sign-in", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });
 
+test("stale auth cookie does not cause an /editor redirect loop", async ({ page, context }) => {
+  test.skip(authBypassEnabled, "Redirect assertions are disabled when E2E_BYPASS_AUTH=true.");
+
+  await context.addCookies([
+    {
+      name: "better-auth.session_token",
+      value: "stale-session-token",
+      url: "http://127.0.0.1:8080",
+      path: "/",
+    },
+  ]);
+
+  await page.goto("/editor");
+
+  await expect(page).toHaveURL(/\/sign-in\?callbackUrl=%2Feditor$/);
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
 test("sign-in page renders authentication provider controls", async ({ page }, testInfo) => {
   await page.goto("/sign-in");
 
