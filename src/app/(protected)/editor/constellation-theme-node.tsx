@@ -1,10 +1,11 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { type NodeProps } from "@xyflow/react";
 import type { ConstellationExplorationNode } from "../../../domain/gadfly/constellation-types";
 import { useConstellationCallbacks } from "./constellation-callbacks-context";
 import type { ConstellationThemeFlowNode } from "./constellation-flow-nodes";
+import { ConstellationNodeHandles } from "./constellation-node-handles";
 import {
   formatConstellationCompactTrustSummary,
   formatConstellationConfidencePercent,
@@ -65,13 +66,13 @@ function ConstellationThemeNode({ data }: NodeProps<ConstellationThemeFlowNode>)
       className={`${islandClass(theme, expandedThemeId, focusedCanvasItemId)} gaddr-constellation-island-enter`}
       style={{ animationDelay: `${String(1000 + index * 120)}ms` }}
     >
-      <Handle type="target" position={Position.Top} className="!invisible" />
+      <ConstellationNodeHandles />
       <button
         type="button"
         aria-pressed={isExpanded}
         data-testid={`constellation-theme-${theme.id}`}
         data-constellation-focus-id={theme.id}
-        className="nodrag nopan w-56 rounded-[inherit] p-4 text-left"
+        className="nodrag nopan w-48 rounded-[inherit] p-4 text-left"
         onClick={handleClick}
         onFocus={() => {
           onFocusCanvasItem(theme.id);
@@ -91,7 +92,7 @@ function ConstellationThemeNode({ data }: NodeProps<ConstellationThemeFlowNode>)
           {theme.title}
         </h3>
         <p
-          className="mt-1 leading-snug line-clamp-3"
+          className="mt-1 leading-snug line-clamp-2"
           style={{ fontSize: "var(--constellation-text-sm)", color: "var(--app-muted)" }}
         >
           {theme.summary}

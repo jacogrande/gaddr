@@ -28,6 +28,8 @@ import { selectConstellationVisibleStructuralChildren } from "./constellation-ex
 import { ExplorationPanel } from "./constellation-exploration-panel";
 import {
   computeConstellationFlowNodesFromGraph,
+  getConstellationEdgeHandles,
+  getConstellationHandleId,
   type ConstellationFlowNode,
 } from "./constellation-flow-nodes";
 import { selectNextConstellationFocusableItemId } from "./constellation-keyboard";
@@ -222,18 +224,26 @@ function ConstellationCanvas({
     [nodes],
   );
   const edges = useMemo((): Edge[] => {
+    const flowNodeLookup = new Map(nodes.map((node) => [node.id, node]));
+
     return visibleCanvasEdges.map((edge) => {
       const isActivePath =
         selectedLineageIds.has(edge.fromNodeId) && selectedLineageIds.has(edge.toNodeId);
       const touchesActiveBranch = activeBranchRootId
         ? edge.fromNodeId === activeBranchRootId || edge.toNodeId === activeBranchRootId
         : false;
+      const sourceNode = flowNodeLookup.get(edge.fromNodeId) ?? null;
+      const targetNode = flowNodeLookup.get(edge.toNodeId) ?? null;
+      const handles =
+        sourceNode && targetNode ? getConstellationEdgeHandles(sourceNode, targetNode) : null;
 
       return {
         id: edge.id,
         source: edge.fromNodeId,
         target: edge.toNodeId,
         type: "default",
+        sourceHandle: handles ? getConstellationHandleId("source", handles.sourceSide) : undefined,
+        targetHandle: handles ? getConstellationHandleId("target", handles.targetSide) : undefined,
         animated: false,
         selectable: false,
         style: {
@@ -246,7 +256,7 @@ function ConstellationCanvas({
         },
       };
     });
-  }, [activeBranchRootId, selectedLineageIds, showOnlyCurrentBranch, visibleCanvasEdges]);
+  }, [activeBranchRootId, nodes, selectedLineageIds, showOnlyCurrentBranch, visibleCanvasEdges]);
 
   useEffect(() => {
     setRevealedSummaryParentNodeIds(new Set());

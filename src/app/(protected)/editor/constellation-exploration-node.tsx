@@ -1,10 +1,11 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { type NodeProps } from "@xyflow/react";
 import type { ConstellationExplorationNode } from "../../../domain/gadfly/constellation-types";
 import { useConstellationCallbacks } from "./constellation-callbacks-context";
 import type { ConstellationExplorationFlowNode } from "./constellation-flow-nodes";
+import { ConstellationNodeHandles } from "./constellation-node-handles";
 import {
   formatConstellationCompactTrustSummary,
   formatConstellationConfidencePercent,
@@ -63,7 +64,7 @@ function ConstellationExplorationNodeCard({ data }: NodeProps<ConstellationExplo
       className={`${buildNodeClassName(node, isSelected, isDimmed, isFocused)} gaddr-constellation-island-enter`}
       style={{ animationDelay: `${String(820 + index * 70)}ms` }}
     >
-      <Handle type="target" position={Position.Top} className="!invisible" />
+      <ConstellationNodeHandles />
       <button
         type="button"
         className="nodrag nopan w-56 rounded-[inherit] p-4 text-left"
@@ -122,7 +123,6 @@ function ConstellationExplorationNodeCard({ data }: NodeProps<ConstellationExplo
           ) : null}
         </div>
       </button>
-      <Handle type="source" position={Position.Bottom} className="!invisible" />
     </div>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { type NodeProps } from "@xyflow/react";
 import { useConstellationCallbacks } from "./constellation-callbacks-context";
 import type { ConstellationSummaryFlowNode } from "./constellation-flow-nodes";
+import { ConstellationNodeHandles } from "./constellation-node-handles";
 
 function ConstellationSummaryNode({ data }: NodeProps<ConstellationSummaryFlowNode>) {
   const { focusedCanvasItemId, onFocusCanvasItem, onRevealSummaryNode } = useConstellationCallbacks();
@@ -21,7 +22,7 @@ function ConstellationSummaryNode({ data }: NodeProps<ConstellationSummaryFlowNo
       }`}
       style={{ animationDelay: `${String(880 + index * 70)}ms` }}
     >
-      <Handle type="target" position={Position.Top} className="!invisible" />
+      <ConstellationNodeHandles />
       <button
         type="button"
         className="nodrag nopan w-52 rounded-[inherit] p-4 text-left"
@@ -53,7 +54,6 @@ function ConstellationSummaryNode({ data }: NodeProps<ConstellationSummaryFlowNo
           Reveal these branches to inspect weaker but still available directions.
         </p>
       </button>
-      <Handle type="source" position={Position.Bottom} className="!invisible" />
     </div>
   );
 }

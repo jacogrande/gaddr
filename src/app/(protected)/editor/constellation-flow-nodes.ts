@@ -50,6 +50,8 @@ export type ConstellationFlowNode =
   | ConstellationExplorationFlowNode
   | ConstellationSummaryFlowNode;
 
+export type ConstellationHandleSide = "top" | "right" | "bottom" | "left";
+
 type ComputeConstellationFlowNodesInput = {
   graph: ConstellationExplorationGraph;
   visibleNodeIds: ReadonlySet<string>;
@@ -75,6 +77,89 @@ type BranchLayoutItem =
       id: string;
       kind: "summary";
     };
+
+type ConstellationFlowNodeDimensions = {
+  halfWidth: number;
+  halfHeight: number;
+};
+
+function getConstellationFlowNodeDimensions(
+  node: ConstellationFlowNode,
+): ConstellationFlowNodeDimensions {
+  switch (node.type) {
+    case "draft":
+      return {
+        halfWidth: DRAFT_NODE_HALF_WIDTH,
+        halfHeight: DRAFT_NODE_HALF_HEIGHT,
+      };
+    case "theme":
+      return {
+        halfWidth: THEME_NODE_HALF_WIDTH,
+        halfHeight: THEME_NODE_HALF_HEIGHT,
+      };
+    case "summary":
+    case "exploration":
+      return {
+        halfWidth: EXPLORATION_NODE_HALF_WIDTH,
+        halfHeight: EXPLORATION_NODE_HALF_HEIGHT,
+      };
+  }
+}
+
+export function getConstellationHandleId(
+  type: "source" | "target",
+  side: ConstellationHandleSide,
+): string {
+  return `${type}-${side}`;
+}
+
+export function getConstellationFlowNodeCenter(node: ConstellationFlowNode): { x: number; y: number } {
+  const dimensions = getConstellationFlowNodeDimensions(node);
+
+  return {
+    x: node.position.x + dimensions.halfWidth,
+    y: node.position.y + dimensions.halfHeight,
+  };
+}
+
+function resolveDirectionalHandleSide(
+  dx: number,
+  dy: number,
+  dimensions: ConstellationFlowNodeDimensions,
+  direction: "source" | "target",
+): ConstellationHandleSide {
+  const axisWeightX = Math.abs(dx) / dimensions.halfWidth;
+  const axisWeightY = Math.abs(dy) / dimensions.halfHeight;
+
+  if (axisWeightX > axisWeightY) {
+    if (direction === "source") {
+      return dx >= 0 ? "right" : "left";
+    }
+
+    return dx >= 0 ? "left" : "right";
+  }
+
+  if (direction === "source") {
+    return dy >= 0 ? "bottom" : "top";
+  }
+
+  return dy >= 0 ? "top" : "bottom";
+}
+
+export function getConstellationEdgeHandles(
+  sourceNode: ConstellationFlowNode,
+  targetNode: ConstellationFlowNode,
+): { sourceSide: ConstellationHandleSide; targetSide: ConstellationHandleSide } {
+  const sourceCenter = getConstellationFlowNodeCenter(sourceNode);
+  const targetCenter = getConstellationFlowNodeCenter(targetNode);
+  const dx = targetCenter.x - sourceCenter.x;
+  const dy = targetCenter.y - sourceCenter.y;
+
+  return {
+    sourceSide: resolveDirectionalHandleSide(dx, dy, getConstellationFlowNodeDimensions(sourceNode), "source"),
+    targetSide: resolveDirectionalHandleSide(dx, dy, getConstellationFlowNodeDimensions(targetNode), "target"),
+  };
+}
 
 export function computeConstellationFlowNodesFromGraph({
   activeBranchChildIds,

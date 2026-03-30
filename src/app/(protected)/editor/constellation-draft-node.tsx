@@ -1,8 +1,9 @@
 "use client";
 
 import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { type NodeProps } from "@xyflow/react";
 import type { ConstellationDraftFlowNode } from "./constellation-flow-nodes";
+import { ConstellationNodeHandles } from "./constellation-node-handles";
 
 function ConstellationDraftNode({ data }: NodeProps<ConstellationDraftFlowNode>) {
   const { seed } = data;
@@ -37,7 +38,7 @@ function ConstellationDraftNode({ data }: NodeProps<ConstellationDraftFlowNode>)
       >
         {excerpt}
       </p>
-      <Handle type="source" position={Position.Bottom} className="!invisible" />
+      <ConstellationNodeHandles source target={false} />
     </div>
   );
 }
