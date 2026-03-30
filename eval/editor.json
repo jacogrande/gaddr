@@ -1,0 +1,155 @@
+{
+  "module": "editor",
+  "description": "TipTap rich text editor: content editing, formatting, persistence, slash menu, command palette, and glyph auto-replacement.",
+  "baseUrl": "http://localhost:8080",
+  "workflows": [
+    {
+      "id": "editor-loads-empty",
+      "name": "Editor loads with empty document",
+      "steps": [
+        "Clear localStorage.",
+        "Sign in and navigate to /editor.",
+        "Verify the editor content area is visible and empty.",
+        "Verify the cursor is active in the editor."
+      ]
+    },
+    {
+      "id": "editor-type-and-persist",
+      "name": "Typing persists to localStorage",
+      "steps": [
+        "Clear localStorage.",
+        "Navigate to /editor.",
+        "Type 'Hello, gaddr.' into the editor.",
+        "Wait 2 seconds for idle save.",
+        "Reload the page.",
+        "Verify the editor contains 'Hello, gaddr.'."
+      ]
+    },
+    {
+      "id": "editor-bold-hotkey",
+      "name": "Bold formatting via keyboard shortcut",
+      "steps": [
+        "Navigate to /editor.",
+        "Type 'some text' into the editor.",
+        "Select the word 'text'.",
+        "Press Ctrl+B (or Cmd+B on Mac).",
+        "Verify the selected text is wrapped in a <strong> tag."
+      ]
+    },
+    {
+      "id": "editor-italic-underline-strike",
+      "name": "Italic, underline, and strikethrough hotkeys",
+      "steps": [
+        "Type 'test words' into the editor.",
+        "Select 'test', press Ctrl+I, verify italic.",
+        "Select 'words', press Ctrl+U, verify underline.",
+        "Select 'words', press Ctrl+Shift+S, verify strikethrough."
+      ]
+    },
+    {
+      "id": "editor-heading-hotkeys",
+      "name": "Heading levels via hotkeys",
+      "steps": [
+        "Type 'My Heading' into the editor.",
+        "Place cursor on the line.",
+        "Press Ctrl+Alt+1, verify the line becomes an h1.",
+        "Press Ctrl+Alt+2, verify it becomes an h2.",
+        "Press Ctrl+Alt+3, verify it becomes an h3.",
+        "Press Ctrl+Alt+0, verify it reverts to a paragraph."
+      ]
+    },
+    {
+      "id": "editor-slash-menu-opens",
+      "name": "Slash menu opens on / keystroke",
+      "steps": [
+        "Navigate to /editor.",
+        "Type '/' at the start of a new line.",
+        "Verify the slash menu popover appears.",
+        "Verify it lists block commands (heading, bullet list, etc.)."
+      ]
+    },
+    {
+      "id": "editor-slash-menu-filters",
+      "name": "Slash menu filters by query",
+      "steps": [
+        "Type '/head' in the editor.",
+        "Verify the slash menu shows heading-related commands.",
+        "Verify non-matching commands are hidden.",
+        "Press Escape.",
+        "Verify the slash menu closes."
+      ]
+    },
+    {
+      "id": "editor-slash-menu-inserts-block",
+      "name": "Slash menu inserts selected block",
+      "steps": [
+        "Type '/bullet' in the editor.",
+        "Press Enter to select Bullet List.",
+        "Verify the line converts to a bullet list item.",
+        "Verify the slash text ('/bullet') is removed."
+      ]
+    },
+    {
+      "id": "editor-command-palette",
+      "name": "Command palette opens, searches, and executes",
+      "steps": [
+        "Navigate to /editor.",
+        "Press Ctrl+K (or Cmd+K).",
+        "Verify the command palette opens.",
+        "Type 'bold' into the palette search.",
+        "Verify Bold command appears in results.",
+        "Press Escape.",
+        "Verify the palette closes."
+      ]
+    },
+    {
+      "id": "editor-glyph-em-dash",
+      "name": "Glyph auto-replacement: -- becomes em-dash",
+      "steps": [
+        "Navigate to /editor.",
+        "Type 'hello--world'.",
+        "Verify the '--' is replaced with '\u2014' (em-dash)."
+      ]
+    },
+    {
+      "id": "editor-glyph-arrow",
+      "name": "Glyph auto-replacement: -> becomes arrow",
+      "steps": [
+        "Type 'A -> B' in the editor.",
+        "Verify '->' is replaced with '\u2192'."
+      ]
+    },
+    {
+      "id": "editor-glyph-ellipsis",
+      "name": "Glyph auto-replacement: ... becomes ellipsis",
+      "steps": [
+        "Type 'wait...' in the editor.",
+        "Verify '...' is replaced with '\u2026'."
+      ]
+    },
+    {
+      "id": "editor-undo-redo",
+      "name": "Undo and redo work",
+      "steps": [
+        "Type 'first' in the editor.",
+        "Type ' second'.",
+        "Press Ctrl+Z to undo.",
+        "Verify 'second' is removed.",
+        "Press Ctrl+Shift+Z to redo.",
+        "Verify 'second' reappears."
+      ]
+    },
+    {
+      "id": "editor-modifier-badges",
+      "name": "Modifier badges appear for active formatting",
+      "steps": [
+        "Navigate to /editor.",
+        "Type some text and select it.",
+        "Press Ctrl+B to bold.",
+        "Verify a 'B' modifier badge appears in the top-left stack.",
+        "Press Ctrl+B again to un-bold.",
+        "Verify the 'B' badge exits with animation."
+      ]
+    }
+  ]
+}

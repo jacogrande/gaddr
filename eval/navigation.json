@@ -1,0 +1,28 @@
+{
+  "module": "navigation",
+  "description": "Page routing, 404 handling, and cross-page navigation.",
+  "baseUrl": "http://localhost:8080",
+  "workflows": [
+    {
+      "id": "nav-404-page",
+      "name": "Unknown route shows 404 page",
+      "steps": [
+        "Navigate to /this-page-does-not-exist.",
+        "Verify the page shows 'Page not found'.",
+        "Verify a 'Back to Home' link is visible.",
+        "Click 'Back to Home'.",
+        "Verify redirect to / (which then redirects based on auth state)."
+      ]
+    },
+    {
+      "id": "nav-health-endpoint",
+      "name": "Health endpoint returns ok",
+      "steps": [
+        "Send a GET request to /api/health.",
+        "Verify HTTP 200 response.",
+        "Verify response body contains { status: 'ok' }.",
+        "Verify response body contains db.latencyMs as a number."
+      ]
+    }
+  ]
+}

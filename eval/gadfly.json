@@ -1,0 +1,111 @@
+{
+  "module": "gadfly",
+  "description": "Gadfly writing coach: debounced analysis, inline annotations, research pane, and annotation lifecycle.",
+  "baseUrl": "http://localhost:8080",
+  "workflows": [
+    {
+      "id": "gadfly-triggers-on-typing",
+      "name": "Gadfly analysis triggers after typing pause",
+      "steps": [
+        "Navigate to /editor.",
+        "Type two or three sentences of argumentative prose.",
+        "Stop typing and wait ~2 seconds.",
+        "Verify a network request is sent to /api/gadfly/analyze.",
+        "Verify the debug indicator pulses while analysis is in progress."
+      ]
+    },
+    {
+      "id": "gadfly-annotations-appear",
+      "name": "Annotations highlight text in the editor",
+      "steps": [
+        "Type a claim without evidence (e.g. 'Studies show that X is always true.').",
+        "Wait for Gadfly analysis to complete.",
+        "Verify highlighted spans appear in the editor text.",
+        "Verify numbered annotation markers are visible."
+      ]
+    },
+    {
+      "id": "gadfly-hover-shows-details",
+      "name": "Hovering an annotation shows details",
+      "steps": [
+        "Trigger Gadfly annotations on some text.",
+        "Hover over a highlighted span.",
+        "Verify a tooltip or detail popover appears.",
+        "Verify it shows the annotation category and feedback."
+      ]
+    },
+    {
+      "id": "gadfly-research-pane-opens",
+      "name": "Clicking an annotation opens the research pane",
+      "steps": [
+        "Trigger Gadfly annotations on some text.",
+        "Click on a highlighted annotation.",
+        "Verify the research pane opens on the right side.",
+        "Verify it shows research tasks (fact-check, evidence, counterpoint, or context).",
+        "Verify sources are listed with title, domain, and link."
+      ]
+    },
+    {
+      "id": "gadfly-dismiss-annotation",
+      "name": "Dismissing an annotation removes it",
+      "steps": [
+        "Trigger annotations and open the research pane for one.",
+        "Click the dismiss button.",
+        "Verify the annotation highlight is removed from the editor.",
+        "Verify the research pane closes or shows next annotation."
+      ]
+    },
+    {
+      "id": "gadfly-acknowledge-annotation",
+      "name": "Acknowledging an annotation marks it without removing",
+      "steps": [
+        "Open the research pane for an annotation.",
+        "Click the acknowledge button.",
+        "Verify the annotation visual state changes (e.g. muted highlight).",
+        "Verify the annotation is no longer flagged as active."
+      ]
+    },
+    {
+      "id": "gadfly-severity-colors",
+      "name": "Annotations show severity-based coloring",
+      "steps": [
+        "Trigger multiple annotations with different severities.",
+        "Verify low-severity annotations use a subtle highlight color.",
+        "Verify high-severity annotations use a stronger highlight color."
+      ]
+    },
+    {
+      "id": "gadfly-analysis-error-graceful",
+      "name": "Gadfly error does not break the editor",
+      "steps": [
+        "Intercept /api/gadfly/analyze and return a 502 error.",
+        "Type text in the editor.",
+        "Wait for the analysis attempt.",
+        "Verify the editor remains fully functional.",
+        "Verify an error indicator appears in the debug pane (if open).",
+        "Verify no crash or blank screen."
+      ]
+    },
+    {
+      "id": "gadfly-debug-pane",
+      "name": "Debug pane shows analysis details",
+      "steps": [
+        "Navigate to /editor (dev mode).",
+        "Press Ctrl+Shift+D to open the debug pane.",
+        "Type text and wait for Gadfly analysis.",
+        "Verify the debug pane shows request/response details.",
+        "Verify it displays token usage, latency, and model name.",
+        "Verify the copy button works for JSON export."
+      ]
+    },
+    {
+      "id": "gadfly-supersedes-pending",
+      "name": "New edits supersede pending analysis",
+      "steps": [
+        "Type a sentence and immediately type another before analysis completes.",
+        "Verify only the latest analysis request is processed.",
+        "Verify annotations reflect the final document state, not an intermediate one."
+      ]
+    }
+  ]
+}

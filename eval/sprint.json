@@ -1,0 +1,117 @@
+{
+  "module": "sprint",
+  "description": "Timed freewriting sprint: start, pause, resume, extend, complete, and post-sprint board transition.",
+  "baseUrl": "http://localhost:8080",
+  "workflows": [
+    {
+      "id": "sprint-menu-opens",
+      "name": "Sprint menu opens with duration options",
+      "steps": [
+        "Navigate to /editor.",
+        "Click the Timer chip in the top-right.",
+        "Verify the sprint menu opens.",
+        "Verify duration options are visible (5 min, 10 min, 15 min, 20 min).",
+        "Verify '10 min' is marked as default."
+      ]
+    },
+    {
+      "id": "sprint-start-countdown",
+      "name": "Starting a sprint shows countdown",
+      "steps": [
+        "Open the sprint menu.",
+        "Click the '5 sec' option (transition test).",
+        "Verify the sprint chip shows a countdown (e.g. '0:05').",
+        "Verify the sprint menu closes."
+      ]
+    },
+    {
+      "id": "sprint-pause-resume",
+      "name": "Pause and resume a sprint",
+      "steps": [
+        "Start a 10-minute sprint.",
+        "Click the timer chip to open the menu.",
+        "Click Pause.",
+        "Verify the chip shows 'Paused' with remaining time.",
+        "Click Resume.",
+        "Verify the countdown resumes."
+      ]
+    },
+    {
+      "id": "sprint-extend-time",
+      "name": "Extend sprint by 5 minutes",
+      "steps": [
+        "Start a 5-minute sprint.",
+        "Open the sprint menu.",
+        "Click the +5 min extension button.",
+        "Verify the remaining time increases by approximately 5 minutes."
+      ]
+    },
+    {
+      "id": "sprint-end-early",
+      "name": "End sprint early resets to idle",
+      "steps": [
+        "Start a sprint.",
+        "Open the sprint menu.",
+        "Click End sprint.",
+        "Verify the chip returns to 'Timer' (idle state).",
+        "Verify the board does not appear."
+      ]
+    },
+    {
+      "id": "sprint-complete-board-transition",
+      "name": "Sprint completes and board animates in",
+      "steps": [
+        "Start a 5-second sprint.",
+        "Type a few sentences while the timer runs.",
+        "Wait for the timer to reach zero.",
+        "Stop typing and wait for idle detection (~2.6s).",
+        "Verify the editor zooms out (scale animation).",
+        "Verify the node grid container animates in.",
+        "Verify the editor content is hidden but still mounted."
+      ]
+    },
+    {
+      "id": "sprint-typing-exits-board",
+      "name": "Typing exits the board and returns to editor",
+      "steps": [
+        "Complete a sprint and wait for the board to appear.",
+        "Start typing in the editor.",
+        "Verify the board transitions out.",
+        "Verify the editor zooms back in.",
+        "Verify typed text appears in the editor."
+      ]
+    },
+    {
+      "id": "sprint-reopen-board",
+      "name": "Explore button reopens the board after dismissal",
+      "steps": [
+        "Complete a sprint and wait for the board to appear.",
+        "Start typing to dismiss the board.",
+        "Verify an 'Explore' button appears in the top-right.",
+        "Click the Explore button.",
+        "Verify the board transition starts again."
+      ]
+    },
+    {
+      "id": "sprint-restart-resets-board",
+      "name": "Starting a new sprint resets the board",
+      "steps": [
+        "Complete a sprint and let the board appear.",
+        "Open the sprint menu.",
+        "Start a new sprint.",
+        "Verify the board is hidden.",
+        "Verify the countdown begins fresh."
+      ]
+    },
+    {
+      "id": "sprint-overtime-label",
+      "name": "Overtime label shows when typing after completion",
+      "steps": [
+        "Start a 5-second sprint.",
+        "Wait for the timer to expire.",
+        "Continue typing.",
+        "Verify the chip shows an overtime counter (e.g. '+0:05')."
+      ]
+    }
+  ]
+}

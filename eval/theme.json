@@ -1,0 +1,48 @@
+{
+  "module": "theme",
+  "description": "Light/dark theme toggle, persistence, and system preference fallback.",
+  "baseUrl": "http://localhost:8080",
+  "workflows": [
+    {
+      "id": "theme-toggle",
+      "name": "Toggle between light and dark themes",
+      "steps": [
+        "Navigate to /editor.",
+        "Note the current theme (check data-theme attribute on <html>).",
+        "Click the theme toggle button (bottom-right corner).",
+        "Verify data-theme switches to the opposite value.",
+        "Verify the background color changes visibly."
+      ]
+    },
+    {
+      "id": "theme-persists-reload",
+      "name": "Theme preference persists across reload",
+      "steps": [
+        "Set the theme to 'dark' via the toggle.",
+        "Reload the page.",
+        "Verify the page loads in dark mode (no flash of wrong theme).",
+        "Verify localStorage contains the 'gaddr:theme' key with value 'dark'."
+      ]
+    },
+    {
+      "id": "theme-system-preference-fallback",
+      "name": "System preference is used when no stored preference",
+      "steps": [
+        "Clear localStorage.",
+        "Set prefers-color-scheme to 'dark' via emulation.",
+        "Navigate to /editor.",
+        "Verify the page renders in dark mode."
+      ]
+    },
+    {
+      "id": "theme-no-flash",
+      "name": "No flash of unstyled/wrong theme on load",
+      "steps": [
+        "Set theme to 'dark' in localStorage.",
+        "Navigate to /editor.",
+        "Verify the initial paint is dark (no brief white flash).",
+        "This requires the theme script to run before body renders."
+      ]
+    }
+  ]
+}
