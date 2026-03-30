@@ -6,6 +6,7 @@ import type { Editor as TiptapEditor } from "@tiptap/core";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
+import { SignOutButton } from "../sign-out-button";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
 import { StandardHotkeys } from "./standard-hotkeys-extension";
@@ -2011,6 +2012,9 @@ export function MinimalEditor() {
                     </div>
                   )}
                   <p className="mt-2 px-2 text-[0.62rem] leading-4 text-[color:var(--app-muted)]">{sprintMenuNote}</p>
+                  <div className="mt-2 border-t pt-2 px-2">
+                    <SignOutButton />
+                  </div>
                 </div>
               </div>
             ) : null}
