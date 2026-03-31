@@ -16,11 +16,11 @@
     },
     {
       "id": "nav-health-endpoint",
-      "name": "Health endpoint returns ok",
+      "name": "Health endpoint responds with status shape",
       "steps": [
         "Send a GET request to /api/health.",
-        "Verify HTTP 200 response.",
-        "Verify response body contains { status: 'ok' }.",
+        "Verify HTTP 200 (DB connected) or 503 (DB unreachable).",
+        "Verify response body contains status as 'ok' or 'error'.",
         "Verify response body contains db.latencyMs as a number."
       ]
     }

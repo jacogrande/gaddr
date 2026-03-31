@@ -97,7 +97,8 @@
       "name": "Starting a new sprint resets the board",
       "steps": [
         "Complete a sprint and let the board appear.",
-        "Open the sprint menu.",
+        "Dismiss the board by typing.",
+        "Open the sprint menu and click 'End timer' to return to idle.",
         "Start a new sprint.",
         "Verify the board is hidden.",
         "Verify the countdown begins fresh."
