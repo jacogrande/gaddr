@@ -13,7 +13,6 @@ gaddr is a "Micro-Essay Continuous Learning Studio" — a SaaS platform where us
 - **Auth:** Better Auth (integrated into Next.js, DB-backed sessions in Postgres)
 - **Database:** Railway Postgres (users/sessions/essays/evidence)
 - **Hosting:** Vercel (SSR/ISR, API routes, Server Actions, preview deployments)
-- **Validation:** Zod (especially for assistant response schema enforcement)
 - **Observability:** Sentry (server + client)
 
 ## Commands
@@ -34,7 +33,7 @@ bun run db:push          # Push schema changes
 **Functional core, imperative shell.** See `docs/architecture.md` for the full architecture document.
 
 - `src/domain/` — Pure TypeScript. Zero framework imports. Types, schemas, pipelines, ports.
-- `src/infra/` — Adapters implementing domain ports (Postgres, LLM, auth).
+- `src/infra/` — Adapters implementing domain ports (Postgres, auth).
 - `src/app/` — Next.js shell. Thin wiring only.
 
 Dependencies point inward: `app/ -> infra/ -> domain/`. Never the reverse.
@@ -43,7 +42,7 @@ Dependencies point inward: `app/ -> infra/ -> domain/`. Never the reverse.
 
 All of these are enforced at lint time. The build fails on any violation.
 
-- `domain/` must not import from `infra/`, `app/`, or any external library (Next.js, Drizzle, Better Auth, LLM SDKs, Sentry).
+- `domain/` must not import from `infra/`, `app/`, or any external library (Next.js, Drizzle, Better Auth, Sentry).
 - `domain/` must not throw. Return `Result<T, E>` instead.
 - `domain/` must not call `new Date()`, `Date.now()`, `Math.random()`, `fetch`, or `console`. Pass values as parameters.
 - `domain/` must not use `as` type assertions. Fix the types instead.
@@ -58,19 +57,6 @@ All of these are enforced at lint time. The build fails on any violation.
 
 - Unit tests (`test/unit/`) — domain/ only, pure functions, no mocks. Must run under 5 seconds.
 - E2E tests (`test/e2e/`) — Playwright, organized by user workflow. Playwright MCP is available for browser interaction.
-- Contract tests — LLM response validation, nightly schedule.
-
-## The Authorship Rule (Hard Constraint)
-
-The LLM assistant must **never** write, rewrite, or replace user prose. It may only return structured coaching artifacts:
-
-- **Feedback:** inline comments + issue lists (problem -> why it matters -> question -> suggested action)
-- **Questions:** Socratic prompts
-- **Research:** sources, quotes, evidence cards
-- **Argument analysis:** claim mapping, assumptions, counterclaims (structure only)
-- **Checklists / next actions**
-
-All assistant responses must be **structured JSON** validated with Zod. Reject any response containing replacement prose fields. No UI affordance should make it easy to swap in AI-written text.
 
 ## Auth (Better Auth)
 
@@ -90,5 +76,4 @@ Read these before making design or architecture decisions — they are the syste
 - `docs/product-and-design-philosophy.md` — design principles, UX patterns, metrics
 - `docs/infra.md` — infrastructure plan and deployment checklist
 - `docs/business-model.md` — revenue tiers, unit economics, GTM
-- `docs/gadfly-technical-design.md` — LLM coaching pipeline design
 - `.agents/skills/better-auth-best-practices/SKILL.md` — Better Auth integration guide
