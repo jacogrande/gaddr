@@ -30,6 +30,8 @@ test("stale auth cookie does not cause an /editor redirect loop", async ({ page,
 });
 
 test("sign-in page renders authentication provider controls", async ({ page }, testInfo) => {
+  test.skip(authBypassEnabled, "Sign-in form bypassed when E2E_BYPASS_AUTH=true.");
+
   await page.goto("/sign-in");
 
   await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
