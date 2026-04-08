@@ -1,79 +1,85 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
 
 ## Project Overview
 
-gaddr is a "Micro-Essay Continuous Learning Studio" — a SaaS platform where users write short (200-800 word) evidence-backed micro-essays and receive LLM coaching (never ghostwriting). Users build a "thinking portfolio" with version history, claim-evidence linking, and structured peer feedback.
+gaddr is a 3-step writing platform:
+
+1. Uninterrupted freewrite
+2. Constellation review: after a writing sprint, the system gathers source-backed citations, steelmanned counterarguments, and issues found in the draft, then presents them in a constellation view
+3. Uninterrupted final draft: the system turns accepted findings into annotations on a first draft, then returns the writer to a clean drafting surface to revise without inline AI interruptions
+
+AI is allowed to retrieve, structure, question, and annotate. It is not allowed to ghostwrite the user's prose.
+
+## Current Product Status
+
+The repo currently implements auth, a protected TipTap editor, local-first persistence, sprint timing, theme support, and a Playwright eval harness. Citation retrieval, constellation intelligence, auto-annotation, and the dedicated final-draft workflow are the next major product layers.
 
 ## Tech Stack
 
 - **Framework:** Next.js (App Router) + TypeScript
 - **Package manager:** bun
-- **Auth:** Better Auth (integrated into Next.js, DB-backed sessions in Postgres)
-- **Database:** Railway Postgres (users/sessions/essays/evidence)
-- **Hosting:** Vercel (SSR/ISR, API routes, Server Actions, preview deployments)
-- **Observability:** Sentry (server + client)
+- **Auth:** Better Auth
+- **Database:** Postgres via Drizzle ORM
+- **Hosting:** Vercel
+- **Testing:** Bun unit tests + Playwright E2E
 
 ## Commands
 
 ```bash
 bun run dev              # Start dev server (Turbopack, port 8080)
 bun run build            # Production build
-bun run check            # Verification gate: typecheck + lint (runs on agent stop)
-bun run knip             # Dead code detection (run manually)
-bun test                 # Unit tests (domain/ only, <5s)
+bun run check            # Typecheck + lint
+bun test                 # Bun test suite
 bun run test:e2e         # Playwright E2E tests
-bun run db:migrate       # Drizzle migrations
-bun run db:push          # Push schema changes
+bun run test:e2e:auth    # Playwright auth-only tests
+bun run db:generate      # Generate Drizzle migration files
+bun run db:migrate       # Run Drizzle migrations
+bun run db:push          # Push schema changes directly
 ```
 
 ## Architecture
 
-**Functional core, imperative shell.** See `docs/architecture.md` for the full architecture document.
+**Functional core, imperative shell.**
 
-- `src/domain/` — Pure TypeScript. Zero framework imports. Types, schemas, pipelines, ports.
-- `src/infra/` — Adapters implementing domain ports (Postgres, auth).
-- `src/app/` — Next.js shell. Thin wiring only.
+- `src/domain/` - Pure TypeScript. No framework imports. Types, invariants, ranking/filtering logic, annotation/constellation rules, ports.
+- `src/infra/` - Adapters for auth, database, retrieval, extraction, and model calls.
+- `src/app/` - Next.js shell. Routing, rendering, and thin UI wiring.
 
-Dependencies point inward: `app/ -> infra/ -> domain/`. Never the reverse.
+Dependencies point inward: `app -> infra -> domain`.
 
-### Hard Rules (Enforced by ESLint)
+## Product Rules
 
-All of these are enforced at lint time. The build fails on any violation.
+- Freewrite and final draft are interruption-free. Do not put blocking AI critique in the active writing loop.
+- Every AI-suggested citation or factual challenge must preserve provenance.
+- Counterarguments should be steelmanned, not shallow or adversarial.
+- Auto-annotations must point, question, and explain. They must not replace the writer's sentences with finished prose.
+- Typing latency is P0. Retrieval, annotation, and constellation assembly must stay off the keystroke path.
 
-- `domain/` must not import from `infra/`, `app/`, or any external library (Next.js, Drizzle, Better Auth, Sentry).
-- `domain/` must not throw. Return `Result<T, E>` instead.
-- `domain/` must not call `new Date()`, `Date.now()`, `Math.random()`, `fetch`, or `console`. Pass values as parameters.
-- `domain/` must not use `as` type assertions. Fix the types instead.
+## Hard Rules
+
+- `domain/` must not import from `infra/`, `app/`, or any external library.
+- `domain/` must not throw for expected business outcomes. Use `Result<T, E>`.
+- `domain/` must not call `Date.now()`, `new Date()`, `Math.random()`, `fetch`, or `console`.
 - `infra/` must not import from `app/`.
-- Unit tests (`test/unit/`) must only import from `domain/`.
-- No barrel files (`index.ts` re-exports) in `domain/`.
-- No parameter mutation (`no-param-reassign` with `props: true`).
-- Exhaustive `switch` on discriminated unions (`switch-exhaustiveness-check`).
-- No floating promises, no `!` non-null assertions, no loose equality.
+- Unit tests should target domain logic and other pure helpers.
+- E2E tests should verify user workflows, not internal implementation details.
 
-### Testing
+## Testing
 
-- Unit tests (`test/unit/`) — domain/ only, pure functions, no mocks. Must run under 5 seconds.
-- E2E tests (`test/e2e/`) — Playwright, organized by user workflow. Playwright MCP is available for browser interaction.
-
-## Auth (Better Auth)
-
-OAuth only (Google + GitHub), DB-backed sessions in Postgres. See `.agents/skills/better-auth-best-practices/SKILL.md` for integration patterns.
-
-## Editor Performance Constraint (P0)
-
-- Typing responsiveness is non-negotiable. The editor must feel instant under normal use and long documents.
-- Prefer asynchronous/background persistence (idle callbacks, delayed flushes, blur/unload flush) over synchronous writes during active typing.
-- Avoid per-keystroke expensive operations in the editing loop (full-document serialization, heavy decoration rebuilds, unnecessary re-renders).
+- `eval/*.json` contains human-readable workflow specs.
+- `test/e2e/*.pw.ts` contains the executable Playwright contract.
+- `playwright.config.ts` boots the app in test mode and can bypass auth for protected-flow coverage.
+- Current covered flows: auth, editor, sprint transition, theme, and navigation.
 
 ## Reference Docs
 
-Read these before making design or architecture decisions — they are the system of record:
+Read these before making design or architecture changes:
 
-- `docs/architecture.md` — dependency rules, data flow, testing strategy, feature workflow
-- `docs/product-and-design-philosophy.md` — design principles, UX patterns, metrics
-- `docs/infra.md` — infrastructure plan and deployment checklist
-- `docs/business-model.md` — revenue tiers, unit economics, GTM
-- `.agents/skills/better-auth-best-practices/SKILL.md` — Better Auth integration guide
+- `docs/product-and-design-philosophy.md`
+- `docs/architecture.md`
+- `docs/mvp-cycle.md`
+- `docs/infra.md`
+- `docs/agentic-ux-testing.md`
+- `.agents/skills/better-auth-best-practices/SKILL.md`
