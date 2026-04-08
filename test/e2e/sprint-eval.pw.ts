@@ -45,14 +45,13 @@ async function completeSprintAndWaitForBoard(page: import("@playwright/test").Pa
   await page.keyboard.type("Testing the sprint timer.");
   // Timer (5s) + idle detection (5s) + transition_in (1.4s) + buffer
   await page.waitForTimeout(12500);
-  await expect(page.locator(".gaddr-canvas--active")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId("board-overlay")).toBeVisible({ timeout: 5000 });
 }
 
 /**
  * Type into the editor to trigger onUpdate → transition_out.
- * In the canvas zoom model the editor stays visible (just scaled down),
- * so we can click it directly — but pointer-events are disabled on the
- * viewport when zoomed out. Use evaluate to focus the tiptap element.
+ * The React Flow canvas overlay captures pointer events, so we
+ * focus the tiptap element programmatically via evaluate.
  */
 async function typeToExitBoard(page: import("@playwright/test").Page, text: string) {
   await page.evaluate(() => {
@@ -134,7 +133,7 @@ test("eval: end sprint early resets to idle", async ({ page }) => {
   await page.getByRole("button", { name: /end timer/i }).click();
 
   await expect(page.getByTestId("sprint-chip")).toContainText(/timer/i);
-  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0);
+  await expect(page.getByTestId("board-overlay")).toHaveCount(0);
 });
 
 // ── sprint-complete-board-transition ──
@@ -144,7 +143,6 @@ test("eval: sprint completes and board animates in", async ({ page }) => {
   await completeSprintAndWaitForBoard(page);
 
   await expect(page.getByTestId("canvas")).toBeVisible();
-  await expect(page.locator(".gaddr-canvas-viewport--zoomed-out")).toBeVisible();
   await expect(page.getByTestId("board-overlay")).toBeVisible();
   await expect(page.getByTestId("board-resume-button")).toBeVisible();
 });
@@ -157,7 +155,7 @@ test("eval: typing exits the board and returns to editor", async ({ page }) => {
 
   await typeToExitBoard(page, "Back to editing");
 
-  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0, { timeout: 5000 });
+  await expect(page.getByTestId("board-overlay")).toHaveCount(0, { timeout: 5000 });
   await expect(page.getByTestId("editor-content")).toBeVisible();
   await expect(page.locator(".tiptap")).toContainText("Back to editing");
 });
@@ -169,12 +167,12 @@ test("eval: review board button reopens the board after dismissal", async ({ pag
   await completeSprintAndWaitForBoard(page);
 
   await typeToExitBoard(page, "dismiss");
-  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0, { timeout: 5000 });
+  await expect(page.getByTestId("board-overlay")).toHaveCount(0, { timeout: 5000 });
 
   await expect(page.getByTestId("board-reopen-button")).toBeVisible({ timeout: 3000 });
   await page.getByTestId("board-reopen-button").click();
 
-  await expect(page.locator(".gaddr-canvas--active")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId("board-overlay")).toBeVisible({ timeout: 5000 });
 });
 
 // ── sprint-restart-resets-board ──
@@ -185,7 +183,7 @@ test("eval: starting a new sprint resets the board", async ({ page }) => {
 
   // Dismiss the board by typing
   await typeToExitBoard(page, "x");
-  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0, { timeout: 5000 });
+  await expect(page.getByTestId("board-overlay")).toHaveCount(0, { timeout: 5000 });
 
   // Sprint phase is still "completed" — menu shows actions, not duration options.
   // End the sprint first to return to idle, then start a new one.
@@ -195,12 +193,12 @@ test("eval: starting a new sprint resets the board", async ({ page }) => {
 
   await start5sSprint(page);
 
-  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0);
+  await expect(page.getByTestId("board-overlay")).toHaveCount(0);
   await expect(page.getByTestId("sprint-chip")).toContainText(/\d/);
 });
 
-// ── sprint-overtime-label ──
-test("eval: overtime label shows when typing after completion", async ({ page }) => {
+// ── sprint-done-after-completion ──
+test("eval: chip shows Done after completion even while typing", async ({ page }) => {
   test.setTimeout(20000);
   await freshEditor(page);
   await start5sSprint(page);
@@ -211,8 +209,8 @@ test("eval: overtime label shows when typing after completion", async ({ page })
   // Wait for timer to expire
   await page.waitForTimeout(6000);
 
-  // Keep typing to stay in "writer active" mode
+  // Keep typing after completion
   await page.keyboard.type(" Still going.");
 
-  await expect(page.getByTestId("sprint-chip")).toContainText(/\+\d+:\d+/, { timeout: 3000 });
+  await expect(page.getByTestId("sprint-chip")).toContainText("Done", { timeout: 3000 });
 });
