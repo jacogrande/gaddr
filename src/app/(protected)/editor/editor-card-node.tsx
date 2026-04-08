@@ -1,15 +1,17 @@
 import { memo } from "react";
-import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Handle, Position } from "@xyflow/react";
+import { EditorContent } from "@tiptap/react";
+import { useEditorCardContext } from "./editor-card-context";
 
-type EditorCardData = Node<{
-  label: string;
-}>;
+function EditorCardNodeInner() {
+  const { editor, boardActive } = useEditorCardContext();
 
-function EditorCardNodeInner({ data }: NodeProps<EditorCardData>) {
   return (
-    <div className="nodrag nowheel nopan gaddr-canvas-node--card">
+    <div className={`nodrag nopan ${boardActive ? "nowheel gaddr-canvas-node--card" : ""}`}>
       <Handle type="target" position={Position.Top} style={{ visibility: "hidden" }} />
-      <p className="gaddr-card-placeholder">{data.label}</p>
+      <div className={boardActive ? "pointer-events-none" : "gaddr-editor-scroll"}>
+        <EditorContent editor={editor} />
+      </div>
       <Handle type="source" position={Position.Bottom} style={{ visibility: "hidden" }} />
     </div>
   );

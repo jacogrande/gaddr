@@ -15,38 +15,55 @@ import { EditorCardNode } from "./editor-card-node";
 import type { BoardMode } from "./minimal-editor";
 
 const NODE_WIDTH = 896;
-const NODE_HEIGHT = 600;
 
 const nodeTypes = { editorCard: EditorCardNode } as const;
 
 type CanvasFlowProps = {
   boardMode: BoardMode;
-  cardLabel: string;
   onExitBoard: () => void;
 };
 
 const TRANSITION_DURATION_MS = 1400;
 const FIT_VIEW_PADDING = 0.5;
 
-function CanvasFlowInner({ boardMode, cardLabel, onExitBoard }: CanvasFlowProps) {
+function CanvasFlowInner({ boardMode, onExitBoard }: CanvasFlowProps) {
   const reactFlow = useReactFlow();
   const containerRef = useRef<HTMLDivElement>(null);
   const hasAnimatedIn = useRef(false);
 
+  // Node identity is stable — content is injected via EditorCardContext, not node data.
   const nodes: Node[] = useMemo(
     () => [
       {
         id: "editor-card",
         type: "editorCard",
         position: { x: 0, y: 0 },
-        data: { label: cardLabel },
+        data: {},
         draggable: false,
         selectable: false,
-        style: { width: NODE_WIDTH, height: NODE_HEIGHT },
+        style: { width: NODE_WIDTH },
       },
     ],
-    [cardLabel],
+    [],
   );
+
+  const boardActive = boardMode !== "hidden";
+
+  /** Viewport that shows the editor node at zoom=1, horizontally centered. */
+  const getCenteredViewport = useCallback(() => {
+    const node = reactFlow.getNode("editor-card");
+    if (!node) return null;
+    const w = containerRef.current?.clientWidth ?? window.innerWidth;
+    const nodeWidth = node.measured?.width ?? NODE_WIDTH;
+    return { x: (w - nodeWidth) / 2 - node.position.x, y: 0, zoom: 1 };
+  }, [reactFlow]);
+
+  // Lock viewport at zoom=1 centered on the node in writing mode
+  useEffect(() => {
+    if (boardActive) return;
+    const vp = getCenteredViewport();
+    if (vp) void reactFlow.setViewport(vp);
+  }, [boardActive, getCenteredViewport, reactFlow]);
 
   // Zoom out when transitioning in
   useEffect(() => {
@@ -57,15 +74,20 @@ function CanvasFlowInner({ boardMode, cardLabel, onExitBoard }: CanvasFlowProps)
     if (hasAnimatedIn.current) return;
     hasAnimatedIn.current = true;
 
+    let cancelled = false;
     const raf = requestAnimationFrame(() => {
-      void reactFlow.fitView({
-        duration: TRANSITION_DURATION_MS,
-        padding: FIT_VIEW_PADDING,
-        nodes: [{ id: "editor-card" }],
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        void reactFlow.fitView({
+          duration: TRANSITION_DURATION_MS,
+          padding: FIT_VIEW_PADDING,
+          nodes: [{ id: "editor-card" }],
+        });
       });
     });
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(raf);
     };
   }, [boardMode, reactFlow]);
@@ -73,26 +95,9 @@ function CanvasFlowInner({ boardMode, cardLabel, onExitBoard }: CanvasFlowProps)
   // Zoom back to 1:1 when transitioning out
   useEffect(() => {
     if (boardMode !== "transition_out") return;
-
-    const node = reactFlow.getNode("editor-card");
-    if (!node) return;
-
-    const containerWidth = containerRef.current?.clientWidth ?? window.innerWidth;
-    const containerHeight = containerRef.current?.clientHeight ?? window.innerHeight;
-    const nodeWidth = node.measured?.width ?? NODE_WIDTH;
-    const nodeHeight = node.measured?.height ?? NODE_HEIGHT;
-
-    void reactFlow.setViewport(
-      {
-        x: (containerWidth - nodeWidth) / 2 - node.position.x,
-        y: (containerHeight - nodeHeight) / 2 - node.position.y,
-        zoom: 1,
-      },
-      { duration: TRANSITION_DURATION_MS },
-    );
-  }, [boardMode, reactFlow]);
-
-  const isInteractive = boardMode === "visible";
+    const vp = getCenteredViewport();
+    if (vp) void reactFlow.setViewport(vp, { duration: TRANSITION_DURATION_MS });
+  }, [boardMode, getCenteredViewport, reactFlow]);
 
   const handleNodeClick = useCallback(() => {
     if (boardMode === "visible") {
@@ -102,42 +107,50 @@ function CanvasFlowInner({ boardMode, cardLabel, onExitBoard }: CanvasFlowProps)
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
-    <ReactFlow
-      nodes={nodes}
-      edges={[]}
-      nodeTypes={nodeTypes}
-      onNodeClick={handleNodeClick}
-      panOnDrag={isInteractive}
-      zoomOnScroll={isInteractive}
-      zoomOnPinch={isInteractive}
-      zoomOnDoubleClick={false}
-      nodesDraggable={false}
-      nodesConnectable={false}
-      elementsSelectable={false}
-      minZoom={0.1}
-      maxZoom={1}
-      fitView
-      fitViewOptions={{ padding: FIT_VIEW_PADDING, nodes: [{ id: "editor-card" }] }}
-      className="gaddr-react-flow"
-    >
-      <Background
-        variant={BackgroundVariant.Dots}
-        gap={36}
-        size={1}
-        className="gaddr-react-flow-bg"
-      />
-      <Panel position="bottom-center" className="gaddr-board-overlay" data-testid="board-overlay">
-        <p className="gaddr-board-overlay__label">Sprint complete</p>
-        <button
-          type="button"
-          className="gaddr-board-overlay__resume"
-          data-testid="board-resume-button"
-          onClick={onExitBoard}
-        >
-          Resume writing
-        </button>
-      </Panel>
-    </ReactFlow>
+      <ReactFlow
+        nodes={nodes}
+        edges={[]}
+        nodeTypes={nodeTypes}
+        onNodeClick={handleNodeClick}
+        panOnDrag={boardActive}
+        zoomOnScroll={boardActive}
+        zoomOnPinch={boardActive}
+        zoomOnDoubleClick={false}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        minZoom={boardActive ? 0.1 : 1}
+        maxZoom={1}
+        className="gaddr-react-flow"
+      >
+        {boardActive ? (
+          <>
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={36}
+              size={1}
+              className="gaddr-react-flow-bg"
+            />
+            <Panel position="bottom-center" className="gaddr-board-overlay" data-testid="board-overlay">
+              <p className="gaddr-board-overlay__label">Sprint complete</p>
+              <button
+                type="button"
+                className="gaddr-board-overlay__resume"
+                data-testid="board-resume-button"
+                onClick={onExitBoard}
+              >
+                Resume writing
+              </button>
+            </Panel>
+          </>
+        ) : (
+          <Panel position="bottom-center" className="gaddr-footer-panel">
+            <span className="text-xs tracking-[0.18em] text-[color:var(--app-muted-soft)]">
+              Copyright Gaddr 2026
+            </span>
+          </Panel>
+        )}
+      </ReactFlow>
     </div>
   );
 }

@@ -3,10 +3,11 @@
 import { ClockIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
-import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
+import { useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import { CanvasFlow } from "./canvas-flow";
+import { EditorCardProvider } from "./editor-card-context";
 import { SignOutButton } from "../sign-out-button";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
@@ -32,7 +33,7 @@ const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
 const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
 const DEFAULT_SPRINT_OPTION = "10m";
 const SPRINT_EXTENSION_MINUTES = 5;
-const SPRINT_RECENT_ACTIVITY_MS = 5000;
+const SPRINT_RECENT_ACTIVITY_MS = 3000;
 const SPRINT_OPTIONS = [
   {
     id: "5s",
@@ -397,7 +398,7 @@ export function MinimalEditor() {
     editorProps: {
       attributes: {
         class:
-          "tiptap h-full min-h-[calc(100vh-8.5rem)] w-full bg-transparent text-lg leading-8 text-[var(--app-fg)] focus:outline-none",
+          "tiptap h-full w-full bg-transparent text-lg leading-8 text-[var(--app-fg)] focus:outline-none",
       },
     },
     onUpdate: ({ editor: current }) => {
@@ -1022,7 +1023,7 @@ export function MinimalEditor() {
   }, []);
 
   if (!editor) {
-    return <div className="min-h-[calc(100vh-8.5rem)]" />;
+    return <div className="h-full" />;
   }
 
   const showBoardReopen =
@@ -1032,7 +1033,7 @@ export function MinimalEditor() {
 
   return (
     <div
-      className="gaddr-editor-shell relative h-full"
+      className="gaddr-editor-shell relative flex h-full flex-col"
       data-testid="editor-shell"
       data-board-active={boardMode !== "hidden" ? "true" : undefined}
     >
@@ -1336,17 +1337,10 @@ export function MinimalEditor() {
           </div>
         </div>
       ) : null}
-      {boardMode !== "hidden" ? (
-        <div className="gaddr-canvas-overlay" data-testid="canvas">
-          <CanvasFlow
-            boardMode={boardMode}
-            cardLabel={editor.getText().slice(0, 200) || "Your draft"}
-            onExitBoard={exitBoard}
-          />
-        </div>
-      ) : null}
-      <div data-testid="editor-content">
-        <EditorContent editor={editor} />
+      <div data-testid="editor-content" className="gaddr-canvas-container">
+        <EditorCardProvider editor={editor} boardActive={boardMode !== "hidden"}>
+          <CanvasFlow boardMode={boardMode} onExitBoard={exitBoard} />
+        </EditorCardProvider>
       </div>
     </div>
   );
