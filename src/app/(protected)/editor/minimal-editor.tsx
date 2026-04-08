@@ -417,7 +417,7 @@ export function MinimalEditor() {
         setSprintNowMs(now);
       }
       // Exit board when user starts typing
-      if (boardModeRef.current === "visible") {
+      if (boardModeRef.current === "visible" || boardModeRef.current === "transition_in") {
         setBoardMode("transition_out");
       }
       schedulePersist(current);
@@ -952,7 +952,7 @@ export function MinimalEditor() {
 
     const timer = window.setTimeout(() => {
       setBoardMode("hidden");
-    }, 1100);
+    }, 1450);
 
     return () => { window.clearTimeout(timer); };
   }, [boardMode]);
@@ -1331,29 +1331,24 @@ export function MinimalEditor() {
         </div>
       ) : null}
       <div
-        className={`gaddr-constellation-stage ${boardMode !== "hidden" ? "gaddr-constellation-stage--active" : ""}`}
+        className={`gaddr-canvas ${boardMode !== "hidden" ? "gaddr-canvas--active" : ""}`}
+        data-testid="canvas"
       >
-        {boardMode === "visible" ? (
-          <div
-            className="gaddr-constellation-flow-container flex items-center justify-center"
-            data-testid="node-grid"
-          >
-            {/* Node grid placeholder — constellation rework goes here */}
-          </div>
-        ) : null}
         <div
-          data-testid="editor-content"
-          className={`gaddr-constellation-editor-pane${
-            boardMode === "transition_in"
-              ? " gaddr-constellation-editor-pane--zooming-out"
-              : boardMode === "visible"
-                ? " gaddr-constellation-editor-pane--hidden"
-                : boardMode === "transition_out"
-                  ? " gaddr-constellation-editor-pane--zooming-in"
-                  : ""
+          className={`gaddr-canvas-viewport ${
+            boardMode === "transition_in" || boardMode === "visible"
+              ? "gaddr-canvas-viewport--zoomed-out"
+              : boardMode === "transition_out"
+                ? "gaddr-canvas-viewport--zooming-in"
+                : ""
           }`}
         >
-          <EditorContent editor={editor} />
+          <div
+            data-testid="editor-content"
+            className={`gaddr-canvas-node ${boardMode !== "hidden" ? "gaddr-canvas-node--card" : ""}`}
+          >
+            <EditorContent editor={editor} />
+          </div>
         </div>
       </div>
     </div>
