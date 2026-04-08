@@ -346,6 +346,6 @@ The redesign is successful if users can:
 
 ## References
 
-- [constellation-ux-review-2026-03-16.md](/Users/jackson/Code/projects/gaddr/docs/constellation-ux-review-2026-03-16.md)
-- [gadfly-constellation-review-spec.md](/Users/jackson/Code/projects/gaddr/docs/gadfly-constellation-review-spec.md)
-- [gadfly-product-ux-design-space.md](/Users/jackson/Code/projects/gaddr/docs/brainstorms/gadfly-product-ux-design-space.md)
+- [constellation-ux-review-2026-03-16.md](/Users/jackson/Code/projects/gaddr/docs/archive/constellation/constellation-ux-review-2026-03-16.md)
+- [gadfly-constellation-review-spec.md](/Users/jackson/Code/projects/gaddr/docs/archive/constellation/gadfly-constellation-review-spec.md)
+- [gadfly-product-ux-design-space.md](/Users/jackson/Code/projects/gaddr/docs/archive/gadfly/gadfly-product-ux-design-space.md)

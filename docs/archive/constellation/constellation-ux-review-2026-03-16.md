@@ -267,8 +267,8 @@ These recommendations align with widely used standards that still define strong 
 
 Internal:
 
-- `docs/gadfly-constellation-review-spec.md`
-- `docs/brainstorms/gadfly-product-ux-design-space.md`
+- `docs/archive/constellation/gadfly-constellation-review-spec.md`
+- `docs/archive/gadfly/gadfly-product-ux-design-space.md`
 - `src/app/(protected)/editor/constellation-board.tsx`
 - `src/app/(protected)/editor/constellation-theme-node.tsx`
 - `src/app/(protected)/editor/constellation-draft-node.tsx`

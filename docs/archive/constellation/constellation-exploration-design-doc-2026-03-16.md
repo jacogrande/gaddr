@@ -467,10 +467,10 @@ The redesign should lean into that logic instead of flattening Constellation int
 
 Internal:
 
-- [constellation-exploration-rfc-2026-03-16.md](/Users/jackson/Code/projects/gaddr/docs/constellation-exploration-rfc-2026-03-16.md)
-- [gadfly-product-ux-design-space.md](/Users/jackson/Code/projects/gaddr/docs/brainstorms/gadfly-product-ux-design-space.md)
-- [gadfly-constellation-review-spec.md](/Users/jackson/Code/projects/gaddr/docs/gadfly-constellation-review-spec.md)
-- [constellation-ux-review-2026-03-16.md](/Users/jackson/Code/projects/gaddr/docs/constellation-ux-review-2026-03-16.md)
+- [constellation-exploration-rfc-2026-03-16.md](/Users/jackson/Code/projects/gaddr/docs/archive/constellation/constellation-exploration-rfc-2026-03-16.md)
+- [gadfly-product-ux-design-space.md](/Users/jackson/Code/projects/gaddr/docs/archive/gadfly/gadfly-product-ux-design-space.md)
+- [gadfly-constellation-review-spec.md](/Users/jackson/Code/projects/gaddr/docs/archive/constellation/gadfly-constellation-review-spec.md)
+- [constellation-ux-review-2026-03-16.md](/Users/jackson/Code/projects/gaddr/docs/archive/constellation/constellation-ux-review-2026-03-16.md)
 
 External:
 
