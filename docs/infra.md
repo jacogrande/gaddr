@@ -1,222 +1,265 @@
-# Infra Doc (MVP) — Next.js + Vercel + Better Auth + Railway
+# Infra Doc - 3-Step Writing Platform
 
-## 1) Goal
+## 1. Goal
 
-Ship a production MVP fast with:
+Ship a writing platform that supports:
 
-- Auth (no custom password/security plumbing)
-- Database for essays/publishing
-- Hosting with previews and easy deploys
-- Minimal vendors and minimal ops
+1. uninterrupted freewrite
+2. a source-grounded constellation pass
+3. auto-annotated first draft
+4. uninterrupted final draft
 
----
+The key infra decision is to keep the typing path fast while allowing the research and annotation path to do heavier work in the background.
 
-## 2) Proposed stack (recommended)
+## 2. Recommended Stack
 
-### App + Hosting
+### App and Hosting
 
 - **Next.js (App Router) + TypeScript**
-- Deployed on **Vercel**
-- Vercel handles:
-  - SSR/ISR for public pages
-  - API Route Handlers / Server Actions for CRUD
-  - Environment variables + preview deployments
+- deploy on **Vercel**
+
+Use the web app for:
+
+- editor UI
+- auth routes
+- protected app pages
+- thin route handlers and server actions
 
 ### Auth
 
-- **Better Auth** integrated directly into Next.js
-- Uses **Railway Postgres** as persistence store (sessions/users/accounts) if you want DB-backed sessions.
-
-> Rationale: keep auth logic “inside the app” and avoid a third-party hosted auth platform unless you want it.
+- **Better Auth**
+- DB-backed sessions in Postgres
 
 ### Database
 
-- **Railway Postgres** (main DB)
-- Used for:
-  - Users / sessions (if Better Auth uses DB adapter)
-  - Essays, versions, prompts, etc.
+- **Postgres** via Drizzle ORM
 
-### “Anything else”
+Use it for:
 
-For MVP, nothing else is strictly required.
+- auth tables
+- draft persistence
+- constellation runs
+- findings and provenance
+- annotations
+- versioning / resolution state
 
-- No Redis
-- No background workers
-- No queue
+### Retrieval and Analysis
 
----
+Keep this vendor-agnostic in the docs.
 
-## 3) Can we manage it all on Vercel?
+You will need adapters for:
 
-**Mostly no**, because Vercel doesn’t provide managed Postgres “natively” as part of Vercel itself. You still need a database vendor.
+- source discovery / search
+- source fetch or extraction
+- structured model analysis
 
-**However**, you can manage _almost everything except the DB_ on Vercel:
+Those adapters should live behind domain ports so providers can change without rewriting product logic.
 
-- UI
-- API endpoints
-- Auth routes
-- Basic LLM feedback endpoints (short-running)
+### Background Work
 
-So the practical “all on Vercel” version becomes:
+Freewrite should stay synchronous and low-latency.
 
-- Vercel for compute + hosting
-- A DB vendor for persistence (Railway / Neon / Supabase / PlanetScale etc.)
+Constellation and annotation generation should be designed so they can run:
 
-Given you already mentioned Railway, **Railway Postgres** is perfect.
+- inline for small loads early on, or
+- on a background worker / queue once latency becomes a problem
 
----
+The architecture should not assume every constellation run can finish inside a single request forever.
 
-## 4) System architecture (MVP)
+## 3. Runtime Components
 
-### Runtime components
+### 3.1 Web App
 
-1. **Next.js Web App (Vercel)**
-   - `/app` routes for UI
-   - route handlers for CRUD + auth callbacks
+Responsibilities:
 
-2. **Postgres (Railway)**
-   - persistent data store
+- render freewrite editor
+- render constellation board
+- render annotated first draft
+- render final draft mode
+- authenticate users
+- kick off constellation / annotation runs
 
-### Data flow
+### 3.2 Postgres
 
-- Client → Next.js (Server Actions / Route Handlers) → Postgres (Railway)
-- Auth flow → Better Auth routes → Postgres (Railway)
+Responsibilities:
 
----
+- durable persistence
+- session state
+- draft versions
+- constellation runs and findings
+- annotations and resolution state
 
-## 5) Environments
+### 3.3 Retrieval Adapter
 
-- **Preview**: Vercel preview deployments per PR
-- **Production**: Vercel production deployment from main branch
-- **DB strategy (MVP simple):**
-  - one Railway Postgres instance + separate schemas (or separate DBs) for dev/prod if you want clean separation
+Responsibilities:
 
----
+- discover relevant sources for extracted claims
+- return source metadata in a normalized format
 
-## 6) Core services and responsibilities
+### 3.4 Extraction Adapter
 
-### Vercel (compute + routing)
+Responsibilities:
 
-- SSR for `/essay/[id]` public pages (fast share links)
-- Auth endpoints (Better Auth)
-- CRUD endpoints / Server Actions:
-  - create draft
-  - update draft
-  - publish/unpublish
-  - list user essays
-  - load public essay
+- fetch source details when needed
+- normalize titles, URLs, snippets, authors, dates, and excerpts
 
-### Railway (persistence)
+### 3.5 Analysis Adapter
 
-- Postgres DB:
-  - `users` / `sessions` / `accounts` (auth)
-  - `essays` (draft/published content)
-  - minimal metadata tables (optional)
+Responsibilities:
 
----
+- map claims to supporting or challenging material
+- generate structured issues and counterarguments
+- generate annotation candidates
 
-## 7) Minimal database schema (MVP)
+### 3.6 Optional Worker
 
-You can start with just this:
+Add a worker when:
 
-**essays**
+- retrieval chains take too long
+- source fetching fans out across many URLs
+- annotation generation becomes too expensive for request time budgets
 
-- `id` UUID PK
-- `user_id` TEXT (auth provider user id or your internal user id)
-- `title` TEXT NULL
-- `content` TEXT NOT NULL
-- `status` TEXT CHECK (‘draft’, ‘published’)
-- `created_at` TIMESTAMP
-- `updated_at` TIMESTAMP
-- `published_at` TIMESTAMP NULL
+## 4. Data Flow
 
-Later tables (post-MVP):
+### 4.1 Freewrite
 
-- `essay_versions`
-- `annotations` (assistant + peer comments)
-- `evidence_cards`
-- `objections`
+Flow:
 
----
+- user writes in the editor
+- draft persists locally immediately
+- server-side persistence can happen asynchronously
+- no retrieval or annotation work should block typing
 
-## 8) Auth details (Better Auth)
+### 4.2 Constellation
 
-### MVP auth modes (choose simplest)
+Flow:
 
-- **OAuth only** (Google + GitHub): fastest, no email vendor required
-- Add email/password or magic links later if needed
+- sprint completes or user explicitly requests analysis
+- system snapshots the draft
+- claims are extracted
+- sources are discovered and normalized
+- counterarguments and issues are generated
+- findings are stored with provenance
 
-### Session strategy
+### 4.3 Annotation
 
-- DB-backed sessions in Postgres (simpler for server actions + security)
-- Protect routes via Next middleware + server-side checks
+Flow:
 
-### Security baseline
+- accepted or selected constellation findings are transformed into annotations
+- annotations are anchored to the draft
+- the first draft is reopened with notes attached
 
-- Use HTTPS only (default)
-- CSRF protections per Better Auth defaults
-- Secure cookies (`HttpOnly`, `SameSite=Lax/Strict` where appropriate)
-- Rate limit login endpoints (can be Vercel middleware or simple in-app throttling)
+### 4.4 Final Draft
 
----
+Flow:
 
-## 9) “No-ghostwriting” assistant infra (MVP)
+- the user enters a cleaner writing mode
+- annotations remain available on demand
+- resolved and ignored state is persisted
+- a later draft version can be stored without losing review history
 
-Keep it intentionally lightweight:
+## 5. Suggested Data Model
 
-- A single endpoint like `POST /api/review`
-- It returns **JSON**: issues checklist + questions + (optionally) anchors
-- No long-running tasks, no queues
-- If a request takes too long, return partial feedback or a single-pass rubric
+Current schema reality in the repo is still auth-focused. The target product schema should grow toward:
 
-**Important constraint enforcement**
+- `user`
+- `session`
+- `account`
+- `verification`
+- `draft`
+- `draft_version`
+- `constellation_run`
+- `claim`
+- `source`
+- `citation`
+- `counterargument`
+- `issue`
+- `annotation`
+- `annotation_resolution`
 
-- Validate the assistant response schema server-side (Zod) and reject any “replacement prose” fields.
+Not all tables need to ship at once. The important point is that the data model should follow the current product loop.
 
----
+## 6. Performance Rules
 
-## 10) Observability (MVP minimal)
+### 6.1 Freewrite path
 
-- **Sentry** for server + client error capture
-- Vercel logs for quick debugging
-- Basic request timing logs for `/api/review`
+The freewrite path must be lightweight:
 
----
+- local-first persistence
+- no blocking network work
+- no synchronous full-document analysis on keystrokes
+- no expensive UI recomputation tied to typing cadence
 
-## 11) Deployment checklist (what you actually do)
+### 6.2 Review path
 
-1. Create Next.js app (TS)
-2. Deploy to Vercel (connect GitHub repo)
-3. Provision Railway Postgres
-4. Add env vars to Vercel:
-   - `DATABASE_URL`
-   - Better Auth secrets + OAuth client IDs/secrets
+Constellation and annotation work can be slower, but should still be:
 
-5. Run DB migrations (Prisma/Drizzle) from local or CI
-6. Smoke test:
-   - sign in
-   - create draft
-   - publish
-   - view public page
+- observable
+- cancelable or restartable
+- resumable after failure
 
----
+### 6.3 Final draft path
 
-## 12) When you’ll need Railway for more than Postgres
+Final draft mode should inherit the same low-latency rules as freewrite mode.
 
-Only add additional Railway services if you hit one of these:
+## 7. Trust and Safety Rules
 
-- **Long-running LLM research/review** (timeouts) → add a Railway worker
-- **High throughput** requiring queues/rate limiting → add Redis
-- **Heavy ingestion** (web scraping, batch processing) → move to worker
+### 7.1 Provenance is mandatory
 
-Until then, **Vercel + Railway Postgres is enough**.
+Every surfaced citation should preserve enough metadata to inspect its origin.
 
----
+### 7.2 No ghostwriting
 
-## Recommendation (MVP)
+The infrastructure should not normalize or store generated replacement prose as if it were a valid annotation or citation.
 
-Go with:
+### 7.3 Separate evidence from inference
 
-- **Next.js on Vercel**
-- **Better Auth** inside the app
-- **Railway Postgres** as the only extra service
+The system should store whether a finding is:
+
+- directly source-backed
+- model-inferred
+- heuristic writing feedback
+
+That distinction matters for both UX and debugging.
+
+## 8. Environments
+
+- **Local**: fastest loop for editor and harness work
+- **Preview**: per-PR deployments on Vercel
+- **Production**: main branch deployment
+
+If constellation runs become asynchronous, keep the same environment split for workers and any queue infrastructure.
+
+## 9. Observability
+
+Minimum useful observability:
+
+- route and job failure logging
+- constellation run status and timing
+- source fetch failure counts
+- annotation generation success / failure
+- editor latency regressions caught in tests
+
+Do not wait for a full observability stack before instrumenting the constellation pipeline. Basic structured logs are enough to start.
+
+## 10. Deployment Checklist
+
+1. Web app deploys cleanly.
+2. Auth secrets and database URL are configured.
+3. Migrations are applied.
+4. Protected editor works.
+5. E2E harness passes for the current covered flows.
+6. Constellation and annotation adapters are configured before those features are enabled.
+
+## 11. Practical Recommendation
+
+Start with:
+
+- Next.js on Vercel
+- Better Auth in-app
+- Postgres as the primary store
+- thin retrieval / extraction / analysis adapters behind ports
+
+Add a worker only when constellation latency or fan-out justifies it.
+
+The system should be architected for asynchronous review work now, even if the first version still runs inline.
