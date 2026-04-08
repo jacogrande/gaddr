@@ -45,28 +45,23 @@ async function completeSprintAndWaitForBoard(page: import("@playwright/test").Pa
   await page.keyboard.type("Testing the sprint timer.");
   // Timer (5s) + idle detection (2.6s) + transition_in (1.5s) + buffer
   await page.waitForTimeout(10000);
-  await expect(page.getByTestId("node-grid")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".gaddr-canvas--active")).toBeVisible({ timeout: 5000 });
 }
 
 /**
- * When the board is visible the editor pane has `visibility: hidden`.
- * Temporarily remove the hidden class so Playwright can click + type
- * into the editor, which triggers onUpdate → transition_out.
+ * Type into the editor to trigger onUpdate → transition_out.
+ * In the canvas zoom model the editor stays visible (just scaled down),
+ * so we can click it directly — but pointer-events are disabled on the
+ * viewport when zoomed out. Use evaluate to focus the tiptap element.
  */
 async function typeToExitBoard(page: import("@playwright/test").Page, text: string) {
   await page.evaluate(() => {
-    const pane = document.querySelector(".gaddr-constellation-editor-pane--hidden");
-    if (pane) {
-      pane.classList.remove("gaddr-constellation-editor-pane--hidden");
-      (pane as HTMLElement).style.visibility = "visible";
-      (pane as HTMLElement).style.height = "auto";
-      (pane as HTMLElement).style.position = "relative";
-    }
+    const el = document.querySelector(".tiptap") as HTMLElement | null;
+    el?.focus();
   });
-  await page.locator(".tiptap").click({ timeout: 2000 });
   await page.keyboard.type(text);
-  // transition_out (1.1s) + buffer
-  await page.waitForTimeout(2000);
+  // transition_out (1.45s) + buffer
+  await page.waitForTimeout(2500);
 }
 
 // ── sprint-menu-opens ──
@@ -139,7 +134,7 @@ test("eval: end sprint early resets to idle", async ({ page }) => {
   await page.getByRole("button", { name: /end timer/i }).click();
 
   await expect(page.getByTestId("sprint-chip")).toContainText(/timer/i);
-  await expect(page.getByTestId("node-grid")).not.toBeVisible();
+  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0);
 });
 
 // ── sprint-complete-board-transition ──
@@ -148,8 +143,8 @@ test("eval: sprint completes and board animates in", async ({ page }) => {
   await freshEditor(page);
   await completeSprintAndWaitForBoard(page);
 
-  await expect(page.getByTestId("node-grid")).toBeVisible();
-  await expect(page.locator(".gaddr-constellation-editor-pane--hidden")).toHaveCount(1);
+  await expect(page.getByTestId("canvas")).toBeVisible();
+  await expect(page.locator(".gaddr-canvas-viewport--zoomed-out")).toBeVisible();
 });
 
 // ── sprint-typing-exits-board ──
@@ -160,7 +155,7 @@ test("eval: typing exits the board and returns to editor", async ({ page }) => {
 
   await typeToExitBoard(page, "Back to editing");
 
-  await expect(page.getByTestId("node-grid")).not.toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0, { timeout: 5000 });
   await expect(page.getByTestId("editor-content")).toBeVisible();
   await expect(page.locator(".tiptap")).toContainText("Back to editing");
 });
@@ -172,12 +167,12 @@ test("eval: explore button reopens the board after dismissal", async ({ page }) 
   await completeSprintAndWaitForBoard(page);
 
   await typeToExitBoard(page, "dismiss");
-  await expect(page.getByTestId("node-grid")).not.toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0, { timeout: 5000 });
 
   await expect(page.getByTestId("board-reopen-button")).toBeVisible({ timeout: 3000 });
   await page.getByTestId("board-reopen-button").click();
 
-  await expect(page.getByTestId("node-grid")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".gaddr-canvas--active")).toBeVisible({ timeout: 5000 });
 });
 
 // ── sprint-restart-resets-board ──
@@ -188,7 +183,7 @@ test("eval: starting a new sprint resets the board", async ({ page }) => {
 
   // Dismiss the board by typing
   await typeToExitBoard(page, "x");
-  await expect(page.getByTestId("node-grid")).not.toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0, { timeout: 5000 });
 
   // Sprint phase is still "completed" — menu shows actions, not duration options.
   // End the sprint first to return to idle, then start a new one.
@@ -198,7 +193,7 @@ test("eval: starting a new sprint resets the board", async ({ page }) => {
 
   await start5sSprint(page);
 
-  await expect(page.getByTestId("node-grid")).not.toBeVisible();
+  await expect(page.locator(".gaddr-canvas--active")).toHaveCount(0);
   await expect(page.getByTestId("sprint-chip")).toContainText(/\d/);
 });
 
