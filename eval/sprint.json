@@ -83,12 +83,12 @@
     },
     {
       "id": "sprint-reopen-board",
-      "name": "Explore button reopens the board after dismissal",
+      "name": "Review board button reopens the board after dismissal",
       "steps": [
         "Complete a sprint and wait for the board to appear.",
         "Start typing to dismiss the board.",
-        "Verify an 'Explore' button appears in the top-right.",
-        "Click the Explore button.",
+        "Verify a 'Review board' button appears in the top-right.",
+        "Click the Review board button.",
         "Verify the board transition starts again."
       ]
     },
