@@ -43,8 +43,8 @@ async function completeSprintAndWaitForBoard(page: import("@playwright/test").Pa
   await start5sSprint(page);
   await page.locator(".tiptap").click();
   await page.keyboard.type("Testing the sprint timer.");
-  // Timer (5s) + idle detection (2.6s) + transition_in (1.5s) + buffer
-  await page.waitForTimeout(10000);
+  // Timer (5s) + idle detection (5s) + transition_in (1.4s) + buffer
+  await page.waitForTimeout(12500);
   await expect(page.locator(".gaddr-canvas--active")).toBeVisible({ timeout: 5000 });
 }
 
@@ -60,8 +60,8 @@ async function typeToExitBoard(page: import("@playwright/test").Page, text: stri
     el?.focus();
   });
   await page.keyboard.type(text);
-  // transition_out (1.45s) + buffer
-  await page.waitForTimeout(2500);
+  // transition_out (1.4s) + buffer
+  await page.waitForTimeout(2400);
 }
 
 // ── sprint-menu-opens ──
@@ -139,17 +139,19 @@ test("eval: end sprint early resets to idle", async ({ page }) => {
 
 // ── sprint-complete-board-transition ──
 test("eval: sprint completes and board animates in", async ({ page }) => {
-  test.setTimeout(30000);
+  test.setTimeout(35000);
   await freshEditor(page);
   await completeSprintAndWaitForBoard(page);
 
   await expect(page.getByTestId("canvas")).toBeVisible();
   await expect(page.locator(".gaddr-canvas-viewport--zoomed-out")).toBeVisible();
+  await expect(page.getByTestId("board-overlay")).toBeVisible();
+  await expect(page.getByTestId("board-resume-button")).toBeVisible();
 });
 
 // ── sprint-typing-exits-board ──
 test("eval: typing exits the board and returns to editor", async ({ page }) => {
-  test.setTimeout(30000);
+  test.setTimeout(35000);
   await freshEditor(page);
   await completeSprintAndWaitForBoard(page);
 
@@ -161,8 +163,8 @@ test("eval: typing exits the board and returns to editor", async ({ page }) => {
 });
 
 // ── sprint-reopen-board ──
-test("eval: explore button reopens the board after dismissal", async ({ page }) => {
-  test.setTimeout(30000);
+test("eval: review board button reopens the board after dismissal", async ({ page }) => {
+  test.setTimeout(35000);
   await freshEditor(page);
   await completeSprintAndWaitForBoard(page);
 
@@ -177,7 +179,7 @@ test("eval: explore button reopens the board after dismissal", async ({ page }) 
 
 // ── sprint-restart-resets-board ──
 test("eval: starting a new sprint resets the board", async ({ page }) => {
-  test.setTimeout(30000);
+  test.setTimeout(35000);
   await freshEditor(page);
   await completeSprintAndWaitForBoard(page);
 
