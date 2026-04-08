@@ -105,13 +105,13 @@
       ]
     },
     {
-      "id": "sprint-overtime-label",
-      "name": "Overtime label shows when typing after completion",
+      "id": "sprint-done-after-completion",
+      "name": "Chip shows Done after completion even while typing",
       "steps": [
         "Start a 5-second sprint.",
         "Wait for the timer to expire.",
         "Continue typing.",
-        "Verify the chip shows an overtime counter (e.g. '+0:05')."
+        "Verify the chip shows 'Done' (not an overtime counter)."
       ]
     }
   ]
