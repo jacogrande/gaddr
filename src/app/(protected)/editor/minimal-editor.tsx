@@ -6,6 +6,7 @@ import type { Editor as TiptapEditor } from "@tiptap/core";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
+import { CanvasFlow } from "./canvas-flow";
 import { SignOutButton } from "../sign-out-button";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
@@ -115,11 +116,6 @@ function formatSprintRemainingLabel(ms: number): string {
   return `${String(Math.max(1, Math.ceil(ms / 60_000)))} min left`;
 }
 
-function formatOvertimeLabel(ms: number): string {
-  return `+${formatClockDuration(ms)} overtime`;
-}
-
-
 const MODIFIER_BADGES: Array<{
   key: string;
   label: string;
@@ -159,7 +155,7 @@ function loadDoc(): JSONContent {
 }
 
 /** Post-sprint board modes: editor zooms out, node grid animates in. */
-type BoardMode = "hidden" | "transition_in" | "visible" | "transition_out";
+export type BoardMode = "hidden" | "transition_in" | "visible" | "transition_out";
 
 export function MinimalEditor() {
   const [activeModifiers, setActiveModifiers] = useState<ModifierBadge[]>([]);
@@ -175,7 +171,6 @@ export function MinimalEditor() {
   const [sprintPhase, setSprintPhase] = useState<SprintPhase>("idle");
   const [sprintEndsAtMs, setSprintEndsAtMs] = useState<number | null>(null);
   const [pausedSprintRemainingMs, setPausedSprintRemainingMs] = useState<number | null>(null);
-  const [sprintCompletedAtMs, setSprintCompletedAtMs] = useState<number | null>(null);
   const [sprintNowMs, setSprintNowMs] = useState(() => Date.now());
   const activeModifiersSignatureRef = useRef("");
   const modifierOrderingStateRef = useRef(createModifierOrderingState());
@@ -238,7 +233,6 @@ export function MinimalEditor() {
     setSprintPhase("running");
     setSprintEndsAtMs(now + option.durationMs);
     setPausedSprintRemainingMs(null);
-    setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
   }, []);
 
@@ -255,7 +249,6 @@ export function MinimalEditor() {
       setSprintPhase("completed");
       setSprintEndsAtMs(null);
       setPausedSprintRemainingMs(null);
-      setSprintCompletedAtMs(now);
       return;
     }
 
@@ -274,7 +267,6 @@ export function MinimalEditor() {
     setSprintPhase("running");
     setSprintEndsAtMs(now + pausedSprintRemainingMs);
     setPausedSprintRemainingMs(null);
-    setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
   }, [pausedSprintRemainingMs, sprintPhase]);
 
@@ -283,7 +275,6 @@ export function MinimalEditor() {
     setSprintPhase("idle");
     setSprintEndsAtMs(null);
     setPausedSprintRemainingMs(null);
-    setSprintCompletedAtMs(null);
     setIsSprintMenuOpen(false);
   }, []);
 
@@ -309,7 +300,6 @@ export function MinimalEditor() {
       setSprintPhase("running");
       setSprintEndsAtMs(now + extensionMs);
       setPausedSprintRemainingMs(null);
-      setSprintCompletedAtMs(null);
       setIsSprintMenuOpen(false);
     }
   }, [pausedSprintRemainingMs, sprintEndsAtMs, sprintPhase]);
@@ -411,11 +401,7 @@ export function MinimalEditor() {
       },
     },
     onUpdate: ({ editor: current }) => {
-      const now = Date.now();
-      lastEditAtMsRef.current = now;
-      if (sprintPhaseRef.current === "completed") {
-        setSprintNowMs(now);
-      }
+      lastEditAtMsRef.current = Date.now();
       // Exit board when user starts typing
       if (boardModeRef.current === "visible" || boardModeRef.current === "transition_in") {
         setBoardMode("transition_out");
@@ -885,10 +871,7 @@ export function MinimalEditor() {
     return 0;
   }, [pausedSprintRemainingMs, sprintEndsAtMs, sprintNowMs, sprintPhase]);
 
-  const sprintWriterActive = sprintNowMs - lastEditAtMsRef.current < SPRINT_RECENT_ACTIVITY_MS;
-
-  const shouldTickSprintClock =
-    sprintPhase === "running" || (sprintPhase === "completed" && sprintWriterActive);
+  const shouldTickSprintClock = sprintPhase === "running";
 
   const sprintChipLabel = useMemo(() => {
     switch (sprintPhase) {
@@ -897,15 +880,11 @@ export function MinimalEditor() {
       case "paused":
         return `Paused ${formatSprintRemainingLabel(sprintRemainingMs)}`;
       case "completed":
-        if (sprintCompletedAtMs === null || !sprintWriterActive) {
-          return "Done";
-        }
-
-        return formatOvertimeLabel(Math.max(0, sprintNowMs - sprintCompletedAtMs));
+        return "Done";
       case "idle":
         return "Timer";
     }
-  }, [sprintCompletedAtMs, sprintNowMs, sprintPhase, sprintRemainingMs, sprintWriterActive]);
+  }, [sprintPhase, sprintRemainingMs]);
 
   const sprintMenuNote = useMemo(() => {
     switch (sprintPhase) {
@@ -928,19 +907,24 @@ export function MinimalEditor() {
     boardModeRef.current = boardMode;
   }, [boardMode]);
 
-
-
-  // Board entry trigger: sprint completed + user idle
+  // Board entry trigger: poll for writer idle after sprint completion
   useEffect(() => {
     if (sprintPhase !== "completed") return;
-    if (sprintWriterActive) return;
     if (boardMode !== "hidden") return;
     if (hasShownBoardForSprintRef.current) return;
     if (!editor) return;
 
-    hasShownBoardForSprintRef.current = true;
-    setBoardMode("transition_in");
-  }, [boardMode, editor, sprintPhase, sprintWriterActive]);
+    const checkIdle = () => {
+      if (Date.now() - lastEditAtMsRef.current >= SPRINT_RECENT_ACTIVITY_MS) {
+        hasShownBoardForSprintRef.current = true;
+        setBoardMode("transition_in");
+      }
+    };
+
+    checkIdle();
+    const interval = window.setInterval(checkIdle, 500);
+    return () => { window.clearInterval(interval); };
+  }, [boardMode, editor, sprintPhase]);
 
   // Board transition_in → visible after zoom-out completes
   useEffect(() => {
@@ -989,7 +973,6 @@ export function MinimalEditor() {
     setSprintPhase("completed");
     setSprintEndsAtMs(null);
     setPausedSprintRemainingMs(null);
-    setSprintCompletedAtMs(sprintEndsAtMs);
     setIsSprintMenuOpen(false);
   }, [sprintEndsAtMs, sprintNowMs, sprintPhase]);
 
@@ -1029,6 +1012,14 @@ export function MinimalEditor() {
 
     setIsSprintMenuOpen(false);
   }, [isCommandPaletteOpen, slashMenuState]);
+
+  const exitBoard = useCallback(() => {
+    setBoardMode("transition_out");
+    window.setTimeout(() => {
+      const el = document.querySelector(".tiptap");
+      if (el instanceof HTMLElement) el.focus();
+    }, 100);
+  }, []);
 
   if (!editor) {
     return <div className="min-h-[calc(100vh-8.5rem)]" />;
@@ -1345,44 +1336,17 @@ export function MinimalEditor() {
           </div>
         </div>
       ) : null}
-      <div
-        className={`gaddr-canvas ${boardMode !== "hidden" ? "gaddr-canvas--active" : ""}`}
-        data-testid="canvas"
-      >
-        {boardMode !== "hidden" ? (
-          <div className="gaddr-board-overlay" data-testid="board-overlay">
-            <p className="gaddr-board-overlay__label">Sprint complete</p>
-            <button
-              type="button"
-              className="gaddr-board-overlay__resume"
-              data-testid="board-resume-button"
-              onClick={() => {
-                setBoardMode("transition_out");
-                window.setTimeout(() => {
-                  editor.commands.focus();
-                }, 100);
-              }}
-            >
-              Resume writing
-            </button>
-          </div>
-        ) : null}
-        <div
-          className={`gaddr-canvas-viewport ${
-            boardMode === "transition_in" || boardMode === "visible"
-              ? "gaddr-canvas-viewport--zoomed-out"
-              : boardMode === "transition_out"
-                ? "gaddr-canvas-viewport--zooming-in"
-                : ""
-          }`}
-        >
-          <div
-            data-testid="editor-content"
-            className={`gaddr-canvas-node ${boardMode !== "hidden" ? "gaddr-canvas-node--card" : ""}`}
-          >
-            <EditorContent editor={editor} />
-          </div>
+      {boardMode !== "hidden" ? (
+        <div className="gaddr-canvas-overlay" data-testid="canvas">
+          <CanvasFlow
+            boardMode={boardMode}
+            cardLabel={editor.getText().slice(0, 200) || "Your draft"}
+            onExitBoard={exitBoard}
+          />
         </div>
+      ) : null}
+      <div data-testid="editor-content">
+        <EditorContent editor={editor} />
       </div>
     </div>
   );

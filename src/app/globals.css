@@ -364,18 +364,45 @@ body {
   border-color: color-mix(in srgb, var(--accent) 52%, var(--border-soft));
 }
 
-/* ── Canvas (zoom-out / node board) ── */
+/* ── Canvas (React Flow board) ── */
 
-.gaddr-canvas {
-  position: relative;
+.gaddr-canvas-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background-color: var(--app-bg);
+}
+
+.gaddr-react-flow {
+  background-color: var(--app-bg);
+}
+
+.gaddr-react-flow-bg {
+  --xy-background-color-dots-default: color-mix(in srgb, var(--border-soft) 36%, transparent);
+}
+
+.gaddr-canvas-node--card {
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  box-shadow:
+    0 12px 48px color-mix(in srgb, var(--app-bg) 62%, transparent),
+    0 4px 16px color-mix(in srgb, var(--app-bg) 38%, transparent);
+  background-color: var(--app-bg);
+  padding: 2rem 2.5rem;
+}
+
+.gaddr-card-placeholder {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--app-muted);
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
 }
 
 .gaddr-board-overlay {
-  position: absolute;
-  bottom: 8vh;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -416,76 +443,15 @@ body {
 @keyframes gaddr-board-overlay-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(8px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
-}
-
-.gaddr-canvas--active {
-  width: 100vw;
-  margin-left: calc(-50vw + 50%);
-  min-height: 100vh;
-  overflow: hidden;
-  background-image: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--border-soft) 36%, transparent) 1px,
-    transparent 1px
-  );
-  background-size: 36px 36px;
-  background-attachment: fixed;
-}
-
-.gaddr-canvas-viewport {
-  transform: scale(1);
-  transform-origin: center 38vh;
-  transition:
-    transform 1400ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.gaddr-canvas-viewport--zoomed-out {
-  transform: scale(0.45);
-  pointer-events: none;
-}
-
-.gaddr-canvas-viewport--zooming-in {
-  transform: scale(1);
-  pointer-events: auto;
-}
-
-.gaddr-canvas-node {
-  transition:
-    border-radius 1000ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 1000ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 600ms ease;
-  border: 1px solid transparent;
-  border-radius: 0;
-}
-
-.gaddr-canvas-node--card {
-  border-radius: 12px;
-  border-color: var(--border-soft);
-  box-shadow:
-    0 12px 48px color-mix(in srgb, var(--app-bg) 62%, transparent),
-    0 4px 16px color-mix(in srgb, var(--app-bg) 38%, transparent);
-  background-color: var(--app-bg);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gaddr-canvas-viewport {
-    transition: opacity 400ms ease;
-  }
-
-  .gaddr-canvas-viewport--zoomed-out {
-    opacity: 0.92;
-  }
-
-  .gaddr-canvas-node {
-    transition: none;
-  }
-
   .gaddr-board-overlay {
     animation: none;
   }
