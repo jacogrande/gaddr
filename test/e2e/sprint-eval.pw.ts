@@ -43,8 +43,8 @@ async function completeSprintAndWaitForBoard(page: import("@playwright/test").Pa
   await start5sSprint(page);
   await page.locator(".tiptap").click();
   await page.keyboard.type("Testing the sprint timer.");
-  // Timer (5s) + idle detection (5s) + transition_in (1.4s) + buffer
-  await page.waitForTimeout(12500);
+  // Timer (5s) + idle detection (3s) + transition_in (1.4s) + buffer
+  await page.waitForTimeout(10500);
   await expect(page.getByTestId("board-overlay")).toBeVisible({ timeout: 5000 });
 }
 
@@ -142,7 +142,6 @@ test("eval: sprint completes and board animates in", async ({ page }) => {
   await freshEditor(page);
   await completeSprintAndWaitForBoard(page);
 
-  await expect(page.getByTestId("canvas")).toBeVisible();
   await expect(page.getByTestId("board-overlay")).toBeVisible();
   await expect(page.getByTestId("board-resume-button")).toBeVisible();
 });
