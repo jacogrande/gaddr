@@ -1,5 +1,10 @@
 # Command+P Note/File System Design
 
+> Historical note
+>
+> This spec describes a note/file recall system from an earlier exploration.
+> It is not part of the current 3-step writing platform roadmap.
+
 ## 1. Purpose
 
 Design a `Cmd/Ctrl+P` note/file system that is optimized for fast recall.

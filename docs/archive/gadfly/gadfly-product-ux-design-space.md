@@ -1,5 +1,11 @@
 # Gadfly Product UX Design Space
 
+> Historical note
+>
+> This document captures an earlier Gadfly-era product exploration.
+> It contains useful ideas, but it mixes journaling, publishing, and other product directions that are no longer the core story.
+> Treat it as archived exploration, not current guidance.
+
 Date: 2026-03-06
 
 ## Goal
@@ -813,8 +819,8 @@ That is a much more defensible product.
 
 ### Internal
 
-- [Gadfly Technical Design](../gadfly-technical-design.md)
-- [Gadfly Action Catalog](../gadfly-action-catalog.md)
+- [Gadfly Technical Design](./gadfly-technical-design.md)
+- [Gadfly Action Catalog](./gadfly-action-catalog.md)
 - [Agentic UX Pipeline Brainstorm](./agentic-ux-pipeline.md)
 
 ### External
