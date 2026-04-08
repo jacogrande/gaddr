@@ -31,7 +31,7 @@ const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
 const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
 const DEFAULT_SPRINT_OPTION = "10m";
 const SPRINT_EXTENSION_MINUTES = 5;
-const SPRINT_RECENT_ACTIVITY_MS = 2600;
+const SPRINT_RECENT_ACTIVITY_MS = 5000;
 const SPRINT_OPTIONS = [
   {
     id: "5s",
@@ -630,6 +630,13 @@ export function MinimalEditor() {
     const isSlashMenuOpen = slashMenuState !== null;
 
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      // Escape exits the board view
+      if (event.key === "Escape" && (boardModeRef.current === "visible" || boardModeRef.current === "transition_in")) {
+        event.preventDefault();
+        setBoardMode("transition_out");
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         if (isCommandPaletteOpen) {
@@ -941,7 +948,7 @@ export function MinimalEditor() {
 
     const timer = window.setTimeout(() => {
       setBoardMode("visible");
-    }, 1500);
+    }, 1400);
 
     return () => { window.clearTimeout(timer); };
   }, [boardMode]);
@@ -952,7 +959,7 @@ export function MinimalEditor() {
 
     const timer = window.setTimeout(() => {
       setBoardMode("hidden");
-    }, 1450);
+    }, 1400);
 
     return () => { window.clearTimeout(timer); };
   }, [boardMode]);
@@ -1036,7 +1043,15 @@ export function MinimalEditor() {
     <div
       className="gaddr-editor-shell relative h-full"
       data-testid="editor-shell"
+      data-board-active={boardMode !== "hidden" ? "true" : undefined}
     >
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {boardMode === "transition_in" || boardMode === "visible"
+          ? "Sprint complete. Entering review board."
+          : boardMode === "transition_out"
+            ? "Returning to editor."
+            : null}
+      </div>
       {displayModifiers.length > 0 ? (
         <div className="gaddr-modifier-stack pointer-events-none fixed left-4 top-4 z-50 flex flex-col gap-1.5">
           {displayModifiers.map((modifier, index) => (
@@ -1071,7 +1086,7 @@ export function MinimalEditor() {
               }}
             >
               <span className="whitespace-nowrap text-[0.72rem] font-semibold leading-4 text-[var(--app-fg)]">
-                Explore
+                Review board
               </span>
             </button>
           ) : null}
@@ -1334,6 +1349,24 @@ export function MinimalEditor() {
         className={`gaddr-canvas ${boardMode !== "hidden" ? "gaddr-canvas--active" : ""}`}
         data-testid="canvas"
       >
+        {boardMode !== "hidden" ? (
+          <div className="gaddr-board-overlay" data-testid="board-overlay">
+            <p className="gaddr-board-overlay__label">Sprint complete</p>
+            <button
+              type="button"
+              className="gaddr-board-overlay__resume"
+              data-testid="board-resume-button"
+              onClick={() => {
+                setBoardMode("transition_out");
+                window.setTimeout(() => {
+                  editor.commands.focus();
+                }, 100);
+              }}
+            >
+              Resume writing
+            </button>
+          </div>
+        ) : null}
         <div
           className={`gaddr-canvas-viewport ${
             boardMode === "transition_in" || boardMode === "visible"

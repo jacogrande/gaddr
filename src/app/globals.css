@@ -349,10 +349,79 @@ body {
   }
 }
 
+/* ── Board-active chrome hiding ── */
+
+:has([data-board-active="true"]) > footer,
+:has([data-board-active="true"]) > .gaddr-theme-toggle {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 600ms ease;
+}
+
+/* ── Sprint chip active state ── */
+
+.gaddr-sprint-chip--running {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border-soft));
+}
+
 /* ── Canvas (zoom-out / node board) ── */
 
 .gaddr-canvas {
   position: relative;
+}
+
+.gaddr-board-overlay {
+  position: absolute;
+  bottom: 8vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  animation: gaddr-board-overlay-in 800ms cubic-bezier(0.16, 1, 0.3, 1) 600ms both;
+}
+
+.gaddr-board-overlay__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+
+.gaddr-board-overlay__resume {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--app-fg);
+  background-color: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  border: 1px solid var(--border-soft);
+  border-radius: 9999px;
+  padding: 0.5rem 1.25rem;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.gaddr-board-overlay__resume:hover {
+  background-color: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.gaddr-board-overlay__resume:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 2px;
+}
+
+@keyframes gaddr-board-overlay-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 .gaddr-canvas--active {
@@ -377,7 +446,7 @@ body {
 }
 
 .gaddr-canvas-viewport--zoomed-out {
-  transform: scale(0.38);
+  transform: scale(0.45);
   pointer-events: none;
 }
 
@@ -399,17 +468,25 @@ body {
   border-radius: 12px;
   border-color: var(--border-soft);
   box-shadow:
-    0 8px 32px color-mix(in srgb, var(--app-bg) 55%, transparent),
-    0 2px 8px color-mix(in srgb, var(--app-bg) 30%, transparent);
+    0 12px 48px color-mix(in srgb, var(--app-bg) 62%, transparent),
+    0 4px 16px color-mix(in srgb, var(--app-bg) 38%, transparent);
   background-color: var(--app-bg);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gaddr-canvas-viewport {
-    transition: none;
+    transition: opacity 400ms ease;
+  }
+
+  .gaddr-canvas-viewport--zoomed-out {
+    opacity: 0.92;
   }
 
   .gaddr-canvas-node {
     transition: none;
+  }
+
+  .gaddr-board-overlay {
+    animation: none;
   }
 }
