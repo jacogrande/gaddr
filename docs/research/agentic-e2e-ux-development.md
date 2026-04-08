@@ -1,3 +1,9 @@
+> Historical note
+>
+> This research memo informed earlier UX-testing planning.
+> It predates the current, simpler `eval/*.json` plus Playwright harness and may reference superseded ideas.
+> Treat it as background research, not a current implementation guide.
+
 # End-to-End Agentic Development With Self-Testing for UI and UX in Claude Code and Peer Tools
 
 ## Executive summary

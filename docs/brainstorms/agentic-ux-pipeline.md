@@ -1,3 +1,9 @@
+> Historical note
+>
+> This is an exploratory brainstorm from an earlier design-kit and `/ux-check` direction.
+> It is not a system-of-record doc for the current product.
+> Prefer `docs/product-and-design-philosophy.md`, `docs/architecture.md`, and `docs/agentic-ux-testing.md` for the current direction.
+
 What are some new and innovative techniques for bolstering our agentic coding tool's ux design capabilities and ability?
 
 ### Design Kit Approach
