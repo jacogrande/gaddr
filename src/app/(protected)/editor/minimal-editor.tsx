@@ -1,7 +1,7 @@
 "use client";
 
 import { ClockIcon } from "@phosphor-icons/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -1035,6 +1035,26 @@ export function MinimalEditor() {
     }, 100);
   }, []);
 
+  const handleCanvasMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (boardMode !== "hidden" || !editor) return;
+      // Clicks on actual text inside the editor: let ProseMirror handle them
+      // natively so the caret lands where the user clicked.
+      const target = event.target;
+      if (target instanceof Element && target.closest(".tiptap")) {
+        return;
+      }
+      if (editor.isFocused) {
+        // Prevent the browser from blurring the editor when clicking outside text.
+        event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      editor.commands.focus("end");
+    },
+    [boardMode, editor],
+  );
+
   if (!editor) {
     return <div className="h-full" />;
   }
@@ -1360,7 +1380,11 @@ export function MinimalEditor() {
           </div>
         </div>
       ) : null}
-      <div data-testid="editor-content" className="gaddr-canvas-container">
+      <div
+        data-testid="editor-content"
+        className="gaddr-canvas-container"
+        onMouseDown={handleCanvasMouseDown}
+      >
         <EditorCardProvider editor={editor} boardActive={boardMode !== "hidden"}>
           <CanvasFlow boardMode={boardMode} onExitBoard={exitBoard} />
         </EditorCardProvider>
