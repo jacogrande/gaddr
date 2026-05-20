@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 :root {
   color-scheme: light;
@@ -197,7 +198,6 @@ body {
 }
 
 .gaddr-command-palette {
-  animation: gaddr-command-palette-in 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
   color: var(--app-fg);
   box-shadow: 0 24px 52px color-mix(in srgb, var(--app-bg) 45%, transparent);
 }
@@ -256,91 +256,11 @@ body {
 }
 
 
-.gaddr-slash-menu {
-  animation: gaddr-slash-menu-in 160ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-}
-
-@keyframes gaddr-command-palette-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes gaddr-slash-menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.99);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes gaddr-modifier-chip-in {
-  from {
-    opacity: 0;
-    transform: translateX(-10px) translateY(2px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
-  }
-}
-
-@keyframes gaddr-modifier-chip-out {
-  from {
-    opacity: 1;
-    transform: translateX(0) translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(-8px) translateY(1px) scale(0.97);
-  }
-}
-
-@keyframes gaddr-sprint-chip-complete {
-  0% {
-    box-shadow: 0 10px 26px color-mix(in srgb, var(--app-bg) 46%, transparent);
-    transform: scale(1);
-  }
-
-  35% {
-    box-shadow: 0 14px 32px color-mix(in srgb, var(--accent) 20%, var(--app-bg));
-    transform: scale(1.015);
-  }
-
-  100% {
-    box-shadow: 0 10px 26px color-mix(in srgb, var(--app-bg) 46%, transparent);
-    transform: scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gaddr-modifier-chip {
-    animation: none;
-  }
-
-  .gaddr-modifier-chip--exit {
-    animation: none;
-  }
-
-  .gaddr-command-palette {
-    animation: none;
-  }
-
-  .gaddr-slash-menu {
-    animation: none;
-  }
-
-  .gaddr-sprint-chip--complete {
-    animation: none;
-  }
+.gaddr-modifier-chip {
+  border-color: color-mix(in srgb, var(--border-strong) 60%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  color: var(--app-muted);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--app-bg) 36%, transparent);
 }
 
 @media (forced-colors: active) {
@@ -380,10 +300,25 @@ body {
   --xy-background-color-dots-default: color-mix(in srgb, var(--border-soft) 36%, transparent);
 }
 
+/* React Flow gives nodes a default focus outline; the writing surface should
+   look like a plain document, not a focusable card. */
+.gaddr-react-flow .react-flow__node,
+.gaddr-react-flow .react-flow__node:focus,
+.gaddr-react-flow .react-flow__node:focus-visible,
+.gaddr-react-flow .react-flow__node.selected {
+  outline: none;
+  box-shadow: none;
+}
+
 .gaddr-editor-scroll {
   overflow-y: auto;
   height: 100%;
   padding: 2rem 2.5rem;
+  cursor: text;
+}
+
+.gaddr-editor-scroll .tiptap {
+  cursor: text;
 }
 
 .gaddr-canvas-node--card {
@@ -405,7 +340,6 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 1rem;
-  animation: gaddr-board-overlay-in 800ms cubic-bezier(0.16, 1, 0.3, 1) 600ms both;
 }
 
 .gaddr-board-overlay__label {
@@ -438,19 +372,3 @@ body {
   outline-offset: 2px;
 }
 
-@keyframes gaddr-board-overlay-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gaddr-board-overlay {
-    animation: none;
-  }
-}

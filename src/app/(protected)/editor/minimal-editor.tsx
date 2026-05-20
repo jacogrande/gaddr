@@ -1049,8 +1049,10 @@ export function MinimalEditor() {
           {displayModifiers.map((modifier, index) => (
             <div
               key={modifier.key}
-              className={`gaddr-modifier-chip inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-semibold leading-none tracking-[0.14em] backdrop-blur-[3px] ${
-                modifier.exiting ? "gaddr-modifier-chip--exit" : ""
+              className={`gaddr-modifier-chip inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-semibold leading-none tracking-[0.14em] backdrop-blur-[3px] fill-mode-both motion-reduce:animate-none ${
+                modifier.exiting
+                  ? "animate-out fade-out slide-out-to-left-2 zoom-out-95 duration-150 ease-in"
+                  : "animate-in fade-in slide-in-from-left-2 zoom-in-95 duration-200 ease-out"
               }`}
               style={
                 modifier.exiting
@@ -1212,7 +1214,7 @@ export function MinimalEditor() {
         <div
           aria-label="Editor slash menu"
           data-testid="slash-menu"
-          className="gaddr-slash-menu fixed z-[58] w-[min(22.5rem,calc(100vw-1.5rem))] rounded-xl border p-2 backdrop-blur-[2px]"
+          className="gaddr-slash-menu fixed z-[58] w-[min(22.5rem,calc(100vw-1.5rem))] rounded-xl border p-2 backdrop-blur-[2px] animate-in fade-in slide-in-from-top-2 zoom-in-95 duration-150 ease-out fill-mode-both motion-reduce:animate-none"
           style={
             {
               left: `${String(slashMenuState.left)}px`,
@@ -1279,7 +1281,7 @@ export function MinimalEditor() {
             role="dialog"
             aria-label="Editor command palette"
             data-testid="command-palette"
-            className="gaddr-command-palette w-full max-w-xl rounded-xl border p-2"
+            className="gaddr-command-palette w-full max-w-xl rounded-xl border p-2 animate-in fade-in slide-in-from-top-2 zoom-in-95 duration-200 ease-out fill-mode-both motion-reduce:animate-none"
           >
             <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-xs tracking-[0.14em]">
               MODIFIERS

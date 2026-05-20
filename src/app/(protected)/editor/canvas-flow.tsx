@@ -12,6 +12,7 @@ import {
 import "@xyflow/react/dist/base.css";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { EditorCardNode } from "./editor-card-node";
+import { useEditorCardContext } from "./editor-card-context";
 import type { BoardMode } from "./minimal-editor";
 
 const NODE_WIDTH = 896;
@@ -28,6 +29,7 @@ const FIT_VIEW_PADDING = 0.5;
 
 function CanvasFlowInner({ boardMode, onExitBoard }: CanvasFlowProps) {
   const reactFlow = useReactFlow();
+  const { editor } = useEditorCardContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const hasAnimatedIn = useRef(false);
 
@@ -105,6 +107,15 @@ function CanvasFlowInner({ boardMode, onExitBoard }: CanvasFlowProps) {
     }
   }, [boardMode, onExitBoard]);
 
+  // In writing mode the editor card is auto-height, so the React Flow pane
+  // covers most of the screen. Forward pane clicks to the editor so clicking
+  // anywhere in the writing area focuses the cursor.
+  const handlePaneClick = useCallback(() => {
+    if (!boardActive) {
+      editor.commands.focus("end");
+    }
+  }, [boardActive, editor]);
+
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
       <ReactFlow
@@ -112,6 +123,7 @@ function CanvasFlowInner({ boardMode, onExitBoard }: CanvasFlowProps) {
         edges={[]}
         nodeTypes={nodeTypes}
         onNodeClick={handleNodeClick}
+        onPaneClick={handlePaneClick}
         panOnDrag={boardActive}
         zoomOnScroll={boardActive}
         zoomOnPinch={boardActive}
@@ -131,7 +143,11 @@ function CanvasFlowInner({ boardMode, onExitBoard }: CanvasFlowProps) {
               size={1}
               className="gaddr-react-flow-bg"
             />
-            <Panel position="bottom-center" className="gaddr-board-overlay" data-testid="board-overlay">
+            <Panel
+              position="bottom-center"
+              className="gaddr-board-overlay animate-in fade-in slide-in-from-bottom-2 duration-700 delay-700 ease-out fill-mode-both motion-reduce:animate-none"
+              data-testid="board-overlay"
+            >
               <p className="gaddr-board-overlay__label">Sprint complete</p>
               <button
                 type="button"
