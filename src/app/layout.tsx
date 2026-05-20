@@ -36,7 +36,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className={`${headingFont.variable} min-h-screen antialiased`}>
+      <body
+        className={`${headingFont.variable} min-h-screen antialiased`}
+        suppressHydrationWarning
+      >
         <ThemeToggle />
         {children}
       </body>
