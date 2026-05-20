@@ -27,6 +27,7 @@ import {
 const STORAGE_KEY = "gaddr:minimal-editor";
 const IDLE_SAVE_TIMEOUT_MS = 1200;
 const MODIFIER_EXIT_ANIMATION_MS = 180;
+const MODIFIER_CHIP_ROW_PX = 34;
 const SLASH_MENU_WIDTH_PX = 360;
 const SLASH_MENU_VIEWPORT_MARGIN_PX = 12;
 const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
@@ -807,6 +808,18 @@ export function MinimalEditor() {
     });
   }, [activeModifiers]);
 
+  const visibleModifierPositions = useMemo(() => {
+    const positions = new Map<string, number>();
+    let visibleIndex = 0;
+    for (const modifier of displayModifiers) {
+      if (!modifier.exiting) {
+        positions.set(modifier.key, visibleIndex);
+        visibleIndex += 1;
+      }
+    }
+    return positions;
+  }, [displayModifiers]);
+
   useEffect(() => {
     const exitingKeys = new Set(collectExitingModifierKeys(displayModifiers));
 
@@ -1045,26 +1058,34 @@ export function MinimalEditor() {
             : null}
       </div>
       {displayModifiers.length > 0 ? (
-        <div className="gaddr-modifier-stack pointer-events-none fixed left-4 top-4 z-50 flex flex-col gap-1.5">
-          {displayModifiers.map((modifier, index) => (
-            <div
-              key={modifier.key}
-              className={`gaddr-modifier-chip inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-semibold leading-none tracking-[0.14em] backdrop-blur-[3px] fill-mode-both motion-reduce:animate-none ${
-                modifier.exiting
-                  ? "animate-out fade-out slide-out-to-left-2 zoom-out-95 duration-150 ease-in"
-                  : "animate-in fade-in slide-in-from-left-2 zoom-in-95 duration-200 ease-out"
-              }`}
-              style={
-                modifier.exiting
-                  ? undefined
-                  : ({
-                      animationDelay: `${String(index * 36)}ms`,
-                    } satisfies CSSProperties)
-              }
-            >
-              {modifier.label}
-            </div>
-          ))}
+        <div className="gaddr-modifier-stack pointer-events-none fixed left-4 top-4 z-50">
+          {displayModifiers.map((modifier, index) => {
+            // Non-exiting chips use their position in the filtered list; the
+            // chip's `top` transition has a delay so the slide-up starts as
+            // the exiting neighbor's fade-out is finishing. Exiting chips
+            // stay put (array index) and fade out in place.
+            const visiblePos = visibleModifierPositions.get(modifier.key);
+            const yIndex = visiblePos ?? index;
+            const chipStyle: CSSProperties = {
+              top: `${String(yIndex * MODIFIER_CHIP_ROW_PX)}px`,
+            };
+            if (!modifier.exiting) {
+              chipStyle.animationDelay = `${String(index * 36)}ms`;
+            }
+            return (
+              <div
+                key={modifier.key}
+                className={`gaddr-modifier-chip absolute left-0 inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-semibold leading-none tracking-[0.14em] backdrop-blur-[3px] fill-mode-both motion-reduce:animate-none ${
+                  modifier.exiting
+                    ? "animate-out fade-out slide-out-to-left-2 zoom-out-95 duration-150 ease-in"
+                    : "animate-in fade-in slide-in-from-left-2 zoom-in-95 duration-200 ease-out"
+                }`}
+                style={chipStyle}
+              >
+                {modifier.label}
+              </div>
+            );
+          })}
         </div>
       ) : null}
       <div className={`pointer-events-none fixed right-4 top-4 z-[68] flex justify-end ${boardMode !== "hidden" ? "hidden" : ""}`}>
