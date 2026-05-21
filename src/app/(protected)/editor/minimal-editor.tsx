@@ -12,6 +12,8 @@ import { SignOutButton } from "../sign-out-button";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
 import { StandardHotkeys } from "./standard-hotkeys-extension";
+import { FreewriteWizard, type WizardMode } from "./freewrite-wizard";
+import { useTriggerDetector } from "./use-trigger-detector";
 import {
   collectExitingModifierKeys,
   createModifierOrderingState,
@@ -35,6 +37,8 @@ const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
 const DEFAULT_SPRINT_OPTION = "10m";
 const SPRINT_EXTENSION_MINUTES = 5;
 const SPRINT_RECENT_ACTIVITY_MS = 3000;
+const WIZARD_ENTER_MS = 900;
+const WIZARD_EXIT_MS = 520;
 const SPRINT_OPTIONS = [
   {
     id: "5s",
@@ -189,6 +193,7 @@ export function MinimalEditor() {
   const [boardMode, setBoardMode] = useState<BoardMode>("hidden");
   const boardModeRef = useRef<BoardMode>("hidden");
   const hasShownBoardForSprintRef = useRef(false);
+  const [wizardMode, setWizardMode] = useState<WizardMode>("transition_in");
 
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
     try {
@@ -278,7 +283,23 @@ export function MinimalEditor() {
     setSprintEndsAtMs(null);
     setPausedSprintRemainingMs(null);
     setIsSprintMenuOpen(false);
+    setWizardMode("transition_in");
   }, []);
+
+  const handleWizardSelect = useCallback(
+    (optionId: string) => {
+      if (wizardMode !== "visible" && wizardMode !== "transition_in") {
+        return;
+      }
+      const option = SPRINT_OPTIONS.find((entry) => entry.id === optionId);
+      if (!option) {
+        return;
+      }
+      setWizardMode("transition_out");
+      startSprint(option.id);
+    },
+    [startSprint, wizardMode],
+  );
 
   const addSprintTime = useCallback(() => {
     const now = Date.now();
@@ -414,6 +435,8 @@ export function MinimalEditor() {
       flushPersist();
     },
   });
+
+  useTriggerDetector(editor);
 
   const closeSlashMenu = useCallback(() => {
     slashMenuSignatureRef.current = "";
@@ -581,10 +604,40 @@ export function MinimalEditor() {
   }, [filteredSlashCommands, runSlashMenuCommand, slashMenuActiveIndex]);
 
   useEffect(() => {
-    if (editor && !editor.isFocused) {
+    if (!editor) {
+      return;
+    }
+    if (wizardMode !== "hidden") {
+      return;
+    }
+    if (!editor.isFocused) {
       editor.commands.focus("end");
     }
-  }, [editor]);
+  }, [editor, wizardMode]);
+
+  useEffect(() => {
+    if (wizardMode !== "transition_in") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setWizardMode("visible");
+    }, WIZARD_ENTER_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [wizardMode]);
+
+  useEffect(() => {
+    if (wizardMode !== "transition_out") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setWizardMode("hidden");
+    }, WIZARD_EXIT_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [wizardMode]);
 
   useEffect(() => {
     if (typeof navigator === "undefined") {
@@ -1077,7 +1130,7 @@ export function MinimalEditor() {
             ? "Returning to editor."
             : null}
       </div>
-      {displayModifiers.length > 0 ? (
+      {displayModifiers.length > 0 && wizardMode === "hidden" ? (
         <div className="gaddr-modifier-stack pointer-events-none fixed left-4 top-4 z-50">
           {displayModifiers.map((modifier, index) => {
             // Non-exiting chips use their position in the filtered list; the
@@ -1108,7 +1161,7 @@ export function MinimalEditor() {
           })}
         </div>
       ) : null}
-      <div className={`pointer-events-none fixed right-4 top-4 z-[68] flex justify-end ${boardMode !== "hidden" ? "hidden" : ""}`}>
+      <div className={`pointer-events-none fixed right-4 top-4 z-[68] flex justify-end ${boardMode !== "hidden" || wizardMode !== "hidden" ? "hidden" : ""}`}>
         <div className="pointer-events-auto flex items-start gap-2">
           {showBoardReopen ? (
             <button
@@ -1379,6 +1432,13 @@ export function MinimalEditor() {
             </div>
           </div>
         </div>
+      ) : null}
+      {wizardMode !== "hidden" ? (
+        <FreewriteWizard
+          mode={wizardMode}
+          options={SPRINT_OPTIONS}
+          onSelect={handleWizardSelect}
+        />
       ) : null}
       <div
         data-testid="editor-content"
