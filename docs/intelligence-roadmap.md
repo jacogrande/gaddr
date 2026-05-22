@@ -2,6 +2,11 @@
 
 Sequences the LLM-powered features that read a freewrite and surface findings in the constellation. Sits inside the sprint scaffolding from [mvp-cycle.md](./mvp-cycle.md).
 
+Related research:
+
+- [Background inference during the freewrite](./research/background-inference-during-freewrite.md) — Anthropic SDK patterns, tiered model strategy, cost model.
+- [Trigger units and cadence](./research/trigger-units-and-cadence.md) — why pause-bounded P-bursts replaced paragraph-based triggers; describes the production-pause / question-posed / max-quiet-time set the detector emits.
+
 ## Framing
 
 The input is a freewrite, not a first draft. The writer is verbosely philosophizing — discovering their position, testing half-formed thoughts, circling concerns they haven't named. They are mostly not citing sources, naming thinkers, or making sharp claims.
