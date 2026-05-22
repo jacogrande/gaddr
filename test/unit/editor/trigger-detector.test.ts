@@ -1,15 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_ADAPTIVE_CONFIG,
   DEFAULT_TRIGGER_CONFIG,
+  classifyBoundary,
+  computeAdaptiveThreshold,
   createTriggerDetectorState,
+  effectivePauseThreshold,
   estimateTokens,
   evaluateTrigger,
+  type TriggerConfig,
+  type TriggerEmission,
 } from "../../../src/domain/editor/trigger-detector";
 
 const CONFIG = DEFAULT_TRIGGER_CONFIG;
 
 function makeFiller(wordCount: number): string {
   return Array.from({ length: wordCount }, (_, i) => `word${String(i)}`).join(" ");
+}
+
+function reasons(triggers: readonly TriggerEmission[]): string[] {
+  return triggers.map((t) => t.reason);
 }
 
 describe("estimateTokens", () => {
@@ -24,159 +34,313 @@ describe("estimateTokens", () => {
   });
 });
 
-describe("paragraph-ended", () => {
-  test("fires when a new paragraph break is added", () => {
-    const seed = makeFiller(60);
-    const start = createTriggerDetectorState(1000, seed);
-    const { triggers } = evaluateTrigger(start, { text: `${seed}\n\n`, nowMs: 1100 }, CONFIG);
-    expect(triggers).toContain("paragraph-ended");
+describe("classifyBoundary", () => {
+  test("paragraph-break for text ending in \\n\\n", () => {
+    expect(classifyBoundary("hello.\n\n")).toBe("paragraph-break");
+    expect(classifyBoundary("hello.\n\n  ")).toBe("paragraph-break");
   });
 
-  test("fires for short content as well (paragraph is structural, not volume-gated)", () => {
-    const start = createTriggerDetectorState(1000, "short");
-    const { triggers } = evaluateTrigger(start, { text: "short\n\n", nowMs: 1100 }, CONFIG);
-    expect(triggers).toContain("paragraph-ended");
+  test("sentence-boundary for text ending in . ? ! followed by whitespace", () => {
+    expect(classifyBoundary("Hello world. ")).toBe("sentence-boundary");
+    expect(classifyBoundary("Is it? ")).toBe("sentence-boundary");
+    expect(classifyBoundary("Yes! ")).toBe("sentence-boundary");
+    expect(classifyBoundary("Yes!\n")).toBe("sentence-boundary");
   });
 
-  test("does not refire on subsequent evaluations with the same text", () => {
-    const seed = makeFiller(60);
-    const start = createTriggerDetectorState(1000, seed);
-    const first = evaluateTrigger(start, { text: `${seed}\n\n`, nowMs: 1100 }, CONFIG);
-    expect(first.triggers).toContain("paragraph-ended");
-
-    const second = evaluateTrigger(first.nextState, { text: `${seed}\n\n`, nowMs: 1200 }, CONFIG);
-    expect(second.triggers).not.toContain("paragraph-ended");
+  test("clause-boundary for text ending in , ; : followed by whitespace", () => {
+    expect(classifyBoundary("Hello world, ")).toBe("clause-boundary");
+    expect(classifyBoundary("X; ")).toBe("clause-boundary");
+    expect(classifyBoundary("Note: ")).toBe("clause-boundary");
   });
 
-  test("fires again on a second paragraph break", () => {
-    const seed = makeFiller(60);
-    const start = createTriggerDetectorState(1000, seed);
-    const first = evaluateTrigger(start, { text: `${seed}\n\n`, nowMs: 1100 }, CONFIG);
-    expect(first.triggers).toContain("paragraph-ended");
+  test("between-words for whitespace-trailing text without sentence/clause punctuation", () => {
+    expect(classifyBoundary("hello world ")).toBe("between-words");
+    expect(classifyBoundary("")).toBe("between-words");
+    expect(classifyBoundary("   ")).toBe("between-words");
+  });
 
-    const second = evaluateTrigger(
-      first.nextState,
-      { text: `${seed}\n\n${makeFiller(60)}\n\n`, nowMs: 1200 },
+  test("mid-word when last character is alphanumeric with no trailing whitespace", () => {
+    expect(classifyBoundary("hello worl")).toBe("mid-word");
+    expect(classifyBoundary("123")).toBe("mid-word");
+  });
+
+  test("treats trailing punctuation without space as between-words (mid-typing punctuation)", () => {
+    expect(classifyBoundary('he said "hi"')).toBe("between-words");
+  });
+});
+
+describe("computeAdaptiveThreshold", () => {
+  test("returns null below the minimum sample size", () => {
+    expect(computeAdaptiveThreshold([1000, 2000, 3000], DEFAULT_ADAPTIVE_CONFIG)).toBeNull();
+  });
+
+  test("returns the percentile of observed pauses once enough samples exist", () => {
+    const pauses = [800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700];
+    const result = computeAdaptiveThreshold(pauses, DEFAULT_ADAPTIVE_CONFIG);
+    // 40th percentile index in length 10 = floor(10 * 0.4) = 4 → sorted[4] = 1200
+    expect(result).toBe(1200);
+  });
+
+  test("clamps to minThresholdMs", () => {
+    const pauses = Array.from({ length: 20 }, () => 300);
+    const result = computeAdaptiveThreshold(pauses, DEFAULT_ADAPTIVE_CONFIG);
+    expect(result).toBe(DEFAULT_ADAPTIVE_CONFIG.minThresholdMs);
+  });
+
+  test("clamps to maxThresholdMs", () => {
+    const pauses = Array.from({ length: 20 }, () => 20_000);
+    const result = computeAdaptiveThreshold(pauses, DEFAULT_ADAPTIVE_CONFIG);
+    expect(result).toBe(DEFAULT_ADAPTIVE_CONFIG.maxThresholdMs);
+  });
+});
+
+describe("effectivePauseThreshold", () => {
+  test("falls back to basePauseMs without enough samples", () => {
+    expect(effectivePauseThreshold([], CONFIG)).toBe(CONFIG.basePauseMs);
+  });
+
+  test("uses adaptive value once samples accumulate", () => {
+    const pauses = Array.from({ length: 12 }, (_, i) => 1500 + i * 100);
+    expect(effectivePauseThreshold(pauses, CONFIG)).toBeLessThanOrEqual(CONFIG.adaptive.maxThresholdMs);
+    expect(effectivePauseThreshold(pauses, CONFIG)).toBeGreaterThanOrEqual(CONFIG.adaptive.minThresholdMs);
+  });
+});
+
+describe("production-pause", () => {
+  test("does not fire on the initial pause before the first edit", () => {
+    // At creation lastEditAtMs == lastTriggerAtMs == nowMs; we shouldn't
+    // fire just because time passed since the editor mounted with stored text.
+    const start = createTriggerDetectorState(1000, "Hello world. ");
+    const tick = evaluateTrigger(
+      start,
+      { text: "Hello world. ", nowMs: 1000 + CONFIG.basePauseMs + 500 },
       CONFIG,
     );
-    expect(second.triggers).toContain("paragraph-ended");
+    expect(reasons(tick.triggers)).not.toContain("production-pause");
+  });
+
+  test("fires at a sentence boundary after the base threshold", () => {
+    const start = createTriggerDetectorState(1000, "");
+    const afterEdit = evaluateTrigger(start, { text: "Hello world. ", nowMs: 1500 }, CONFIG);
+    const afterPause = evaluateTrigger(
+      afterEdit.nextState,
+      { text: "Hello world. ", nowMs: 1500 + CONFIG.basePauseMs + 10 },
+      CONFIG,
+    );
+    expect(reasons(afterPause.triggers)).toContain("production-pause");
+    const emission = afterPause.triggers.find((t) => t.reason === "production-pause");
+    expect(emission?.boundary).toBe("sentence-boundary");
+    expect(emission?.pauseDurationMs ?? 0).toBeGreaterThanOrEqual(CONFIG.basePauseMs);
+    expect(emission?.thresholdMs).toBe(CONFIG.basePauseMs);
+  });
+
+  test("fires at a paragraph break", () => {
+    const start = createTriggerDetectorState(1000, "");
+    const afterEdit = evaluateTrigger(start, { text: "Para one.\n\n", nowMs: 1500 }, CONFIG);
+    const tick = evaluateTrigger(
+      afterEdit.nextState,
+      { text: "Para one.\n\n", nowMs: 1500 + CONFIG.basePauseMs + 10 },
+      CONFIG,
+    );
+    const emission = tick.triggers.find((t) => t.reason === "production-pause");
+    expect(emission?.boundary).toBe("paragraph-break");
+  });
+
+  test("fires at a clause boundary", () => {
+    const start = createTriggerDetectorState(1000, "");
+    const afterEdit = evaluateTrigger(start, { text: "Hello, ", nowMs: 1500 }, CONFIG);
+    const tick = evaluateTrigger(
+      afterEdit.nextState,
+      { text: "Hello, ", nowMs: 1500 + CONFIG.basePauseMs + 10 },
+      CONFIG,
+    );
+    const emission = tick.triggers.find((t) => t.reason === "production-pause");
+    expect(emission?.boundary).toBe("clause-boundary");
+  });
+
+  test("does not fire mid-word", () => {
+    const start = createTriggerDetectorState(1000, "");
+    const afterEdit = evaluateTrigger(start, { text: "Hello worl", nowMs: 1500 }, CONFIG);
+    const tick = evaluateTrigger(
+      afterEdit.nextState,
+      { text: "Hello worl", nowMs: 1500 + CONFIG.basePauseMs + 10 },
+      CONFIG,
+    );
+    expect(reasons(tick.triggers)).not.toContain("production-pause");
+  });
+
+  test("does not refire while the writer remains idle on the same content", () => {
+    const start = createTriggerDetectorState(1000, "");
+    const afterEdit = evaluateTrigger(start, { text: "Hello. ", nowMs: 1500 }, CONFIG);
+    const first = evaluateTrigger(
+      afterEdit.nextState,
+      { text: "Hello. ", nowMs: 1500 + CONFIG.basePauseMs + 10 },
+      CONFIG,
+    );
+    expect(reasons(first.triggers)).toContain("production-pause");
+    const second = evaluateTrigger(
+      first.nextState,
+      { text: "Hello. ", nowMs: 1500 + CONFIG.basePauseMs + 500 },
+      CONFIG,
+    );
+    expect(reasons(second.triggers)).not.toContain("production-pause");
+  });
+
+  test("fires again after a new edit ends the prior idle period", () => {
+    const start = createTriggerDetectorState(1000, "");
+    const afterEdit1 = evaluateTrigger(start, { text: "Hello. ", nowMs: 1500 }, CONFIG);
+    const firstPause = evaluateTrigger(
+      afterEdit1.nextState,
+      { text: "Hello. ", nowMs: 1500 + CONFIG.basePauseMs + 10 },
+      CONFIG,
+    );
+    expect(reasons(firstPause.triggers)).toContain("production-pause");
+    const afterEdit2 = evaluateTrigger(
+      firstPause.nextState,
+      { text: "Hello. There. ", nowMs: 1500 + CONFIG.basePauseMs + 1000 },
+      CONFIG,
+    );
+    const secondPause = evaluateTrigger(
+      afterEdit2.nextState,
+      { text: "Hello. There. ", nowMs: 1500 + CONFIG.basePauseMs * 2 + 1100 },
+      CONFIG,
+    );
+    expect(reasons(secondPause.triggers)).toContain("production-pause");
+  });
+
+  test("does not fire on a text-shrink edit", () => {
+    const start = createTriggerDetectorState(1000, "Long text here.");
+    const after = evaluateTrigger(start, { text: "Long", nowMs: 1100 }, CONFIG);
+    expect(reasons(after.triggers)).toEqual([]);
   });
 });
 
 describe("question-posed", () => {
-  test("fires when text just gained '? '", () => {
+  test("fires when '? ' is just appended", () => {
     const start = createTriggerDetectorState(1000, "Is this true?");
-    const { triggers } = evaluateTrigger(start, { text: "Is this true? ", nowMs: 1100 }, CONFIG);
-    expect(triggers).toContain("question-posed");
-  });
-
-  test("fires even without meeting the token floor (questions are high signal)", () => {
-    const start = createTriggerDetectorState(1000, "Why?");
-    const { triggers } = evaluateTrigger(start, { text: "Why? ", nowMs: 1100 }, CONFIG);
-    expect(triggers).toContain("question-posed");
+    const after = evaluateTrigger(start, { text: "Is this true? ", nowMs: 1050 }, CONFIG);
+    expect(reasons(after.triggers)).toContain("question-posed");
   });
 
   test("does not refire once '? ' is no longer the tail", () => {
     const start = createTriggerDetectorState(1000, "Is this true? ");
-    const { triggers } = evaluateTrigger(
-      start,
-      { text: "Is this true? Maybe", nowMs: 1100 },
-      CONFIG,
-    );
-    expect(triggers).not.toContain("question-posed");
+    const after = evaluateTrigger(start, { text: "Is this true? Maybe", nowMs: 1100 }, CONFIG);
+    expect(reasons(after.triggers)).not.toContain("question-posed");
   });
 
   test("fires again for a second question", () => {
     const start = createTriggerDetectorState(1000, "First? Then continued.");
-    const { triggers } = evaluateTrigger(
+    const after = evaluateTrigger(
       start,
-      { text: "First? Then continued. Why? ", nowMs: 1100 },
+      { text: "First? Then continued. Why? ", nowMs: 1500 },
       CONFIG,
     );
-    expect(triggers).toContain("question-posed");
+    expect(reasons(after.triggers)).toContain("question-posed");
+  });
+
+  test("fires regardless of pause (structural)", () => {
+    const start = createTriggerDetectorState(1000, "Why?");
+    const after = evaluateTrigger(start, { text: "Why? ", nowMs: 1050 }, CONFIG);
+    expect(reasons(after.triggers)).toContain("question-posed");
   });
 });
 
-describe("idle-pause", () => {
-  test("fires after the idle threshold with enough accumulated tokens", () => {
-    const filler = makeFiller(45);
+describe("max-quiet-time", () => {
+  test("fires when the safety-net interval elapses with new content", () => {
     const start = createTriggerDetectorState(1000, "");
-    const afterType = evaluateTrigger(start, { text: filler, nowMs: 1100 }, CONFIG);
-
-    const afterIdle = evaluateTrigger(
-      afterType.nextState,
-      { text: filler, nowMs: 1100 + CONFIG.idlePauseMs + 50 },
+    const afterEdit = evaluateTrigger(start, { text: "first words", nowMs: 1100 }, CONFIG);
+    const tick = evaluateTrigger(
+      afterEdit.nextState,
+      { text: "first wordsmore continuing", nowMs: 1100 + CONFIG.maxQuietTimeMs + 10 },
       CONFIG,
     );
-    expect(afterIdle.triggers).toContain("idle-pause");
+    // The tick is itself an edit (text differs); max-quiet-time still applies because content
+    // changed since the last trigger and the elapsed window passed.
+    expect(reasons(tick.triggers)).toContain("max-quiet-time");
   });
 
-  test("does not fire if the most recent event is an edit", () => {
-    const filler = makeFiller(45);
+  test("does not fire when content has not changed since the last trigger", () => {
     const start = createTriggerDetectorState(1000, "");
-    const { triggers } = evaluateTrigger(start, { text: filler, nowMs: 1100 }, CONFIG);
-    expect(triggers).not.toContain("idle-pause");
-  });
-
-  test("does not fire when token floor is unmet", () => {
-    const start = createTriggerDetectorState(1000, "short");
-    const { triggers } = evaluateTrigger(
+    // Sit idle past the quiet-time window; lastEditAtMs equals lastTriggerAtMs at startup,
+    // so the "content changed" gate is false.
+    const tick = evaluateTrigger(
       start,
-      { text: "short", nowMs: 1100 + CONFIG.idlePauseMs + 50 },
+      { text: "", nowMs: 1000 + CONFIG.maxQuietTimeMs + 10 },
       CONFIG,
     );
-    expect(triggers).not.toContain("idle-pause");
+    expect(reasons(tick.triggers)).not.toContain("max-quiet-time");
   });
 
-  test("does not refire on repeated ticks while still idle", () => {
-    const filler = makeFiller(45);
-    const start = createTriggerDetectorState(1000, "");
-    const afterType = evaluateTrigger(start, { text: filler, nowMs: 1100 }, CONFIG);
-    const firstIdle = evaluateTrigger(
-      afterType.nextState,
-      { text: filler, nowMs: 1100 + CONFIG.idlePauseMs + 50 },
+  test("does not double-fire with production-pause in the same evaluation", () => {
+    const start = createTriggerDetectorState(0, "");
+    const afterEdit = evaluateTrigger(
+      start,
+      { text: "Hello. ", nowMs: 100 },
       CONFIG,
     );
-    expect(firstIdle.triggers).toContain("idle-pause");
-
-    const secondIdle = evaluateTrigger(
-      firstIdle.nextState,
-      { text: filler, nowMs: 1100 + CONFIG.idlePauseMs + 1000 },
+    const tick = evaluateTrigger(
+      afterEdit.nextState,
+      { text: "Hello. ", nowMs: 100 + CONFIG.maxQuietTimeMs + CONFIG.basePauseMs + 10 },
       CONFIG,
     );
-    expect(secondIdle.triggers).not.toContain("idle-pause");
+    expect(reasons(tick.triggers)).toContain("production-pause");
+    expect(reasons(tick.triggers)).not.toContain("max-quiet-time");
   });
 });
 
-describe("word-volume", () => {
-  test("fires when tokens since last trigger cross the threshold", () => {
-    const start = createTriggerDetectorState(1000, "");
-    const longText = makeFiller(CONFIG.wordVolumeThreshold + 20);
-    const { triggers } = evaluateTrigger(start, { text: longText, nowMs: 1100 }, CONFIG);
-    expect(triggers).toContain("word-volume");
+describe("adaptive threshold integration", () => {
+  test("accumulates pause history when edits arrive after pauses", () => {
+    let state = createTriggerDetectorState(0, "");
+    // Simulate 5 edits each separated by 1500ms pauses.
+    let now = 0;
+    for (let i = 0; i < 5; i += 1) {
+      now += 1500;
+      const result = evaluateTrigger(state, { text: `text${String(i)}`, nowMs: now }, CONFIG);
+      state = result.nextState;
+    }
+    expect(state.pauseHistoryMs.length).toBe(5);
   });
 
-  test("resets after firing", () => {
-    const start = createTriggerDetectorState(1000, "");
-    const longText = makeFiller(CONFIG.wordVolumeThreshold + 20);
-    const first = evaluateTrigger(start, { text: longText, nowMs: 1100 }, CONFIG);
-    expect(first.triggers).toContain("word-volume");
+  test("ignores pauses outside the adaptive bounds (too short / too long)", () => {
+    let state = createTriggerDetectorState(0, "");
+    // 100ms pause — under minPauseMs, ignored.
+    state = evaluateTrigger(state, { text: "a", nowMs: 100 }, CONFIG).nextState;
+    // 60_000ms pause — over maxPauseMs, ignored.
+    state = evaluateTrigger(state, { text: "ab", nowMs: 60_100 }, CONFIG).nextState;
+    expect(state.pauseHistoryMs.length).toBe(0);
+  });
 
-    const slightlyLonger = `${longText} ${makeFiller(10)}`;
-    const second = evaluateTrigger(first.nextState, { text: slightlyLonger, nowMs: 1200 }, CONFIG);
-    expect(second.triggers).not.toContain("word-volume");
+  test("calibrates threshold to the 40th percentile once minSampleSize is reached", () => {
+    let state = createTriggerDetectorState(0, "");
+    let now = 0;
+    // Generate 12 pauses with known distribution, smallest 800ms up to 3000ms.
+    const pauses = [800, 1000, 1100, 1200, 1300, 1500, 1700, 1900, 2100, 2400, 2700, 3000];
+    for (const pauseDur of pauses) {
+      now += pauseDur;
+      state = evaluateTrigger(state, { text: `t${String(now)}`, nowMs: now }, CONFIG).nextState;
+    }
+    expect(state.pauseHistoryMs.length).toBe(pauses.length);
+    const adaptive = computeAdaptiveThreshold(state.pauseHistoryMs, CONFIG.adaptive);
+    // sorted floor(12 * 0.4) = index 4 → 1300, within bounds.
+    expect(adaptive).toBe(1300);
+  });
+
+  test("history is capped at adaptive.historyCap", () => {
+    const tiny: TriggerConfig = {
+      ...CONFIG,
+      adaptive: { ...CONFIG.adaptive, historyCap: 5 },
+    };
+    let state = createTriggerDetectorState(0, "");
+    let now = 0;
+    for (let i = 0; i < 10; i += 1) {
+      now += 1200;
+      state = evaluateTrigger(state, { text: `t${String(i)}`, nowMs: now }, tiny).nextState;
+    }
+    expect(state.pauseHistoryMs.length).toBe(5);
   });
 });
 
 describe("evaluateTrigger composition", () => {
-  test("emits multiple triggers in one evaluation when overlapping", () => {
-    const start = createTriggerDetectorState(1000, "");
-    const text = `${makeFiller(CONFIG.wordVolumeThreshold + 20)}\n\n`;
-    const { triggers } = evaluateTrigger(start, { text, nowMs: 1100 }, CONFIG);
-    expect(triggers).toContain("paragraph-ended");
-    expect(triggers).toContain("word-volume");
-  });
-
   test("nextState always reflects the latest text", () => {
     const start = createTriggerDetectorState(1000, "");
     const { nextState } = evaluateTrigger(start, { text: "hello", nowMs: 1100 }, CONFIG);
@@ -184,29 +348,18 @@ describe("evaluateTrigger composition", () => {
     expect(nextState.lastEditAtMs).toBe(1100);
   });
 
-  test("lastTriggerTokenCount only advances when a trigger fires", () => {
+  test("lastTriggerAtMs advances only when a trigger fires", () => {
     const start = createTriggerDetectorState(1000, "");
     const noTrigger = evaluateTrigger(start, { text: "short", nowMs: 1100 }, CONFIG);
-    expect(noTrigger.triggers).toEqual([]);
-    expect(noTrigger.nextState.lastTriggerTokenCount).toBe(start.lastTriggerTokenCount);
+    expect(reasons(noTrigger.triggers)).toEqual([]);
+    expect(noTrigger.nextState.lastTriggerAtMs).toBe(start.lastTriggerAtMs);
 
     const yesTrigger = evaluateTrigger(
       noTrigger.nextState,
       { text: "Is this short? ", nowMs: 1200 },
       CONFIG,
     );
-    expect(yesTrigger.triggers).toContain("question-posed");
-    expect(yesTrigger.nextState.lastTriggerTokenCount).toBeGreaterThan(0);
-  });
-
-  test("text shrinking does not produce a negative token baseline", () => {
-    const start = createTriggerDetectorState(1000, makeFiller(200));
-    const { triggers, nextState } = evaluateTrigger(
-      start,
-      { text: "tiny", nowMs: 1100 },
-      CONFIG,
-    );
-    expect(triggers).not.toContain("word-volume");
-    expect(nextState.lastTriggerTokenCount).toBe(start.lastTriggerTokenCount);
+    expect(reasons(yesTrigger.triggers)).toContain("question-posed");
+    expect(yesTrigger.nextState.lastTriggerAtMs).toBe(1200);
   });
 });
