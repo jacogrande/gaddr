@@ -1,49 +1,32 @@
-# Plan — Intelligence Layer Foundations & Timer UX
+# Plan — Trigger Detector Redesign Review
 
-## Scope of Work Reviewed
+## Scope
 
-This branch lands the substrate for the intelligence layer plus a substantial timer/wizard UX redesign.
+Review the trigger detector rewrite shipped in commits `b51cbe8` (detector + hook), `0539461` (tests), `c62626e` (docs). This implements all three phases of the redesign described in `docs/research/trigger-units-and-cadence.md`.
 
-## What Shipped (Committed)
-
-| Area | Files |
-|---|---|
-| Trigger detector domain | `src/domain/editor/trigger-detector.ts` |
-| Trigger detector hook | `src/app/(protected)/editor/use-trigger-detector.ts` |
-| Trigger detector tests | `test/unit/editor/trigger-detector.test.ts` (20 tests) |
-| Freewrite wizard | `src/app/(protected)/editor/freewrite-wizard.tsx` |
-| Intelligence roadmap doc | `docs/intelligence-roadmap.md` |
-| Background-inference research doc | `docs/research/background-inference-during-freewrite.md` |
-| Editor wiring | `src/app/(protected)/editor/minimal-editor.tsx` |
-
-## What Shipped (Uncommitted at Review Time)
+## What Changed
 
 | Area | Files |
 |---|---|
-| Sprint state persistence | `src/app/(protected)/editor/sprint-persistence.ts` |
-| Resume option in wizard | `src/app/(protected)/editor/freewrite-wizard.tsx` |
-| New-freewrite CTA in board | `src/app/(protected)/editor/canvas-flow.tsx`, `src/app/globals.css` |
-| Persistence wiring, 1h staleness check, pause-on-leave, board-on-refresh, hover-driven timer controls (pause/play/+1m/stop) | `src/app/(protected)/editor/minimal-editor.tsx` |
+| Detector domain | `src/domain/editor/trigger-detector.ts` — full rewrite |
+| Hook | `src/app/(protected)/editor/use-trigger-detector.ts` — new options, burst tracking, async gate |
+| Tests | `test/unit/editor/trigger-detector.test.ts` — 35 tests covering boundaries, triggers, adaptive |
+| Docs | `docs/research/trigger-units-and-cadence.md` — new research + implementation notes |
+| Docs | `docs/research/background-inference-during-freewrite.md` — stale trigger names updated |
 
 ## Architectural Decisions
 
-1. **Trigger detector lives in `src/domain/editor/`** as a pure state machine. React adapter is the hook in the app layer. No framework deps in domain.
-2. **Four trigger reasons:** `paragraph-ended`, `question-posed`, `idle-pause`, `word-volume`. Structural triggers (paragraph, question) ignore token gates; volume triggers (idle-pause, word-volume) gate on tokens since last fire.
-3. **Sprint persistence uses absolute timestamps** (`endsAtMs`, `lastActiveAtMs`) so refresh continues the timer accurately, with absence-shift on restore to achieve "pause on leave" without explicit pause events.
-4. **1-hour staleness threshold** (was 6h initially, lowered per user request). Beyond that, the wizard reappears with a "resume previous" affordance.
-5. **Timer popover replaced** by hover-driven column of pause/play, +1m, and stop buttons. 1s debounce on hover-leave; controls stay open while paused.
-6. **Board appears on refresh in completed phase** via `transition_in` set from the restoration effect, bypassing the 3s idle wait.
-
-## Known Limitations / TODOs
-
-1. **`minimal-editor.tsx` is 1525 lines.** Multiple concerns (sprint state, wizard, board, hover controls, slash menu, command palette, modifier badges, persistence) are intermingled. Custom-hook extraction is the right follow-up.
-2. **No sign-out path from the editor.** `SignOutButton` was orphaned when the popover was removed. Not yet relocated.
-3. **No E2E coverage** for the new flows (wizard, hover controls, resume, board refresh, new-freewrite CTA).
-4. **`console.log` default observer** in the trigger detector is intentional for trial-and-error tuning. Must be gated before LLM wiring.
-5. **Triggers fire regardless of sprint state.** Trial-and-error mode. Should sprint-gate before LLM calls go live.
+1. **Triggers carry metadata.** `TriggerEmission` includes `boundary`, `pauseDurationMs`, `thresholdMs`. Downstream consumers route on the metadata.
+2. **Detector stays pure and sync.** Async completion check lives in the hook layer (Phase 3 pluggable interface), not in the domain. Domain emits candidates; hook gates delivery.
+3. **State carries pause history.** Phase 2 calibration ringbuffer lives in `TriggerDetectorState` so the detector remains a pure function of state + event.
+4. **Startup state suppresses initial pauses.** `lastEditAtMs` and `lastTriggerAtMs` both initialize to creation time, so `production-pause` doesn't fire just because time passed since mount.
 
 ## Verification
 
 - `bun run typecheck` — PASS
 - `bun run lint` — PASS
-- `bun test` — 31 pass, 0 fail
+- `bun test` — 61 pass / 0 fail, 99 expect() calls
+
+## Known Issue (review finding)
+
+The hook updates `lastDeliveredTextRef` synchronously when triggers fire, *before* the async completion check resolves. If a Phase 3 check rejects a trigger, the burst tracking has already advanced — the next delivered trigger will receive a burst missing the rejected trigger's content. Not active until a real `semanticCompletionCheck` is wired; flagged as High for that moment.
