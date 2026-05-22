@@ -1,42 +1,85 @@
 /**
  * Pure trigger detector for background intelligence during a freewrite.
  *
- * Reads a stream of (text, time) events and emits triggers when a moment
- * worth analyzing has occurred. No side effects, no I/O. Wiring layer is
- * responsible for capturing editor text and dispatching logs/work.
+ * Triggers fire when a moment worth analyzing has occurred. Each emission
+ * carries metadata (boundary type, pause duration, effective threshold) so
+ * downstream consumers can route different signals to different tools.
  *
- * Trigger reasons (each unique):
- *  - "paragraph-ended"   — a new paragraph break (\n\n) was just added (structural)
- *  - "question-posed"    — the writer just typed "? " (structural)
- *  - "idle-pause"        — idle for N ms with enough new content since last trigger
- *  - "word-volume"       — enough new content has accumulated since last trigger
+ * Trigger reasons:
+ *  - "production-pause" — writer paused after a meaningful boundary. The
+ *    primary generic trigger. Replaces the old paragraph-ended + idle-pause
+ *    pair. Base threshold is 2s; adaptive after the writer's first 10
+ *    pauses (40th percentile of observed pauses, bounded to [1s, 5s]).
+ *    Mid-word pauses never fire; all other boundary types do.
+ *  - "question-posed" — writer just typed "? " (question mark + space).
+ *    Structural; fires regardless of pause. Unchanged in semantics.
+ *  - "max-quiet-time" — safety net. Fires when at least `maxQuietTimeMs`
+ *    has elapsed since the last trigger and content has changed since,
+ *    catching writers who produce long unbroken runs without pauses.
  *
- * Structural triggers fire on transition and ignore token gates.
- * Volume triggers (idle-pause, word-volume) gate on tokens since the last fire.
+ * Design notes:
+ *  - Pause detection is position-classified, not just time-thresholded. A
+ *    pause at a paragraph break is different signal from a pause mid-word;
+ *    the detector encodes the position and the consumer decides how to use it.
+ *  - Adaptive threshold tunes to the writer's natural pace. A fast typist's
+ *    threshold settles low; a deliberate writer's settles higher.
+ *  - The detector is pure and synchronous. Async gating (e.g., LLM-judged
+ *    semantic completion) lives in the hook layer that consumes these events.
  */
 
-export type TriggerReason =
-  | "paragraph-ended"
-  | "question-posed"
-  | "idle-pause"
-  | "word-volume";
+export type TriggerReason = "production-pause" | "question-posed" | "max-quiet-time";
+
+export type BoundaryType =
+  | "paragraph-break"
+  | "sentence-boundary"
+  | "clause-boundary"
+  | "between-words"
+  | "mid-word";
+
+export type TriggerEmission = {
+  readonly reason: TriggerReason;
+  readonly boundary?: BoundaryType;
+  readonly pauseDurationMs?: number;
+  readonly thresholdMs?: number;
+};
+
+export type AdaptiveConfig = {
+  readonly minPauseMs: number;
+  readonly maxPauseMs: number;
+  readonly minSampleSize: number;
+  readonly percentile: number;
+  readonly minThresholdMs: number;
+  readonly maxThresholdMs: number;
+  readonly historyCap: number;
+};
 
 export type TriggerConfig = {
-  readonly idlePauseMs: number;
-  readonly idleTokenFloor: number;
-  readonly wordVolumeThreshold: number;
+  readonly basePauseMs: number;
+  readonly maxQuietTimeMs: number;
+  readonly adaptive: AdaptiveConfig;
+};
+
+export const DEFAULT_ADAPTIVE_CONFIG: AdaptiveConfig = {
+  minPauseMs: 500,
+  maxPauseMs: 30_000,
+  minSampleSize: 10,
+  percentile: 0.4,
+  minThresholdMs: 1000,
+  maxThresholdMs: 5000,
+  historyCap: 30,
 };
 
 export const DEFAULT_TRIGGER_CONFIG: TriggerConfig = {
-  idlePauseMs: 4000,
-  idleTokenFloor: 40,
-  wordVolumeThreshold: 100,
+  basePauseMs: 2000,
+  maxQuietTimeMs: 60_000,
+  adaptive: DEFAULT_ADAPTIVE_CONFIG,
 };
 
 export type TriggerDetectorState = {
   readonly lastText: string;
   readonly lastEditAtMs: number;
-  readonly lastTriggerTokenCount: number;
+  readonly lastTriggerAtMs: number;
+  readonly pauseHistoryMs: readonly number[];
 };
 
 export type TriggerEvent = {
@@ -45,7 +88,7 @@ export type TriggerEvent = {
 };
 
 export type TriggerEvaluation = {
-  readonly triggers: readonly TriggerReason[];
+  readonly triggers: readonly TriggerEmission[];
   readonly nextState: TriggerDetectorState;
 };
 
@@ -56,22 +99,104 @@ export function createTriggerDetectorState(
   return {
     lastText: initialText,
     lastEditAtMs: nowMs,
-    lastTriggerTokenCount: estimateTokens(initialText),
+    lastTriggerAtMs: nowMs,
+    pauseHistoryMs: [],
   };
 }
 
 /**
  * Rough token estimate. Whitespace-split word count × 1.3 approximates
- * BPE token count for English prose well enough for gating decisions.
+ * BPE token count for English prose. Kept for downstream logging /
+ * observability, no longer used by the detector itself.
  */
 export function estimateTokens(text: string): number {
   const trimmed = text.trim();
   if (trimmed.length === 0) {
     return 0;
   }
-
   const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
   return Math.ceil(wordCount * 1.3);
+}
+
+/**
+ * Classify the boundary the writer is sitting at, based on the trailing
+ * characters of the produced text. Used to weight whether a pause should
+ * fire production-pause (and lets downstream tools route on signal strength).
+ */
+export function classifyBoundary(text: string): BoundaryType {
+  if (text.length === 0) {
+    return "between-words";
+  }
+
+  if (/\n\n\s*$/.test(text)) {
+    return "paragraph-break";
+  }
+
+  const trimmed = text.replace(/\s+$/, "");
+  if (trimmed.length === 0) {
+    return "between-words";
+  }
+
+  const hasTrailingWhitespace = text.length > trimmed.length;
+  const lastChar = trimmed[trimmed.length - 1] ?? "";
+
+  if (hasTrailingWhitespace) {
+    if (lastChar === "." || lastChar === "?" || lastChar === "!") {
+      return "sentence-boundary";
+    }
+    if (lastChar === "," || lastChar === ";" || lastChar === ":") {
+      return "clause-boundary";
+    }
+    return "between-words";
+  }
+
+  if (/[\p{L}\p{N}]/u.test(lastChar)) {
+    return "mid-word";
+  }
+
+  return "between-words";
+}
+
+/**
+ * Compute the writer's calibrated pause threshold from observed pauses.
+ * Returns null if we don't have enough samples yet (falls back to base).
+ * Bounded to [minThresholdMs, maxThresholdMs] to keep crazy outliers from
+ * pushing the threshold somewhere unusable.
+ */
+export function computeAdaptiveThreshold(
+  pauses: readonly number[],
+  config: AdaptiveConfig,
+): number | null {
+  if (pauses.length < config.minSampleSize) {
+    return null;
+  }
+  const sorted = [...pauses].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * config.percentile));
+  const raw = sorted[idx];
+  if (raw === undefined) {
+    return null;
+  }
+  return Math.min(config.maxThresholdMs, Math.max(config.minThresholdMs, raw));
+}
+
+export function effectivePauseThreshold(
+  pauses: readonly number[],
+  config: TriggerConfig,
+): number {
+  const adaptive = computeAdaptiveThreshold(pauses, config.adaptive);
+  return adaptive ?? config.basePauseMs;
+}
+
+function justPostedAQuestion(previousText: string, currentText: string): boolean {
+  if (!/\?\s$/.test(currentText)) {
+    return false;
+  }
+  return !/\?\s$/.test(previousText);
+}
+
+function appendBounded(buffer: readonly number[], value: number, cap: number): readonly number[] {
+  const next = [...buffer, value];
+  return next.length > cap ? next.slice(-cap) : next;
 }
 
 export function evaluateTrigger(
@@ -81,29 +206,55 @@ export function evaluateTrigger(
 ): TriggerEvaluation {
   const { text, nowMs } = event;
   const isEdit = text !== state.lastText;
-  const currentTokens = estimateTokens(text);
-  const tokensSinceLast = Math.max(currentTokens - state.lastTriggerTokenCount, 0);
+  const triggers: TriggerEmission[] = [];
 
-  const triggers: TriggerReason[] = [];
-
-  if (isEdit && justEndedAParagraph(state.lastText, text)) {
-    triggers.push("paragraph-ended");
+  // Phase 2: record the pause that just ended (an edit terminates a pause).
+  let pauseHistoryMs = state.pauseHistoryMs;
+  if (isEdit) {
+    const pauseDur = nowMs - state.lastEditAtMs;
+    if (
+      pauseDur >= config.adaptive.minPauseMs &&
+      pauseDur <= config.adaptive.maxPauseMs
+    ) {
+      pauseHistoryMs = appendBounded(pauseHistoryMs, pauseDur, config.adaptive.historyCap);
+    }
   }
 
+  // Structural trigger: question posed.
   if (isEdit && justPostedAQuestion(state.lastText, text)) {
-    triggers.push("question-posed");
+    triggers.push({ reason: "question-posed" });
   }
 
-  if (
-    !isEdit &&
-    tokensSinceLast >= config.idleTokenFloor &&
-    nowMs - state.lastEditAtMs >= config.idlePauseMs
-  ) {
-    triggers.push("idle-pause");
+  // Production-pause: tick events with enough idle time and a meaningful boundary.
+  const thresholdMs = effectivePauseThreshold(pauseHistoryMs, config);
+  if (!isEdit) {
+    const sinceLastEdit = nowMs - state.lastEditAtMs;
+    // Don't refire while the writer is still idle on the same content.
+    const alreadyFiredSinceLastEdit = state.lastTriggerAtMs >= state.lastEditAtMs;
+    if (sinceLastEdit >= thresholdMs && !alreadyFiredSinceLastEdit) {
+      const boundary = classifyBoundary(state.lastText);
+      if (boundary !== "mid-word") {
+        triggers.push({
+          reason: "production-pause",
+          boundary,
+          pauseDurationMs: sinceLastEdit,
+          thresholdMs,
+        });
+      }
+    }
   }
 
-  if (tokensSinceLast >= config.wordVolumeThreshold) {
-    triggers.push("word-volume");
+  // Safety net: max-quiet-time. Fires only if no other trigger fires in this
+  // evaluation, so it doesn't duplicate production-pause when both qualify.
+  if (triggers.length === 0) {
+    const contentChangedSinceLastTrigger = state.lastEditAtMs > state.lastTriggerAtMs;
+    const elapsedSinceLastTrigger = nowMs - state.lastTriggerAtMs;
+    if (
+      contentChangedSinceLastTrigger &&
+      elapsedSinceLastTrigger >= config.maxQuietTimeMs
+    ) {
+      triggers.push({ reason: "max-quiet-time" });
+    }
   }
 
   const fired = triggers.length > 0;
@@ -111,26 +262,9 @@ export function evaluateTrigger(
   const nextState: TriggerDetectorState = {
     lastText: text,
     lastEditAtMs: isEdit ? nowMs : state.lastEditAtMs,
-    lastTriggerTokenCount: fired ? currentTokens : state.lastTriggerTokenCount,
+    lastTriggerAtMs: fired ? nowMs : state.lastTriggerAtMs,
+    pauseHistoryMs,
   };
 
   return { triggers, nextState };
-}
-
-function countParagraphBreaks(text: string): number {
-  const matches = text.match(/\n\n/g);
-  return matches?.length ?? 0;
-}
-
-function justEndedAParagraph(previousText: string, currentText: string): boolean {
-  return countParagraphBreaks(currentText) > countParagraphBreaks(previousText);
-}
-
-function justPostedAQuestion(previousText: string, currentText: string): boolean {
-  const currentMatches = /\?\s$/.test(currentText);
-  if (!currentMatches) {
-    return false;
-  }
-
-  return !/\?\s$/.test(previousText);
 }
