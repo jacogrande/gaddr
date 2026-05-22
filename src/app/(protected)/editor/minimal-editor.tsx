@@ -1,6 +1,6 @@
 "use client";
 
-import { ClockIcon } from "@phosphor-icons/react";
+import { ClockIcon, PauseIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { useEditor, type JSONContent } from "@tiptap/react";
@@ -8,11 +8,13 @@ import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import { CanvasFlow } from "./canvas-flow";
 import { EditorCardProvider } from "./editor-card-context";
-import { SignOutButton } from "../sign-out-button";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
 import { StandardHotkeys } from "./standard-hotkeys-extension";
-import { FreewriteWizard, type WizardMode } from "./freewrite-wizard";
+import { FreewriteWizard } from "./freewrite-wizard";
+import { useBoardEntry, type BoardMode } from "./use-board-entry";
+import { useSprintSession } from "./use-sprint-session";
+import { useTimerHoverControls } from "./use-timer-hover-controls";
 import { useTriggerDetector } from "./use-trigger-detector";
 import {
   collectExitingModifierKeys,
@@ -26,6 +28,7 @@ import {
   type DisplayModifierBadge,
   type ModifierBadge,
 } from "../../../domain/editor/interaction-core";
+
 const STORAGE_KEY = "gaddr:minimal-editor";
 const IDLE_SAVE_TIMEOUT_MS = 1200;
 const MODIFIER_EXIT_ANIMATION_MS = 180;
@@ -35,41 +38,13 @@ const SLASH_MENU_VIEWPORT_MARGIN_PX = 12;
 const SLASH_MENU_VERTICAL_OFFSET_PX = 10;
 const SLASH_MENU_BOTTOM_SAFE_AREA_PX = 230;
 const DEFAULT_SPRINT_OPTION = "10m";
-const SPRINT_EXTENSION_MINUTES = 5;
-const SPRINT_RECENT_ACTIVITY_MS = 3000;
-const WIZARD_ENTER_MS = 900;
-const WIZARD_EXIT_MS = 520;
+
 const SPRINT_OPTIONS = [
-  {
-    id: "5s",
-    durationMs: 5_000,
-    label: "5 sec",
-    hint: "Transition test",
-  },
-  {
-    id: "5m",
-    durationMs: 5 * 60_000,
-    label: "5 min",
-    hint: "Quick reset",
-  },
-  {
-    id: "10m",
-    durationMs: 10 * 60_000,
-    label: "10 min",
-    hint: "Default",
-  },
-  {
-    id: "15m",
-    durationMs: 15 * 60_000,
-    label: "15 min",
-    hint: "Longer pass",
-  },
-  {
-    id: "20m",
-    durationMs: 20 * 60_000,
-    label: "20 min",
-    hint: "Deep focus",
-  },
+  { id: "5s", durationMs: 5_000, label: "5 sec", hint: "Transition test" },
+  { id: "5m", durationMs: 5 * 60_000, label: "5 min", hint: "Quick reset" },
+  { id: "10m", durationMs: 10 * 60_000, label: "10 min", hint: "Default" },
+  { id: "15m", durationMs: 15 * 60_000, label: "15 min", hint: "Longer pass" },
+  { id: "20m", durationMs: 20 * 60_000, label: "20 min", hint: "Deep focus" },
 ] as const;
 
 type IdleRequestCallbackLike = (deadline: { readonly didTimeout: boolean; timeRemaining: () => number }) => void;
@@ -79,14 +54,8 @@ type IdleSchedulerWindow = Window &
     cancelIdleCallback?: (handle: number) => void;
   };
 type SaveHandle =
-  | {
-      kind: "idle";
-      id: number;
-    }
-  | {
-      kind: "timeout";
-      id: number;
-    };
+  | { kind: "idle"; id: number }
+  | { kind: "timeout"; id: number };
 
 type SlashMenuState = {
   query: string;
@@ -96,29 +65,17 @@ type SlashMenuState = {
   left: number;
 };
 
-type SprintOption = (typeof SPRINT_OPTIONS)[number];
-type SprintOptionId = SprintOption["id"];
-type SprintPhase = "idle" | "running" | "paused" | "completed";
-
-
-
 function formatClockDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-
   return `${String(minutes)}:${String(seconds).padStart(2, "0")}`;
-}
-
-function getSprintOption(optionId: SprintOptionId): SprintOption {
-  return SPRINT_OPTIONS.find((option) => option.id === optionId) ?? SPRINT_OPTIONS[0];
 }
 
 function formatSprintRemainingLabel(ms: number): string {
   if (ms <= 6 * 60_000) {
     return formatClockDuration(ms);
   }
-
   return `${String(Math.max(1, Math.ceil(ms / 60_000)))} min left`;
 }
 
@@ -144,26 +101,25 @@ function loadDoc(): JSONContent {
   if (typeof window === "undefined") {
     return emptyDoc();
   }
-
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return emptyDoc();
-    }
+    if (!raw) return emptyDoc();
     const parsed = JSON.parse(raw) as JSONContent;
-    if (parsed.type !== "doc") {
-      return emptyDoc();
-    }
+    if (parsed.type !== "doc") return emptyDoc();
     return parsed;
   } catch {
     return emptyDoc();
   }
 }
 
-/** Post-sprint board modes: editor zooms out, node grid animates in. */
-export type BoardMode = "hidden" | "transition_in" | "visible" | "transition_out";
+type BoardEntryActions = {
+  markBoardShown: () => void;
+  setBoardMode: (mode: BoardMode) => void;
+  resetForNewSprint: () => void;
+};
 
 export function MinimalEditor() {
+  // === Editor chrome state ===
   const [activeModifiers, setActiveModifiers] = useState<ModifierBadge[]>([]);
   const [displayModifiers, setDisplayModifiers] = useState<DisplayModifierBadge[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -172,29 +128,26 @@ export function MinimalEditor() {
   const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null);
   const [slashMenuActiveIndex, setSlashMenuActiveIndex] = useState(0);
   const [isMacLike, setIsMacLike] = useState(false);
-  const [isSprintMenuOpen, setIsSprintMenuOpen] = useState(false);
-  const [sprintOption, setSprintOption] = useState<SprintOptionId>(DEFAULT_SPRINT_OPTION);
-  const [sprintPhase, setSprintPhase] = useState<SprintPhase>("idle");
-  const [sprintEndsAtMs, setSprintEndsAtMs] = useState<number | null>(null);
-  const [pausedSprintRemainingMs, setPausedSprintRemainingMs] = useState<number | null>(null);
-  const [sprintNowMs, setSprintNowMs] = useState(() => Date.now());
+
   const activeModifiersSignatureRef = useRef("");
   const modifierOrderingStateRef = useRef(createModifierOrderingState());
   const modifierExitTimersRef = useRef<Map<string, number>>(new Map());
   const slashMenuSignatureRef = useRef("");
   const slashMenuQueryRef = useRef("");
   const dismissedSlashRangeRef = useRef<string | null>(null);
+
+  // === Doc persistence state ===
   const pendingPersistRef = useRef(false);
   const saveHandleRef = useRef<SaveHandle | null>(null);
   const latestEditorRef = useRef<{ getJSON: () => JSONContent } | null>(null);
-  const sprintMenuRef = useRef<HTMLDivElement | null>(null);
-  const sprintPhaseRef = useRef<SprintPhase>("idle");
-  const lastEditAtMsRef = useRef(Date.now());
-  const [boardMode, setBoardMode] = useState<BoardMode>("hidden");
-  const boardModeRef = useRef<BoardMode>("hidden");
-  const hasShownBoardForSprintRef = useRef(false);
-  const [wizardMode, setWizardMode] = useState<WizardMode>("transition_in");
 
+  // === Lifecycle refs hoisted so onUpdate can use them via ref ===
+  const lastEditAtMsRef = useRef(Date.now());
+  const boardModeRef = useRef<BoardMode>("hidden");
+  const setBoardModeRef = useRef<(mode: BoardMode) => void>(() => undefined);
+  const boardEntryActionsRef = useRef<BoardEntryActions | null>(null);
+
+  // === Doc persistence callbacks (used by useEditor) ===
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(current.getJSON()));
@@ -204,214 +157,49 @@ export function MinimalEditor() {
   }, []);
 
   const clearScheduledPersist = useCallback(() => {
-    if (!saveHandleRef.current) {
-      return;
-    }
-
+    if (!saveHandleRef.current) return;
     if (saveHandleRef.current.kind === "idle") {
       const idleWindow = window as IdleSchedulerWindow;
       idleWindow.cancelIdleCallback(saveHandleRef.current.id);
     } else {
       window.clearTimeout(saveHandleRef.current.id);
     }
-
     saveHandleRef.current = null;
   }, []);
 
   const flushPersist = useCallback(() => {
     const current = latestEditorRef.current;
-    if (!current) {
-      return;
-    }
-
+    if (!current) return;
     clearScheduledPersist();
     pendingPersistRef.current = false;
     persistNow(current);
   }, [clearScheduledPersist, persistNow]);
 
-  const startSprint = useCallback((optionId: SprintOptionId) => {
-    const now = Date.now();
-    const option = getSprintOption(optionId);
-
-    setBoardMode("hidden");
-    hasShownBoardForSprintRef.current = false;
-    setSprintNowMs(now);
-    setSprintOption(option.id);
-    setSprintPhase("running");
-    setSprintEndsAtMs(now + option.durationMs);
-    setPausedSprintRemainingMs(null);
-    setIsSprintMenuOpen(false);
-  }, []);
-
-  const pauseSprint = useCallback(() => {
-    if (sprintPhase !== "running" || sprintEndsAtMs === null) {
-      return;
-    }
-
-    const now = Date.now();
-    const remainingMs = Math.max(sprintEndsAtMs - now, 0);
-    setSprintNowMs(now);
-
-    if (remainingMs === 0) {
-      setSprintPhase("completed");
-      setSprintEndsAtMs(null);
-      setPausedSprintRemainingMs(null);
-      return;
-    }
-
-    setSprintPhase("paused");
-    setSprintEndsAtMs(null);
-    setPausedSprintRemainingMs(remainingMs);
-  }, [sprintEndsAtMs, sprintPhase]);
-
-  const resumeSprint = useCallback(() => {
-    if (sprintPhase !== "paused" || pausedSprintRemainingMs === null) {
-      return;
-    }
-
-    const now = Date.now();
-    setSprintNowMs(now);
-    setSprintPhase("running");
-    setSprintEndsAtMs(now + pausedSprintRemainingMs);
-    setPausedSprintRemainingMs(null);
-    setIsSprintMenuOpen(false);
-  }, [pausedSprintRemainingMs, sprintPhase]);
-
-  const endSprint = useCallback(() => {
-    setBoardMode("hidden");
-    setSprintPhase("idle");
-    setSprintEndsAtMs(null);
-    setPausedSprintRemainingMs(null);
-    setIsSprintMenuOpen(false);
-    setWizardMode("transition_in");
-  }, []);
-
-  const handleWizardSelect = useCallback(
-    (optionId: string) => {
-      if (wizardMode !== "visible" && wizardMode !== "transition_in") {
-        return;
-      }
-      const option = SPRINT_OPTIONS.find((entry) => entry.id === optionId);
-      if (!option) {
-        return;
-      }
-      setWizardMode("transition_out");
-      startSprint(option.id);
-    },
-    [startSprint, wizardMode],
-  );
-
-  const addSprintTime = useCallback(() => {
-    const now = Date.now();
-    const extensionMs = SPRINT_EXTENSION_MINUTES * 60_000;
-
-    setSprintNowMs(now);
-
-    if (sprintPhase === "running" && sprintEndsAtMs !== null) {
-      setSprintEndsAtMs(sprintEndsAtMs + extensionMs);
-      setIsSprintMenuOpen(false);
-      return;
-    }
-
-    if (sprintPhase === "paused" && pausedSprintRemainingMs !== null) {
-      setPausedSprintRemainingMs(pausedSprintRemainingMs + extensionMs);
-      setIsSprintMenuOpen(false);
-      return;
-    }
-
-    if (sprintPhase === "completed") {
-      setSprintPhase("running");
-      setSprintEndsAtMs(now + extensionMs);
-      setPausedSprintRemainingMs(null);
-      setIsSprintMenuOpen(false);
-    }
-  }, [pausedSprintRemainingMs, sprintEndsAtMs, sprintPhase]);
-
   const schedulePersist = useCallback((current: { getJSON: () => JSONContent }) => {
     latestEditorRef.current = current;
     pendingPersistRef.current = true;
-
-    if (saveHandleRef.current) {
-      return;
-    }
+    if (saveHandleRef.current) return;
 
     const runPersist = () => {
       saveHandleRef.current = null;
-
-      if (!pendingPersistRef.current) {
-        return;
-      }
-
+      if (!pendingPersistRef.current) return;
       pendingPersistRef.current = false;
-
       if (latestEditorRef.current) {
         persistNow(latestEditorRef.current);
       }
     };
 
     const idleWindow = window as IdleSchedulerWindow;
-
     if (typeof idleWindow.requestIdleCallback === "function") {
       const id = idleWindow.requestIdleCallback(runPersist, { timeout: IDLE_SAVE_TIMEOUT_MS });
       saveHandleRef.current = { kind: "idle", id };
       return;
     }
-
     const id = window.setTimeout(runPersist, IDLE_SAVE_TIMEOUT_MS);
     saveHandleRef.current = { kind: "timeout", id };
   }, [persistNow]);
 
-  const filteredPaletteCommands = useMemo(() => {
-    return filterCommandsByQuery(EDITOR_MODIFIER_COMMANDS, commandPaletteQuery);
-  }, [commandPaletteQuery]);
-
-  const filteredSlashCommands = useMemo(() => {
-    return filterCommandsByQuery(EDITOR_MODIFIER_COMMANDS, slashMenuState?.query ?? "");
-  }, [slashMenuState?.query]);
-
-  const commandHotkeyEntries = useMemo(
-    () => listCommandHotkeyEntries(EDITOR_MODIFIER_COMMANDS),
-    [],
-  );
-
-  const syncActiveModifiers = useCallback((current: TiptapEditor) => {
-    const activeBadges = current.isFocused
-      ? MODIFIER_BADGES.filter((badge) => badge.isActive(current)).map((badge) => ({
-          key: badge.key,
-          label: badge.label,
-        }))
-      : [];
-    const { orderedBadges, signature, nextState } = orderModifierBadges(activeBadges, modifierOrderingStateRef.current);
-    modifierOrderingStateRef.current = nextState;
-
-    if (signature === activeModifiersSignatureRef.current) {
-      return;
-    }
-
-    activeModifiersSignatureRef.current = signature;
-    setActiveModifiers(orderedBadges);
-  }, []);
-
-  const formatHotkey = useCallback(
-    (hotkey: string) => {
-      const chunks = hotkey.split("-").map((chunk) => {
-        switch (chunk) {
-          case "Mod":
-            return isMacLike ? "⌘" : "Ctrl";
-          case "Shift":
-            return isMacLike ? "⇧" : "Shift";
-          case "Alt":
-            return isMacLike ? "⌥" : "Alt";
-          default:
-            return chunk.length === 1 ? chunk.toUpperCase() : chunk;
-        }
-      });
-
-      return isMacLike ? chunks.join("") : chunks.join("+");
-    },
-    [isMacLike],
-  );
-
+  // === TipTap editor ===
   const editor = useEditor({
     immediatelyRender: false,
     autofocus: "end",
@@ -425,9 +213,8 @@ export function MinimalEditor() {
     },
     onUpdate: ({ editor: current }) => {
       lastEditAtMsRef.current = Date.now();
-      // Exit board when user starts typing
       if (boardModeRef.current === "visible" || boardModeRef.current === "transition_in") {
-        setBoardMode("transition_out");
+        setBoardModeRef.current("transition_out");
       }
       schedulePersist(current);
     },
@@ -436,8 +223,57 @@ export function MinimalEditor() {
     },
   });
 
-  useTriggerDetector(editor);
+  // === Sprint lifecycle (state + persistence + wizard + resume) ===
+  const session = useSprintSession({
+    options: SPRINT_OPTIONS,
+    defaultOptionId: DEFAULT_SPRINT_OPTION,
+    onRestoredCompleted: () => {
+      const actions = boardEntryActionsRef.current;
+      if (!actions) return;
+      actions.markBoardShown();
+      actions.setBoardMode("visible");
+    },
+    onSprintReset: () => {
+      boardEntryActionsRef.current?.resetForNewSprint();
+    },
+  });
 
+  // === Board overlay lifecycle ===
+  const boardEntry = useBoardEntry({
+    sprintPhase: session.sprintPhase,
+    editorReady: editor !== null,
+    lastEditAtMsRef,
+  });
+
+  // Wire refs the editor uses through ref so order-of-declaration doesn't matter.
+  boardEntryActionsRef.current = {
+    markBoardShown: boardEntry.markBoardShown,
+    setBoardMode: boardEntry.setBoardMode,
+    resetForNewSprint: boardEntry.resetForNewSprint,
+  };
+  boardModeRef.current = boardEntry.boardMode;
+  setBoardModeRef.current = boardEntry.setBoardMode;
+
+  // === Timer chrome hover ===
+  const hoverControls = useTimerHoverControls(session.sprintPhase);
+
+  // === Trigger detector (background intelligence — gated on running sprint) ===
+  useTriggerDetector(editor, { enabled: session.sprintPhase === "running" });
+
+  // === Timer toggle (pause/resume) ===
+  const handleTimerToggle = useCallback(() => {
+    if (session.sprintPhase === "running") {
+      session.pauseSprint();
+    } else if (session.sprintPhase === "paused") {
+      session.resumeSprint();
+    }
+  }, [session]);
+
+  // Two named entry points share resetToWizard so call sites read clearly.
+  const stopSprint = session.resetToWizard;
+  const startNewFreewrite = session.resetToWizard;
+
+  // === Slash menu / command palette callbacks ===
   const closeSlashMenu = useCallback(() => {
     slashMenuSignatureRef.current = "";
     slashMenuQueryRef.current = "";
@@ -450,7 +286,6 @@ export function MinimalEditor() {
     if (slashMenuState) {
       dismissedSlashRangeRef.current = `${String(slashMenuState.from)}:${String(slashMenuState.to)}`;
     }
-
     slashMenuSignatureRef.current = "";
     slashMenuQueryRef.current = "";
     setSlashMenuState(null);
@@ -459,25 +294,13 @@ export function MinimalEditor() {
 
   const buildSlashMenuState = useCallback(
     (current: TiptapEditor): SlashMenuState | null => {
-      if (isCommandPaletteOpen || !current.isFocused) {
-        return null;
-      }
-
-      const {
-        from,
-        empty,
-        $from: resolvedFrom,
-      } = current.state.selection;
-
-      if (!empty) {
-        return null;
-      }
+      if (isCommandPaletteOpen || !current.isFocused) return null;
+      const { from, empty, $from: resolvedFrom } = current.state.selection;
+      if (!empty) return null;
 
       const textBeforeCursor = resolvedFrom.parent.textBetween(0, resolvedFrom.parentOffset, "\0", "\0");
       const slashContext = getSlashQueryContext(textBeforeCursor, from);
-      if (!slashContext) {
-        return null;
-      }
+      if (!slashContext) return null;
 
       const coords = current.view.coordsAtPos(from);
       const maxLeft = Math.max(
@@ -488,7 +311,6 @@ export function MinimalEditor() {
         SLASH_MENU_VIEWPORT_MARGIN_PX,
         window.innerHeight - SLASH_MENU_BOTTOM_SAFE_AREA_PX,
       );
-
       return {
         ...slashContext,
         left: Math.min(Math.max(coords.left, SLASH_MENU_VIEWPORT_MARGIN_PX), maxLeft),
@@ -526,12 +348,9 @@ export function MinimalEditor() {
       const signature = `${rangeKey}:${nextSlashState.query}:${String(Math.round(nextSlashState.left))}:${String(
         Math.round(nextSlashState.top),
       )}`;
-      if (signature === slashMenuSignatureRef.current) {
-        return;
-      }
+      if (signature === slashMenuSignatureRef.current) return;
 
       const queryChanged = slashMenuQueryRef.current !== nextSlashState.query;
-
       slashMenuSignatureRef.current = signature;
       slashMenuQueryRef.current = nextSlashState.query;
       setSlashMenuState(nextSlashState);
@@ -558,12 +377,58 @@ export function MinimalEditor() {
     }, 0);
   }, [editor]);
 
+  // === Derived ===
+  const filteredPaletteCommands = useMemo(
+    () => filterCommandsByQuery(EDITOR_MODIFIER_COMMANDS, commandPaletteQuery),
+    [commandPaletteQuery],
+  );
+
+  const filteredSlashCommands = useMemo(
+    () => filterCommandsByQuery(EDITOR_MODIFIER_COMMANDS, slashMenuState?.query ?? ""),
+    [slashMenuState?.query],
+  );
+
+  const commandHotkeyEntries = useMemo(
+    () => listCommandHotkeyEntries(EDITOR_MODIFIER_COMMANDS),
+    [],
+  );
+
+  const syncActiveModifiers = useCallback((current: TiptapEditor) => {
+    const activeBadges = current.isFocused
+      ? MODIFIER_BADGES.filter((badge) => badge.isActive(current)).map((badge) => ({
+          key: badge.key,
+          label: badge.label,
+        }))
+      : [];
+    const { orderedBadges, signature, nextState } = orderModifierBadges(activeBadges, modifierOrderingStateRef.current);
+    modifierOrderingStateRef.current = nextState;
+    if (signature === activeModifiersSignatureRef.current) return;
+    activeModifiersSignatureRef.current = signature;
+    setActiveModifiers(orderedBadges);
+  }, []);
+
+  const formatHotkey = useCallback(
+    (hotkey: string) => {
+      const chunks = hotkey.split("-").map((chunk) => {
+        switch (chunk) {
+          case "Mod":
+            return isMacLike ? "⌘" : "Ctrl";
+          case "Shift":
+            return isMacLike ? "⇧" : "Shift";
+          case "Alt":
+            return isMacLike ? "⌥" : "Alt";
+          default:
+            return chunk.length === 1 ? chunk.toUpperCase() : chunk;
+        }
+      });
+      return isMacLike ? chunks.join("") : chunks.join("+");
+    },
+    [isMacLike],
+  );
+
   const runPaletteCommand = useCallback(
     (command: EditorCommand) => {
-      if (!editor) {
-        return;
-      }
-
+      if (!editor) return;
       command.run(editor);
       syncActiveModifiers(editor);
       closeCommandPalette();
@@ -573,19 +438,13 @@ export function MinimalEditor() {
 
   const runSelectedPaletteCommand = useCallback(() => {
     const command = filteredPaletteCommands[commandPaletteActiveIndex] ?? filteredPaletteCommands[0];
-    if (!command) {
-      return;
-    }
-
+    if (!command) return;
     runPaletteCommand(command);
   }, [commandPaletteActiveIndex, filteredPaletteCommands, runPaletteCommand]);
 
   const runSlashMenuCommand = useCallback(
     (command: EditorCommand) => {
-      if (!editor || !slashMenuState) {
-        return;
-      }
-
+      if (!editor || !slashMenuState) return;
       editor.chain().focus().deleteRange({ from: slashMenuState.from, to: slashMenuState.to }).run();
       command.run(editor);
       syncActiveModifiers(editor);
@@ -596,73 +455,33 @@ export function MinimalEditor() {
 
   const runSelectedSlashMenuCommand = useCallback(() => {
     const command = filteredSlashCommands[slashMenuActiveIndex] ?? filteredSlashCommands[0];
-    if (!command) {
-      return;
-    }
-
+    if (!command) return;
     runSlashMenuCommand(command);
   }, [filteredSlashCommands, runSlashMenuCommand, slashMenuActiveIndex]);
 
+  // === Effects ===
+
+  // Editor focus once the wizard isn't covering it.
   useEffect(() => {
-    if (!editor) {
-      return;
-    }
-    if (wizardMode !== "hidden") {
-      return;
-    }
-    if (!editor.isFocused) {
-      editor.commands.focus("end");
-    }
-  }, [editor, wizardMode]);
+    if (!editor || session.wizardMode !== "hidden" || editor.isFocused) return;
+    editor.commands.focus("end");
+  }, [editor, session.wizardMode]);
 
   useEffect(() => {
-    if (wizardMode !== "transition_in") {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setWizardMode("visible");
-    }, WIZARD_ENTER_MS);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [wizardMode]);
-
-  useEffect(() => {
-    if (wizardMode !== "transition_out") {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setWizardMode("hidden");
-    }, WIZARD_EXIT_MS);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [wizardMode]);
-
-  useEffect(() => {
-    if (typeof navigator === "undefined") {
-      return;
-    }
-
+    if (typeof navigator === "undefined") return;
     setIsMacLike(/Mac|iPhone|iPad|iPod/.test(navigator.platform));
   }, []);
 
   useEffect(() => {
     setCommandPaletteActiveIndex((previous) => {
-      if (filteredPaletteCommands.length === 0) {
-        return 0;
-      }
-
+      if (filteredPaletteCommands.length === 0) return 0;
       return previous >= filteredPaletteCommands.length ? filteredPaletteCommands.length - 1 : previous;
     });
   }, [filteredPaletteCommands.length]);
 
   useEffect(() => {
     setSlashMenuActiveIndex((previous) => {
-      if (filteredSlashCommands.length === 0) {
-        return 0;
-      }
-
+      if (filteredSlashCommands.length === 0) return 0;
       return previous >= filteredSlashCommands.length ? filteredSlashCommands.length - 1 : previous;
     });
   }, [filteredSlashCommands.length]);
@@ -671,10 +490,9 @@ export function MinimalEditor() {
     const isSlashMenuOpen = slashMenuState !== null;
 
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      // Escape exits the board view
       if (event.key === "Escape" && (boardModeRef.current === "visible" || boardModeRef.current === "transition_in")) {
         event.preventDefault();
-        setBoardMode("transition_out");
+        setBoardModeRef.current("transition_out");
         return;
       }
 
@@ -695,61 +513,44 @@ export function MinimalEditor() {
           runPaletteCommand(matchedHotkeyEntry.command);
           return;
         }
-
         if (event.key === "Escape") {
           event.preventDefault();
           closeCommandPalette();
           return;
         }
-
         if (event.key === "ArrowDown") {
           event.preventDefault();
           setCommandPaletteActiveIndex((previous) => {
-            if (filteredPaletteCommands.length === 0) {
-              return 0;
-            }
-
+            if (filteredPaletteCommands.length === 0) return 0;
             return (previous + 1) % filteredPaletteCommands.length;
           });
           return;
         }
-
         if (event.key === "ArrowUp") {
           event.preventDefault();
           setCommandPaletteActiveIndex((previous) => {
-            if (filteredPaletteCommands.length === 0) {
-              return 0;
-            }
-
+            if (filteredPaletteCommands.length === 0) return 0;
             return previous <= 0 ? filteredPaletteCommands.length - 1 : previous - 1;
           });
           return;
         }
-
         if (event.key === "Enter") {
           event.preventDefault();
           runSelectedPaletteCommand();
           return;
         }
-
         if (event.key === "Tab") {
           event.preventDefault();
           const firstCommand = filteredPaletteCommands[0];
-          if (!firstCommand) {
-            return;
-          }
-
+          if (!firstCommand) return;
           setCommandPaletteQuery(firstCommand.label);
           setCommandPaletteActiveIndex(0);
           return;
         }
-
         return;
       }
 
-      if (!isSlashMenuOpen) {
-        return;
-      }
+      if (!isSlashMenuOpen) return;
 
       const matchedHotkeyEntry = commandHotkeyEntries.find((entry) => eventMatchesHotkey(event, entry.hotkey));
       if (matchedHotkeyEntry) {
@@ -757,61 +558,42 @@ export function MinimalEditor() {
         runSlashMenuCommand(matchedHotkeyEntry.command);
         return;
       }
-
       if (event.key === "Escape") {
         event.preventDefault();
         dismissSlashMenu();
         return;
       }
-
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setSlashMenuActiveIndex((previous) => {
-          if (filteredSlashCommands.length === 0) {
-            return 0;
-          }
-
+          if (filteredSlashCommands.length === 0) return 0;
           return (previous + 1) % filteredSlashCommands.length;
         });
         return;
       }
-
       if (event.key === "ArrowUp") {
         event.preventDefault();
         setSlashMenuActiveIndex((previous) => {
-          if (filteredSlashCommands.length === 0) {
-            return 0;
-          }
-
+          if (filteredSlashCommands.length === 0) return 0;
           return previous <= 0 ? filteredSlashCommands.length - 1 : previous - 1;
         });
         return;
       }
-
       if (event.key === "Enter") {
-        const hasCommand = filteredSlashCommands.length > 0;
-        if (!hasCommand) {
-          return;
-        }
-
+        if (filteredSlashCommands.length === 0) return;
         event.preventDefault();
         runSelectedSlashMenuCommand();
         return;
       }
-
       if (event.key === "Tab") {
         const command = filteredSlashCommands[slashMenuActiveIndex] ?? filteredSlashCommands[0];
-        if (!command) {
-          return;
-        }
-
+        if (!command) return;
         event.preventDefault();
         runSlashMenuCommand(command);
       }
     };
 
     window.addEventListener("keydown", handleGlobalKeyDown, true);
-
     return () => {
       window.removeEventListener("keydown", handleGlobalKeyDown, true);
     };
@@ -832,21 +614,16 @@ export function MinimalEditor() {
   ]);
 
   useEffect(() => {
-    if (!editor) {
-      return;
-    }
-
+    if (!editor) return;
     const updateEditorUi = () => {
       syncActiveModifiers(editor);
       syncSlashMenu(editor);
     };
-
     updateEditorUi();
     editor.on("selectionUpdate", updateEditorUi);
     editor.on("transaction", updateEditorUi);
     editor.on("focus", updateEditorUi);
     editor.on("blur", updateEditorUi);
-
     return () => {
       editor.off("selectionUpdate", updateEditorUi);
       editor.off("transaction", updateEditorUi);
@@ -856,9 +633,7 @@ export function MinimalEditor() {
   }, [editor, syncActiveModifiers, syncSlashMenu]);
 
   useEffect(() => {
-    setDisplayModifiers((previous) => {
-      return mergeDisplayModifiers(previous, activeModifiers);
-    });
+    setDisplayModifiers((previous) => mergeDisplayModifiers(previous, activeModifiers));
   }, [activeModifiers]);
 
   const visibleModifierPositions = useMemo(() => {
@@ -875,25 +650,16 @@ export function MinimalEditor() {
 
   useEffect(() => {
     const exitingKeys = new Set(collectExitingModifierKeys(displayModifiers));
-
     for (const key of exitingKeys) {
-      if (modifierExitTimersRef.current.has(key)) {
-        continue;
-      }
-
+      if (modifierExitTimersRef.current.has(key)) continue;
       const timeoutId = window.setTimeout(() => {
         modifierExitTimersRef.current.delete(key);
         setDisplayModifiers((previous) => previous.filter((modifier) => modifier.key !== key));
       }, MODIFIER_EXIT_ANIMATION_MS);
-
       modifierExitTimersRef.current.set(key, timeoutId);
     }
-
     for (const [key, timeoutId] of modifierExitTimersRef.current.entries()) {
-      if (exitingKeys.has(key)) {
-        continue;
-      }
-
+      if (exitingKeys.has(key)) continue;
       window.clearTimeout(timeoutId);
       modifierExitTimersRef.current.delete(key);
     }
@@ -901,7 +667,6 @@ export function MinimalEditor() {
 
   useEffect(() => {
     const modifierExitTimers = modifierExitTimersRef.current;
-
     return () => {
       for (const timeoutId of modifierExitTimers.values()) {
         window.clearTimeout(timeoutId);
@@ -914,10 +679,8 @@ export function MinimalEditor() {
     const handlePageHide = () => {
       flushPersist();
     };
-
     window.addEventListener("pagehide", handlePageHide);
     window.addEventListener("beforeunload", handlePageHide);
-
     return () => {
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("beforeunload", handlePageHide);
@@ -926,22 +689,19 @@ export function MinimalEditor() {
     };
   }, [editor, flushPersist]);
 
+  // === Sprint chip label ===
   const sprintRemainingMs = useMemo(() => {
-    if (sprintPhase === "running" && sprintEndsAtMs !== null) {
-      return Math.max(sprintEndsAtMs - sprintNowMs, 0);
+    if (session.sprintPhase === "running" && session.sprintEndsAtMs !== null) {
+      return Math.max(session.sprintEndsAtMs - session.sprintNowMs, 0);
     }
-
-    if (sprintPhase === "paused") {
-      return pausedSprintRemainingMs ?? 0;
+    if (session.sprintPhase === "paused") {
+      return session.pausedSprintRemainingMs ?? 0;
     }
-
     return 0;
-  }, [pausedSprintRemainingMs, sprintEndsAtMs, sprintNowMs, sprintPhase]);
-
-  const shouldTickSprintClock = sprintPhase === "running";
+  }, [session.pausedSprintRemainingMs, session.sprintEndsAtMs, session.sprintNowMs, session.sprintPhase]);
 
   const sprintChipLabel = useMemo(() => {
-    switch (sprintPhase) {
+    switch (session.sprintPhase) {
       case "running":
         return formatSprintRemainingLabel(sprintRemainingMs);
       case "paused":
@@ -951,192 +711,54 @@ export function MinimalEditor() {
       case "idle":
         return "Timer";
     }
-  }, [sprintPhase, sprintRemainingMs]);
+  }, [session.sprintPhase, sprintRemainingMs]);
 
-  const sprintMenuNote = useMemo(() => {
-    switch (sprintPhase) {
-      case "running":
-        return "The timer stays quiet while you write.";
-      case "paused":
-        return "Resume when you want more protected drafting time.";
-      case "completed":
-        return "Sprint complete. Your node grid is ready.";
-      case "idle":
-        return "Pick a length to start freewriting.";
-    }
-  }, [sprintPhase]);
-
-  useEffect(() => {
-    sprintPhaseRef.current = sprintPhase;
-  }, [sprintPhase]);
-
-  useEffect(() => {
-    boardModeRef.current = boardMode;
-  }, [boardMode]);
-
-  // Board entry trigger: poll for writer idle after sprint completion
-  useEffect(() => {
-    if (sprintPhase !== "completed") return;
-    if (boardMode !== "hidden") return;
-    if (hasShownBoardForSprintRef.current) return;
-    if (!editor) return;
-
-    const checkIdle = () => {
-      if (Date.now() - lastEditAtMsRef.current >= SPRINT_RECENT_ACTIVITY_MS) {
-        hasShownBoardForSprintRef.current = true;
-        setBoardMode("transition_in");
-      }
-    };
-
-    checkIdle();
-    const interval = window.setInterval(checkIdle, 500);
-    return () => { window.clearInterval(interval); };
-  }, [boardMode, editor, sprintPhase]);
-
-  // Board transition_in → visible after zoom-out completes
-  useEffect(() => {
-    if (boardMode !== "transition_in") return;
-
-    const timer = window.setTimeout(() => {
-      setBoardMode("visible");
-    }, 1400);
-
-    return () => { window.clearTimeout(timer); };
-  }, [boardMode]);
-
-  // Board transition_out → hidden after zoom-in completes
-  useEffect(() => {
-    if (boardMode !== "transition_out") return;
-
-    const timer = window.setTimeout(() => {
-      setBoardMode("hidden");
-    }, 1400);
-
-    return () => { window.clearTimeout(timer); };
-  }, [boardMode]);
-
-  useEffect(() => {
-    if (!shouldTickSprintClock) {
-      return;
-    }
-
-    const tick = () => {
-      setSprintNowMs(Date.now());
-    };
-
-    tick();
-    const intervalId = window.setInterval(tick, 1000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [shouldTickSprintClock]);
-
-  useEffect(() => {
-    if (sprintPhase !== "running" || sprintEndsAtMs === null || sprintNowMs < sprintEndsAtMs) {
-      return;
-    }
-
-    setSprintPhase("completed");
-    setSprintEndsAtMs(null);
-    setPausedSprintRemainingMs(null);
-    setIsSprintMenuOpen(false);
-  }, [sprintEndsAtMs, sprintNowMs, sprintPhase]);
-
-  useEffect(() => {
-    if (!isSprintMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node) || sprintMenuRef.current?.contains(target)) {
-        return;
-      }
-
-      setIsSprintMenuOpen(false);
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsSprintMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("keydown", handleEscape, true);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("keydown", handleEscape, true);
-    };
-  }, [isSprintMenuOpen]);
-
-  useEffect(() => {
-    if (!isCommandPaletteOpen && !slashMenuState) {
-      return;
-    }
-
-    setIsSprintMenuOpen(false);
-  }, [isCommandPaletteOpen, slashMenuState]);
-
-  const exitBoard = useCallback(() => {
-    setBoardMode("transition_out");
+  const exitBoardAndFocus = useCallback(() => {
+    boardEntry.exitBoard();
     window.setTimeout(() => {
       const el = document.querySelector(".tiptap");
       if (el instanceof HTMLElement) el.focus();
     }, 100);
-  }, []);
+  }, [boardEntry]);
 
   const handleCanvasMouseDown = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (boardMode !== "hidden" || !editor) return;
-      // Clicks on actual text inside the editor: let ProseMirror handle them
-      // natively so the caret lands where the user clicked.
+      if (boardEntry.boardMode !== "hidden" || !editor) return;
       const target = event.target;
       if (target instanceof Element && target.closest(".tiptap")) {
         return;
       }
       if (editor.isFocused) {
-        // Prevent the browser from blurring the editor when clicking outside text.
         event.preventDefault();
         return;
       }
       event.preventDefault();
       editor.commands.focus("end");
     },
-    [boardMode, editor],
+    [boardEntry.boardMode, editor],
   );
 
   if (!editor) {
     return <div className="h-full" />;
   }
 
-  const showBoardReopen =
-    sprintPhase === "completed" &&
-    boardMode === "hidden" &&
-    hasShownBoardForSprintRef.current;
-
   return (
     <div
       className="gaddr-editor-shell relative flex h-full flex-col"
       data-testid="editor-shell"
-      data-board-active={boardMode !== "hidden" ? "true" : undefined}
+      data-board-active={boardEntry.boardMode !== "hidden" ? "true" : undefined}
     >
       <div className="sr-only" aria-live="polite" aria-atomic="true">
-        {boardMode === "transition_in" || boardMode === "visible"
+        {boardEntry.boardMode === "transition_in" || boardEntry.boardMode === "visible"
           ? "Sprint complete. Entering review board."
-          : boardMode === "transition_out"
+          : boardEntry.boardMode === "transition_out"
             ? "Returning to editor."
             : null}
       </div>
-      {displayModifiers.length > 0 && wizardMode === "hidden" ? (
+
+      {displayModifiers.length > 0 && session.wizardMode === "hidden" ? (
         <div className="gaddr-modifier-stack pointer-events-none fixed left-4 top-4 z-50">
           {displayModifiers.map((modifier, index) => {
-            // Non-exiting chips use their position in the filtered list; the
-            // chip's `top` transition has a delay so the slide-up starts as
-            // the exiting neighbor's fade-out is finishing. Exiting chips
-            // stay put (array index) and fade out in place.
             const visiblePos = visibleModifierPositions.get(modifier.key);
             const yIndex = visiblePos ?? index;
             const chipStyle: CSSProperties = {
@@ -1161,16 +783,22 @@ export function MinimalEditor() {
           })}
         </div>
       ) : null}
-      <div className={`pointer-events-none fixed right-4 top-4 z-[68] flex justify-end ${boardMode !== "hidden" || wizardMode !== "hidden" ? "hidden" : ""}`}>
+
+      <div
+        className={`pointer-events-none fixed right-4 top-4 z-[68] flex justify-end ${
+          !session.hasRestored || boardEntry.boardMode !== "hidden" || session.wizardMode !== "hidden"
+            ? "hidden"
+            : ""
+        }`}
+      >
         <div className="pointer-events-auto flex items-start gap-2">
-          {showBoardReopen ? (
+          {boardEntry.showBoardReopen ? (
             <button
               type="button"
               data-testid="board-reopen-button"
               className="gaddr-sprint-chip gaddr-sprint-chip--complete rounded-full border px-2.5 py-1.5 text-left transition-all"
               onClick={() => {
-                setIsSprintMenuOpen(false);
-                setBoardMode("transition_in");
+                boardEntry.setBoardMode("transition_in");
               }}
             >
               <span className="whitespace-nowrap text-[0.72rem] font-semibold leading-4 text-[var(--app-fg)]">
@@ -1179,32 +807,22 @@ export function MinimalEditor() {
             </button>
           ) : null}
           <div
-            ref={sprintMenuRef}
-            className="relative"
-            onBlur={(event) => {
-              const nextTarget = event.relatedTarget;
-              if (!(nextTarget instanceof Node) || !sprintMenuRef.current?.contains(nextTarget)) {
-                setIsSprintMenuOpen(false);
-              }
-            }}
+            className="flex flex-col items-end gap-1.5 p-1"
+            onMouseEnter={hoverControls.onMouseEnter}
+            onMouseLeave={hoverControls.onMouseLeave}
           >
-            <button
-              type="button"
-              aria-expanded={isSprintMenuOpen}
-              aria-haspopup="dialog"
+            <div
               data-testid="sprint-chip"
+              data-phase={session.sprintPhase}
               className={`gaddr-sprint-chip rounded-full border px-2.5 py-1.5 text-left transition-all ${
-                sprintPhase === "completed"
+                session.sprintPhase === "completed"
                   ? "gaddr-sprint-chip--complete"
-                  : sprintPhase === "running"
+                  : session.sprintPhase === "running"
                     ? "gaddr-sprint-chip--running"
-                    : sprintPhase === "paused"
+                    : session.sprintPhase === "paused"
                       ? "gaddr-sprint-chip--paused"
                       : ""
               }`}
-              onClick={() => {
-                setIsSprintMenuOpen((current) => !current);
-              }}
             >
               <span className="flex items-center gap-2">
                 <ClockIcon size={14} weight="regular" aria-hidden="true" className="text-[color:var(--app-muted)]" />
@@ -1212,98 +830,68 @@ export function MinimalEditor() {
                   {sprintChipLabel}
                 </span>
               </span>
-            </button>
-            {isSprintMenuOpen ? (
-              <div
-                role="dialog"
-                aria-label="Freewrite timer"
-                data-testid="sprint-menu"
-                className="gaddr-sprint-menu absolute right-0 top-full z-[58] mt-1.5 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border p-2"
-              >
-                <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-[0.62rem] tracking-[0.12em]">
-                  TIMER
-                </div>
-                <div className="px-1 pb-1 pt-2">
-                  {sprintPhase === "idle" ? (
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {SPRINT_OPTIONS.map((option) => {
-                        const isSelected = option.id === sprintOption;
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            className={`gaddr-sprint-option rounded-xl border px-3 py-2 text-left ${
-                              isSelected ? "gaddr-sprint-option--selected" : ""
-                            }`}
-                            onClick={() => {
-                              startSprint(option.id);
-                            }}
-                          >
-                            <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">
-                              {option.label}
-                            </div>
-                            <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
-                              {option.hint}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+            </div>
+            {hoverControls.canShowTimerControls ? (
+              <>
+                <button
+                  type="button"
+                  data-testid="sprint-toggle"
+                  aria-label={session.sprintPhase === "running" ? "Pause timer" : "Resume timer"}
+                  onClick={handleTimerToggle}
+                  className={`gaddr-sprint-chip flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border transition-all duration-300 ease-out ${
+                    hoverControls.showTimerControls ? "[transition-delay:0ms]" : "[transition-delay:120ms]"
+                  } ${
+                    session.sprintPhase === "paused" ? "gaddr-sprint-chip--paused" : "gaddr-sprint-chip--running"
+                  } ${
+                    hoverControls.showTimerControls
+                      ? "translate-x-0 opacity-100"
+                      : "pointer-events-none translate-x-2 opacity-0"
+                  }`}
+                >
+                  {session.sprintPhase === "running" ? (
+                    <PauseIcon size={12} weight="fill" aria-hidden="true" />
                   ) : (
-                    <div className="grid gap-1.5">
-                      <button
-                        type="button"
-                        className="gaddr-sprint-action rounded-xl border px-3 py-2 text-left"
-                        onClick={() => {
-                          if (sprintPhase === "paused") {
-                            resumeSprint();
-                            return;
-                          }
-
-                          pauseSprint();
-                        }}
-                      >
-                        <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">
-                          {sprintPhase === "paused" ? "Resume timer" : "Pause timer"}
-                        </div>
-                        <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
-                          {sprintPhase === "paused" ? "Return to the countdown quietly." : "Freeze the timer without changing the draft."}
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        className="gaddr-sprint-action rounded-xl border px-3 py-2 text-left"
-                        onClick={addSprintTime}
-                      >
-                        <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">
-                          +{String(SPRINT_EXTENSION_MINUTES)} min
-                        </div>
-                        <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
-                          Extend the protected writing window without changing focus.
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        className="gaddr-sprint-action rounded-xl border px-3 py-2 text-left"
-                        onClick={endSprint}
-                      >
-                        <div className="text-[0.73rem] font-semibold leading-4 text-[var(--app-fg)]">End timer</div>
-                        <div className="mt-1 text-[0.6rem] leading-4 text-[color:var(--app-muted)]">
-                          Return to the idle timer without interrupting the note.
-                        </div>
-                      </button>
-                    </div>
+                    <PlayIcon size={12} weight="fill" aria-hidden="true" />
                   )}
-                  <p className="mt-2 px-2 text-[0.62rem] leading-4 text-[color:var(--app-muted)]">{sprintMenuNote}</p>
-                  <div className="mt-2 border-t pt-2 px-2">
-                    <SignOutButton />
-                  </div>
-                </div>
-              </div>
+                </button>
+                <button
+                  type="button"
+                  data-testid="sprint-add-minute"
+                  aria-label="Add 1 minute"
+                  onClick={session.addOneMinute}
+                  className={`gaddr-sprint-chip flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border transition-all duration-300 ease-out [transition-delay:60ms] ${
+                    session.sprintPhase === "paused" ? "gaddr-sprint-chip--paused" : "gaddr-sprint-chip--running"
+                  } ${
+                    hoverControls.showTimerControls
+                      ? "translate-x-0 opacity-100"
+                      : "pointer-events-none translate-x-2 opacity-0"
+                  }`}
+                >
+                  <span className="text-[0.56rem] font-semibold tabular-nums leading-none">+1m</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="sprint-stop"
+                  aria-label="Stop timer"
+                  onClick={stopSprint}
+                  className={`gaddr-sprint-chip flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border transition-all duration-300 ease-out ${
+                    hoverControls.showTimerControls ? "[transition-delay:120ms]" : "[transition-delay:0ms]"
+                  } ${
+                    session.sprintPhase === "paused" ? "gaddr-sprint-chip--paused" : "gaddr-sprint-chip--running"
+                  } ${
+                    hoverControls.showTimerControls
+                      ? "translate-x-0 opacity-100"
+                      : "pointer-events-none translate-x-2 opacity-0"
+                  }`}
+                >
+                  <StopIcon size={12} weight="fill" aria-hidden="true" />
+                </button>
+              </>
             ) : null}
           </div>
         </div>
       </div>
+
       {slashMenuState && !isCommandPaletteOpen ? (
         <div
           aria-label="Editor slash menu"
@@ -1319,15 +907,12 @@ export function MinimalEditor() {
             event.preventDefault();
           }}
         >
-          <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-xs tracking-[0.14em]">
-            COMMANDS
-          </div>
+          <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-xs tracking-[0.14em]">COMMANDS</div>
           <div className="max-h-[min(50vh,20rem)] overflow-y-auto py-1">
             {filteredSlashCommands.length > 0 ? (
               filteredSlashCommands.map((command, index) => {
                 const commandIsActive = command.isActive?.(editor) ?? false;
                 const commandIsSelected = index === slashMenuActiveIndex;
-
                 return (
                   <button
                     key={command.id}
@@ -1361,6 +946,7 @@ export function MinimalEditor() {
           </div>
         </div>
       ) : null}
+
       {isCommandPaletteOpen ? (
         <div
           className="gaddr-command-overlay fixed inset-0 z-[60] flex items-start justify-center px-4 pt-14 backdrop-blur-[2px] sm:pt-20"
@@ -1377,9 +963,7 @@ export function MinimalEditor() {
             data-testid="command-palette"
             className="gaddr-command-palette w-full max-w-xl rounded-xl border p-2 animate-in fade-in slide-in-from-top-2 zoom-in-95 duration-200 ease-out fill-mode-both motion-reduce:animate-none"
           >
-            <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-xs tracking-[0.14em]">
-              MODIFIERS
-            </div>
+            <div className="gaddr-menu-label border-b px-3 pb-2 pt-1 text-xs tracking-[0.14em]">MODIFIERS</div>
             <div className="px-2 pb-1 pt-2">
               <input
                 type="text"
@@ -1399,7 +983,6 @@ export function MinimalEditor() {
                 filteredPaletteCommands.map((command, index) => {
                   const commandIsActive = command.isActive?.(editor) ?? false;
                   const commandIsSelected = index === commandPaletteActiveIndex;
-
                   return (
                     <button
                       key={command.id}
@@ -1433,20 +1016,28 @@ export function MinimalEditor() {
           </div>
         </div>
       ) : null}
-      {wizardMode !== "hidden" ? (
+
+      {session.hasRestored && session.wizardMode !== "hidden" ? (
         <FreewriteWizard
-          mode={wizardMode}
+          mode={session.wizardMode}
           options={SPRINT_OPTIONS}
-          onSelect={handleWizardSelect}
+          onSelect={session.handleWizardSelect}
+          resumeRemainingMs={session.resumeOption?.remainingMs ?? null}
+          onResume={session.resumeOption ? session.handleWizardResume : undefined}
         />
       ) : null}
+
       <div
         data-testid="editor-content"
         className="gaddr-canvas-container"
         onMouseDown={handleCanvasMouseDown}
       >
-        <EditorCardProvider editor={editor} boardActive={boardMode !== "hidden"}>
-          <CanvasFlow boardMode={boardMode} onExitBoard={exitBoard} />
+        <EditorCardProvider editor={editor} boardActive={boardEntry.boardMode !== "hidden"}>
+          <CanvasFlow
+            boardMode={boardEntry.boardMode}
+            onExitBoard={exitBoardAndFocus}
+            onNewFreewrite={startNewFreewrite}
+          />
         </EditorCardProvider>
       </div>
     </div>

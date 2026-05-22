@@ -412,3 +412,27 @@ html[data-theme="dark"] body::after {
   outline-offset: 2px;
 }
 
+.gaddr-board-overlay__new {
+  margin-top: -0.25rem;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--app-muted-soft);
+  background: transparent;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  transition: color 220ms ease;
+}
+
+.gaddr-board-overlay__new:hover {
+  color: var(--app-muted);
+}
+
+.gaddr-board-overlay__new:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+

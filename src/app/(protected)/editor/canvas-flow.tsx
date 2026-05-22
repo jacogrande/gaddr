@@ -12,7 +12,7 @@ import {
 import "@xyflow/react/dist/base.css";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { EditorCardNode } from "./editor-card-node";
-import type { BoardMode } from "./minimal-editor";
+import type { BoardMode } from "./use-board-entry";
 
 const NODE_WIDTH = 896;
 
@@ -21,15 +21,17 @@ const nodeTypes = { editorCard: EditorCardNode } as const;
 type CanvasFlowProps = {
   boardMode: BoardMode;
   onExitBoard: () => void;
+  onNewFreewrite: () => void;
 };
 
 const TRANSITION_DURATION_MS = 1400;
 const FIT_VIEW_PADDING = 0.5;
 
-function CanvasFlowInner({ boardMode, onExitBoard }: CanvasFlowProps) {
+function CanvasFlowInner({ boardMode, onExitBoard, onNewFreewrite }: CanvasFlowProps) {
   const reactFlow = useReactFlow();
   const containerRef = useRef<HTMLDivElement>(null);
   const hasAnimatedIn = useRef(false);
+  const hasInitialFitRef = useRef(false);
 
   // Node identity is stable — content is injected via EditorCardContext, not node data.
   const nodes: Node[] = useMemo(
@@ -64,6 +66,33 @@ function CanvasFlowInner({ boardMode, onExitBoard }: CanvasFlowProps) {
     const vp = getCenteredViewport();
     if (vp) void reactFlow.setViewport(vp);
   }, [boardActive, getCenteredViewport, reactFlow]);
+
+  // Instant-fit on first mount into a board-active state (e.g. refresh into
+  // the completion view). Skipped on later transitions, which animate via the
+  // transition_in effect below.
+  useEffect(() => {
+    if (hasInitialFitRef.current) return;
+    if (!boardActive) return;
+    hasInitialFitRef.current = true;
+    hasAnimatedIn.current = true;
+
+    let cancelled = false;
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        void reactFlow.fitView({
+          duration: 0,
+          padding: FIT_VIEW_PADDING,
+          nodes: [{ id: "editor-card" }],
+        });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [boardActive, reactFlow]);
 
   // Zoom out when transitioning in
   useEffect(() => {
@@ -144,6 +173,14 @@ function CanvasFlowInner({ boardMode, onExitBoard }: CanvasFlowProps) {
                 onClick={onExitBoard}
               >
                 Resume writing
+              </button>
+              <button
+                type="button"
+                className="gaddr-board-overlay__new"
+                data-testid="board-new-freewrite-button"
+                onClick={onNewFreewrite}
+              >
+                Start a new freewrite
               </button>
             </Panel>
           </>
