@@ -195,7 +195,7 @@ Both work with prompt caching. ([Streaming + caching](https://platform.claude.co
 │  Editor change events ──┐                                    │
 │                         ▼                                    │
 │                  Trigger detector                            │
-│      (paragraph end | "? " | 4s pause | 100-token volume)    │
+│   (position-classified pause | "? " | 60s max-quiet safety) │
 │                         │                                    │
 │                         ▼                                    │
 │             Haiku triage call                                │
@@ -247,7 +247,7 @@ Both work with prompt caching. ([Streaming + caching](https://platform.claude.co
 
 For Phase 1 of [intelligence-roadmap.md](../intelligence-roadmap.md):
 
-- **Triggers:** `paragraph-ended` (structural), `question-posed` (`? `, structural), `idle-pause` (4s + 40-token floor), `word-volume` (~100 tokens since last trigger).
+- **Triggers:** `production-pause` (position-classified pause, 2s adaptive), `question-posed` (`? `, structural), `max-quiet-time` (60s safety net). See [trigger-units-and-cadence.md](./trigger-units-and-cadence.md) for the rationale.
 - **Tier 1:** Haiku 4.5 triage call every trigger. Cached prefix.
 - **Tier 2:** Sonnet 4.6 only on triage-flagged paragraphs. Fire-and-forget.
 - **Tier 3:** Opus 4.7 once at sprint boundary for constellation assembly.
