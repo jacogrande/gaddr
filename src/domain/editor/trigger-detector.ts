@@ -220,16 +220,23 @@ export function evaluateTrigger(
     }
   }
 
+  // Compute the writer's effective pause threshold once per evaluation.
+  // Surfaced on every emission so downstream observers can see the pace
+  // estimate the detector is currently using, regardless of which trigger fires.
+  const thresholdMs = effectivePauseThreshold(pauseHistoryMs, config);
+
   // Structural trigger: question posed.
   if (isEdit && justPostedAQuestion(state.lastText, text)) {
-    triggers.push({ reason: "question-posed" });
+    triggers.push({ reason: "question-posed", thresholdMs });
   }
 
   // Production-pause: tick events with enough idle time and a meaningful boundary.
-  const thresholdMs = effectivePauseThreshold(pauseHistoryMs, config);
   if (!isEdit) {
     const sinceLastEdit = nowMs - state.lastEditAtMs;
     // Don't refire while the writer is still idle on the same content.
+    // At creation lastTriggerAtMs == lastEditAtMs (both set to nowMs), so this
+    // also correctly suppresses an initial pause before the writer has typed
+    // anything — there's no edit to anchor analysis to.
     const alreadyFiredSinceLastEdit = state.lastTriggerAtMs >= state.lastEditAtMs;
     if (sinceLastEdit >= thresholdMs && !alreadyFiredSinceLastEdit) {
       const boundary = classifyBoundary(state.lastText);
@@ -244,8 +251,10 @@ export function evaluateTrigger(
     }
   }
 
-  // Safety net: max-quiet-time. Fires only if no other trigger fires in this
-  // evaluation, so it doesn't duplicate production-pause when both qualify.
+  // Safety net: max-quiet-time. Suppressed if any other trigger fires in this
+  // evaluation — production-pause covers the same idle moment, and a
+  // question-posed during a long unbroken run gives the LLM the same triage
+  // opportunity (the safety net only matters when nothing else has fired).
   if (triggers.length === 0) {
     const contentChangedSinceLastTrigger = state.lastEditAtMs > state.lastTriggerAtMs;
     const elapsedSinceLastTrigger = nowMs - state.lastTriggerAtMs;
@@ -253,7 +262,7 @@ export function evaluateTrigger(
       contentChangedSinceLastTrigger &&
       elapsedSinceLastTrigger >= config.maxQuietTimeMs
     ) {
-      triggers.push({ reason: "max-quiet-time" });
+      triggers.push({ reason: "max-quiet-time", thresholdMs });
     }
   }
 
