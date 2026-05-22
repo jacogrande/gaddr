@@ -111,15 +111,25 @@ export function useTriggerDetector(
       return;
     }
 
+    // Cleanup-safe gate: each effect run gets its own `cancelled` closure.
+    // Promises in flight from a prior effect run see their own (old) flag.
+    let cancelled = false;
+
     const readText = () => editor.getText({ blockSeparator: "\n\n" });
 
     stateRef.current = createTriggerDetectorState(Date.now(), readText());
     lastDeliveredTextRef.current = readText();
 
-    const deliver = async (
-      observation: TriggerObservation,
-      burst: string,
-    ): Promise<void> => {
+    const deliver = async (observation: TriggerObservation): Promise<void> => {
+      // Compute burst against the LATEST anchor, not the one at fire time.
+      // This way, if two triggers are in flight and the first delivers before
+      // the second resolves, the second's burst correctly starts from the
+      // first's anchor (no double-coverage of the same text).
+      const lastDelivered = lastDeliveredTextRef.current;
+      const burst = observation.text.startsWith(lastDelivered)
+        ? observation.text.slice(lastDelivered.length)
+        : observation.text;
+
       const check = completionCheckRef.current;
       if (check) {
         try {
@@ -134,6 +144,14 @@ export function useTriggerDetector(
           return;
         }
       }
+
+      // Don't call the observer after unmount or after the effect re-ran.
+      if (cancelled) return;
+
+      // Advance the anchor only on successful delivery, so rejected triggers
+      // don't "consume" their burst — the next delivered trigger picks up
+      // everything that wasn't observed yet.
+      lastDeliveredTextRef.current = observation.text;
       observerRef.current(observation);
     };
 
@@ -153,26 +171,17 @@ export function useTriggerDetector(
       if (triggers.length === 0) return;
 
       const tokenCount = estimateTokens(text);
-      // Burst = everything produced since the last trigger that was delivered.
-      const lastDelivered = lastDeliveredTextRef.current;
-      const burst = text.startsWith(lastDelivered)
-        ? text.slice(lastDelivered.length)
-        : text;
-      lastDeliveredTextRef.current = text;
 
       for (const trigger of triggers) {
-        void deliver(
-          {
-            reason: trigger.reason,
-            text,
-            nowMs,
-            tokenCount,
-            boundary: trigger.boundary,
-            pauseDurationMs: trigger.pauseDurationMs,
-            thresholdMs: trigger.thresholdMs,
-          },
-          burst,
-        );
+        void deliver({
+          reason: trigger.reason,
+          text,
+          nowMs,
+          tokenCount,
+          boundary: trigger.boundary,
+          pauseDurationMs: trigger.pauseDurationMs,
+          thresholdMs: trigger.thresholdMs,
+        });
       }
     };
 
@@ -180,6 +189,7 @@ export function useTriggerDetector(
     const intervalId = window.setInterval(run, IDLE_TICK_INTERVAL_MS);
 
     return () => {
+      cancelled = true;
       editor.off("update", run);
       window.clearInterval(intervalId);
       stateRef.current = null;
