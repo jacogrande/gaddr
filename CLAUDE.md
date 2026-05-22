@@ -14,7 +14,7 @@ AI is allowed to retrieve, structure, question, and annotate. It is not allowed 
 
 ## Current Product Status
 
-The repo currently implements auth, a protected TipTap editor, local-first persistence, sprint timing, theme support, and a Playwright eval harness. Citation retrieval, constellation intelligence, auto-annotation, and the dedicated final-draft workflow are the next major product layers.
+The repo currently implements auth, a protected TipTap editor, local-first persistence, sprint timing, theme support, and an agent-driven eval harness. Citation retrieval, constellation intelligence, auto-annotation, and the dedicated final-draft workflow are the next major product layers.
 
 ## Tech Stack
 
@@ -23,7 +23,7 @@ The repo currently implements auth, a protected TipTap editor, local-first persi
 - **Auth:** Better Auth
 - **Database:** Postgres via Drizzle ORM
 - **Hosting:** Vercel
-- **Testing:** Bun unit tests + Playwright E2E
+- **Testing:** Bun unit tests + agent-driven evals via the `agent-browser` skill
 
 ## Commands
 
@@ -31,13 +31,18 @@ The repo currently implements auth, a protected TipTap editor, local-first persi
 bun run dev              # Start dev server (Turbopack, port 8080)
 bun run build            # Production build
 bun run check            # Typecheck + lint
-bun test                 # Bun test suite
-bun run test:e2e         # Playwright E2E tests
-bun run test:e2e:auth    # Playwright auth-only tests
+bun test                 # Bun test suite (unit)
 bun run db:generate      # Generate Drizzle migration files
 bun run db:migrate       # Run Drizzle migrations
 bun run db:push          # Push schema changes directly
 ```
+
+Workflow evals are described in `eval/*.json`. To execute one, invoke the
+`agent-browser` skill — it drives Chrome via CDP, takes accessibility-tree
+snapshots, and walks the workflow steps. There is no headless CI test runner;
+evals are an agent-time activity. Auth-protected flows can run against the dev
+server with `E2E_BYPASS_AUTH=true bun run dev` so the skill can reach
+`/editor` without OAuth.
 
 ## Architecture
 
@@ -64,14 +69,14 @@ Dependencies point inward: `app -> infra -> domain`.
 - `domain/` must not call `Date.now()`, `new Date()`, `Math.random()`, `fetch`, or `console`.
 - `infra/` must not import from `app/`.
 - Unit tests should target domain logic and other pure helpers.
-- E2E tests should verify user workflows, not internal implementation details.
+- Evals should describe user workflows in plain language, not internal implementation details.
 
 ## Testing
 
-- `eval/*.json` contains human-readable workflow specs.
-- `test/e2e/*.pw.ts` contains the executable Playwright contract.
-- `playwright.config.ts` boots the app in test mode and can bypass auth for protected-flow coverage.
-- Current covered flows: auth, editor, sprint transition, theme, and navigation.
+- `eval/*.json` contains human-readable workflow specs — the source of truth for user-facing behavior.
+- Workflows are executed agent-driven via the `agent-browser` skill (Chrome + CDP, accessibility-tree refs). There is no automated CI test runner for workflows.
+- `E2E_BYPASS_AUTH=true bun run dev` puts the dev server in a mode that lets the agent reach protected routes without OAuth.
+- Current covered workflows: auth, editor, sprint transition, theme, and navigation.
 
 ## Reference Docs
 
