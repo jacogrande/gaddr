@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { useEditor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Underline from "@tiptap/extension-underline";
 import { CanvasFlow } from "./canvas-flow";
 import { EditorCardProvider } from "./editor-card-context";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
@@ -203,7 +202,7 @@ export function MinimalEditor() {
   const editor = useEditor({
     immediatelyRender: false,
     autofocus: "end",
-    extensions: [StarterKit, Underline, GlyphInputRules, StandardHotkeys],
+    extensions: [StarterKit, GlyphInputRules, StandardHotkeys],
     content: loadDoc(),
     editorProps: {
       attributes: {
