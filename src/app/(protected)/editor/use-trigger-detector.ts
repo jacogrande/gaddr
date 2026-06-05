@@ -22,6 +22,12 @@ const DEBUG_TRIGGERS_ENABLED =
 export type TriggerObservation = {
   readonly reason: TriggerReason;
   readonly text: string;
+  /**
+   * New content since the last delivered trigger (the P-burst). This is the
+   * unit background inference works on; `text` remains the full document so
+   * adapters can use it as a cached prompt prefix.
+   */
+  readonly burst: string;
   readonly nowMs: number;
   readonly tokenCount: number;
   readonly boundary?: BoundaryType;
@@ -120,7 +126,9 @@ export function useTriggerDetector(
     stateRef.current = createTriggerDetectorState(Date.now(), readText());
     lastDeliveredTextRef.current = readText();
 
-    const deliver = async (observation: TriggerObservation): Promise<void> => {
+    const deliver = async (
+      observation: Omit<TriggerObservation, "burst">,
+    ): Promise<void> => {
       // Compute burst against the LATEST anchor, not the one at fire time.
       // This way, if two triggers are in flight and the first delivers before
       // the second resolves, the second's burst correctly starts from the
@@ -152,7 +160,7 @@ export function useTriggerDetector(
       // don't "consume" their burst — the next delivered trigger picks up
       // everything that wasn't observed yet.
       lastDeliveredTextRef.current = observation.text;
-      observerRef.current(observation);
+      observerRef.current({ ...observation, burst });
     };
 
     const run = () => {

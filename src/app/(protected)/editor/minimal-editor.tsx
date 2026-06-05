@@ -15,6 +15,8 @@ import { useBoardEntry, type BoardMode } from "./use-board-entry";
 import { useSprintSession } from "./use-sprint-session";
 import { useTimerHoverControls } from "./use-timer-hover-controls";
 import { useTriggerDetector } from "./use-trigger-detector";
+import { useBackgroundInference } from "./use-background-inference";
+import { rankFindings } from "../../../domain/constellation/substrate";
 import {
   collectExitingModifierKeys,
   createModifierOrderingState,
@@ -29,6 +31,9 @@ import {
 } from "../../../domain/editor/interaction-core";
 
 const STORAGE_KEY = "gaddr:minimal-editor";
+const DEBUG_INFERENCE_ENABLED =
+  typeof process !== "undefined" &&
+  process.env.NEXT_PUBLIC_DEBUG_TRIGGERS === "true";
 const IDLE_SAVE_TIMEOUT_MS = 1200;
 const MODIFIER_EXIT_ANIMATION_MS = 180;
 const MODIFIER_CHIP_ROW_PX = 34;
@@ -256,8 +261,15 @@ export function MinimalEditor() {
   // === Timer chrome hover ===
   const hoverControls = useTimerHoverControls(session.sprintPhase);
 
-  // === Trigger detector (background intelligence — gated on running sprint) ===
-  useTriggerDetector(editor, { enabled: session.sprintPhase === "running" });
+  // === Background intelligence (trigger detector -> tiered inference) ===
+  // Gated on a running sprint; the runner stays off the keystroke path and
+  // only does work when a trigger fires.
+  const sprintRunning = session.sprintPhase === "running";
+  const inference = useBackgroundInference({ active: sprintRunning });
+  useTriggerDetector(editor, {
+    enabled: sprintRunning,
+    observer: inference.observe,
+  });
 
   // === Timer toggle (pause/resume) ===
   const handleTimerToggle = useCallback(() => {
@@ -712,6 +724,12 @@ export function MinimalEditor() {
     }
   }, [session.sprintPhase, sprintRemainingMs]);
 
+  // === Background-inference debug surface (dev only) ===
+  const rankedFindings = useMemo(
+    () => rankFindings(inference.substrate.findings),
+    [inference.substrate.findings],
+  );
+
   const exitBoardAndFocus = useCallback(() => {
     boardEntry.exitBoard();
     window.setTimeout(() => {
@@ -1024,6 +1042,33 @@ export function MinimalEditor() {
           resumeRemainingMs={session.resumeOption?.remainingMs ?? null}
           onResume={session.resumeOption ? session.handleWizardResume : undefined}
         />
+      ) : null}
+
+      {DEBUG_INFERENCE_ENABLED ? (
+        <div
+          data-testid="substrate-debug"
+          className="pointer-events-none fixed bottom-4 left-4 z-[70] w-72 rounded-lg border border-[var(--app-border,#3333)] bg-[var(--app-bg,#000)]/80 p-3 text-[0.7rem] leading-5 text-[var(--app-fg)] backdrop-blur-sm"
+        >
+          <div className="mb-1 font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
+            SUBSTRATE
+          </div>
+          <div className="flex gap-3 tabular-nums">
+            <span data-testid="substrate-themes">themes {inference.substrate.themes.length}</span>
+            <span data-testid="substrate-positions">positions {inference.substrate.positions.length}</span>
+            <span data-testid="substrate-tensions">tensions {inference.substrate.tensions.length}</span>
+            <span data-testid="substrate-findings">findings {rankedFindings.length}</span>
+          </div>
+          {rankedFindings[0] ? (
+            <div
+              data-testid="substrate-latest-finding"
+              className="mt-2 border-t border-[var(--app-border,#3333)] pt-2"
+            >
+              <span className="font-semibold">{rankedFindings[0].kind}</span>
+              <span className="text-[color:var(--app-muted)]"> · {rankedFindings[0].tier}</span>
+              <div className="mt-0.5 italic">{rankedFindings[0].note}</div>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <div
