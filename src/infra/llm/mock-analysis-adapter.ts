@@ -13,6 +13,7 @@
 
 import { ok, type Result } from "../../domain/types/result";
 import type { InferenceError } from "../../domain/types/errors";
+import { inferenceLog } from "../debug-log";
 import type {
   AnalysisPort,
   SprintContext,
@@ -89,7 +90,14 @@ export function createMockAnalysisPort(): AnalysisPort {
       triage: TriageResult,
       _ctx: SprintContext,
     ): Promise<Result<Finding, InferenceError>> {
-      return Promise.resolve(ok(buildFinding(burst, triage)));
+      const finding = buildFinding(burst, triage);
+      inferenceLog(
+        "analysis",
+        `burst#${String(burst.seq)} → ${finding.kind} (${finding.tier})` +
+          `${finding.source ? ` [${finding.source.title}]` : ""} ` +
+          `note="${finding.note}"`,
+      );
+      return Promise.resolve(ok(finding));
     },
   };
 }

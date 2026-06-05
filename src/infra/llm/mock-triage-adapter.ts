@@ -14,6 +14,7 @@
 
 import { ok, type Result } from "../../domain/types/result";
 import type { InferenceError } from "../../domain/types/errors";
+import { inferenceLog, previewText } from "../debug-log";
 import type { TriagePort, SprintContext } from "../../domain/constellation/ports";
 import type {
   PBurst,
@@ -97,6 +98,13 @@ export function createMockTriagePort(): TriagePort {
         tier: "inferred",
         theme: deriveTheme(text),
       };
+      inferenceLog(
+        "triage",
+        `burst#${String(burst.seq)} ${burst.reason} "${previewText(text)}" ` +
+          `→ intent=${result.intent} ` +
+          `signals=[${result.retrievalSignals.join(",")}] ` +
+          `theme=${result.theme ?? "—"}`,
+      );
       return Promise.resolve(ok(result));
     },
   };

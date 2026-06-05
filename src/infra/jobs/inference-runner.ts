@@ -38,6 +38,16 @@ import {
   emptySubstrate,
 } from "../../domain/constellation/substrate";
 import { validateFinding } from "../../domain/constellation/no-ghostwriting";
+import { inferenceLog } from "../debug-log";
+
+function substrateSummary(s: Substrate): string {
+  return (
+    `themes:${String(s.themes.length)} ` +
+    `positions:${String(s.positions.length)} ` +
+    `tensions:${String(s.tensions.length)} ` +
+    `findings:${String(s.findings.length)}`
+  );
+}
 
 /** What the trigger observer hands the runner. */
 export type BurstInput = {
@@ -113,9 +123,19 @@ export function createInferenceRunner(
         if (gen !== generation) return;
         if (!result.ok) return;
         const validated = validateFinding(result.value);
-        if (!validated.ok) return;
+        if (!validated.ok) {
+          inferenceLog(
+            "runner",
+            `finding for burst#${String(burst.seq)} rejected: ${validated.error.message}`,
+          );
+          return;
+        }
         substrate = applyFinding(substrate, validated.value);
         emit();
+        inferenceLog(
+          "runner",
+          `finding stored for burst#${String(burst.seq)} · ${substrateSummary(substrate)}`,
+        );
       })
       .catch(() => {
         // Adapters return Result; a throw is unexpected. Drop it silently —
@@ -147,7 +167,13 @@ export function createInferenceRunner(
         if (result.ok) {
           substrate = applyTriage(substrate, burst, result.value);
           emit();
-          if (shouldEscalate(result.value)) {
+          const escalate = shouldEscalate(result.value);
+          inferenceLog(
+            "runner",
+            `burst#${String(burst.seq)} ${escalate ? "escalate → analysis" : "hold (triage only)"}` +
+              ` · ${substrateSummary(substrate)}`,
+          );
+          if (escalate) {
             runAnalysis(burst, result.value, ctx, gen);
           }
         }
@@ -178,6 +204,7 @@ export function createInferenceRunner(
       // Backpressure: keep only the freshest `maxQueued`, drop the oldest.
       while (queue.length > config.maxQueued) {
         queue.shift();
+        inferenceLog("runner", "throttle busy → dropped oldest queued burst");
       }
     },
 
@@ -199,6 +226,7 @@ export function createInferenceRunner(
       queue.length = 0;
       substrate = emptySubstrate(sprintId);
       emit();
+      inferenceLog("runner", `reset → ${sprintId} (substrate cleared)`);
     },
 
     dispose(): void {
