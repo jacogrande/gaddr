@@ -5,6 +5,7 @@ import { ok, err } from "./result";
 declare const brand: unique symbol;
 
 export type UserId = string & { readonly [brand]: "UserId" };
+export type SprintId = string & { readonly [brand]: "SprintId" };
 
 function validateNonEmpty<T>(
   raw: string,
@@ -22,4 +23,8 @@ function validateNonEmpty<T>(
 
 export function userId(raw: string): Result<UserId, ValidationError> {
   return validateNonEmpty<UserId>(raw, "userId");
+}
+
+export function sprintId(raw: string): Result<SprintId, ValidationError> {
+  return validateNonEmpty<SprintId>(raw, "sprintId");
 }
