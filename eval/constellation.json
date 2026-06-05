@@ -1,0 +1,46 @@
+{
+  "module": "constellation",
+  "description": "Background intelligence during a freewrite: as the writer pauses, the system silently triages bursts into a discovery substrate (themes, positions, tensions) and escalates claim-like bursts into source-backed findings. The writing surface must stay quiet — no inline AI. A debug overlay (enabled with NEXT_PUBLIC_DEBUG_TRIGGERS=true) exposes substrate counts so the pipeline can be observed without the constellation board.",
+  "baseUrl": "http://localhost:8080",
+  "preamble": "Requires the dev server with E2E_BYPASS_AUTH=true and NEXT_PUBLIC_DEBUG_TRIGGERS=true so /editor is reachable without OAuth and the substrate debug panel renders. Background inference only runs while a sprint is in the running phase. The current model layer is mocked (deterministic), so findings are stand-ins, not real citations.",
+  "workflows": [
+    {
+      "id": "substrate-stays-empty-before-sprint",
+      "name": "No background work before a sprint starts",
+      "steps": [
+        "Clear local storage and navigate to /editor.",
+        "Before starting a sprint, confirm the substrate debug panel shows themes 0, positions 0, findings 0.",
+        "Type a sentence in the editor without starting the timer.",
+        "Confirm the substrate counts remain at 0 — inference must not run outside a running sprint."
+      ]
+    },
+    {
+      "id": "pause-builds-substrate",
+      "name": "Pausing after a thought records a position",
+      "steps": [
+        "From the wizard, start a sprint.",
+        "Type a sentence expressing a tentative position, then stop typing for several seconds to let a production-pause trigger fire.",
+        "Confirm the substrate debug panel's position count increases by at least one.",
+        "Confirm the editor surface itself shows no inline AI suggestion or critique — the freewrite stays interruption-free."
+      ]
+    },
+    {
+      "id": "claim-escalates-to-finding",
+      "name": "A claim-like burst produces a source-backed finding",
+      "steps": [
+        "In a running sprint, type an assertive, citation-flavored sentence such as 'Studies show that deep work is the real key to meaningful output.'",
+        "Pause to let the burst be triaged and escalated.",
+        "Confirm the substrate finding count increases.",
+        "Confirm the latest finding is shown with a provenance tier label (sourced or inferred) and reads as a pointer or question, never as finished replacement prose for the draft."
+      ]
+    },
+    {
+      "id": "new-sprint-resets-substrate",
+      "name": "Starting a new sprint clears the prior substrate",
+      "steps": [
+        "After building up some substrate in a sprint, stop the sprint and start a new freewrite from the wizard.",
+        "Confirm the substrate debug panel resets to themes 0, positions 0, findings 0 for the new sprint."
+      ]
+    }
+  ]
+}
