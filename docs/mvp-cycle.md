@@ -32,7 +32,7 @@ Shipped:
 - Drizzle + Postgres wiring
 - Better Auth integration
 - CI running `bun run check` and `bun test`
-- Playwright harness bootstrapping
+- agent-driven eval harness (`agent-browser` skill) bootstrapping
 
 Testable:
 
@@ -58,46 +58,62 @@ Testable:
 - sprint controls work
 - the post-sprint transition shell appears
 
+### Sprint 1.5: Trigger Substrate [IN PROGRESS]
+
+Groundwork for the intelligence layer, built ahead of the constellation pipeline so the keystroke-path plumbing is settled before any model is wired.
+
+Shipped:
+
+- pure trigger detector (`src/domain/editor/trigger-detector.ts`) emitting pause-bounded P-burst triggers (`production-pause`, `question-posed`, `max-quiet-time`) with boundary / pause / threshold metadata
+- editor hook (`use-trigger-detector.ts`) that observes TipTap and fires triggers during typing, off the keystroke path
+- two delivery seams for the future gadfly call: an `observer` callback and an async `semanticCompletionCheck` gate
+- unit coverage for the detector across boundaries, reasons, and adaptive thresholds
+
+Not yet done:
+
+- **the gadfly call is stubbed** — the default observer only console-logs (behind `NEXT_PUBLIC_DEBUG_TRIGGERS`). No model is invoked yet. Wiring a real background inference call into the observer seam is the first move of Sprint 2.
+
 ## The Next Sprints
+
+> **Canonical sources.** Intelligence-feature detail (what findings exist, in what dependency order, with the "guide, not critic" framing) lives in [intelligence-roadmap.md](./intelligence-roadmap.md) — treat it as authoritative for the *content* of the constellation. This file owns *delivery sequencing* across the whole loop. Where the two describe the same layer, intelligence-roadmap's vocabulary (themes / tentative-positions / tensions) wins over the older constellation vocabulary (claims / counterarguments / issues).
 
 ### Sprint 2: Constellation Research Pipeline [NEXT]
 
 Goal:
 
-Turn a completed freewrite into a structured constellation run.
+Turn a completed freewrite into a structured constellation run. This sprint delivers **Intelligence Phase 1: Discovery Substrate** — see [intelligence-roadmap.md](./intelligence-roadmap.md) for the feature detail and provenance-tier rules.
 
 Domain:
 
 - draft snapshot model
-- claim extraction result model
-- source, citation, counterargument, and issue types
-- provenance rules
-- no-ghostwriting validation for constellation output
+- discovery-substrate result types: theme extraction, tentative-position detection (intent axis: asserting / testing / wondering), internal-tension map
+- a claim graph as the secondary output for positions sharp enough to act as claims
+- three-tier provenance model (`sourced` / `inferred` / `heuristic`) and provenance rules
+- no-ghostwriting validation for all constellation output
 
 Infra:
 
-- retrieval adapter for source discovery
-- extraction adapter for source metadata / excerpts
-- structured analysis adapter for claim matching and issue generation
+- background inference adapter wired into the trigger observer seam (Sprint 1.5), with a **deterministic stub** so evals never depend on live model/retrieval state
+- hallucination-defense infrastructure: retrieval, span verification, confidence thresholds, graceful decline (Phase 2 depends on this maturing early)
 - persistence for constellation runs and findings
 
 App:
 
 - trigger constellation generation after sprint completion
 - loading/progress state for a run
-- recoverable failure states when retrieval or parsing fails
+- recoverable failure states when retrieval or inference fails
 
 Tests:
 
-- unit tests for provenance validation and finding classification
-- contract tests for retrieval / parsing adapters
-- E2E test proving sprint completion launches a constellation run
+- unit tests for provenance validation, tier classification, and tension mapping
+- contract tests for the inference / retrieval adapters against their stubs
+- agent-driven eval proving sprint completion launches a constellation run
 
 Testable:
 
 - finish a sprint
 - see a constellation run start
-- see structured findings return for the written draft
+- see a ranked theme list, position list with intent labels, and an internal-tension map return for the written draft
 
 ### Sprint 3: Constellation View [NEXT]
 
@@ -232,6 +248,6 @@ For every sprint:
 2. Write the unit tests for the core rules.
 3. Implement adapters second.
 4. Keep UI routes and actions thin.
-5. Add or update the Playwright workflow contract.
+5. Add or update the agent-driven workflow spec in `eval/*.json`.
 
 If a sprint ends without a testable user flow, it is not done.

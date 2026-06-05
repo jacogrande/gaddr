@@ -40,7 +40,7 @@ Today the repo contains:
 - local-first persistence
 - sprint timer and board transition shell
 - theme support
-- Playwright E2E coverage for auth, editor, sprint, theme, and navigation
+- agent-driven eval coverage for auth, editor, sprint, theme, and navigation
 
 The constellation intelligence, source retrieval, annotation pipeline, and dedicated final-draft mode are the next architecture layers to add.
 

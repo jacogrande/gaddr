@@ -2,6 +2,10 @@
 
 Sequences the LLM-powered features that read a freewrite and surface findings in the constellation. Sits inside the sprint scaffolding from [mvp-cycle.md](./mvp-cycle.md).
 
+This roadmap is canonical for *what the intelligence features are*; [mvp-cycle.md](./mvp-cycle.md) owns *delivery sequencing*. Phase 1 here is delivered as mvp-cycle Sprint 2.
+
+**Current status (2026-06):** the trigger substrate is built but the gadfly call is still stubbed. The detector emits triggers during typing and the editor hook exposes an `observer` + `semanticCompletionCheck` seam, but no model is wired — the next move is a real background inference adapter (behind a deterministic stub) feeding that seam. See mvp-cycle Sprint 1.5.
+
 Related research:
 
 - [Background inference during the freewrite](./research/background-inference-during-freewrite.md) — Anthropic SDK patterns, tiered model strategy, cost model.
@@ -126,4 +130,4 @@ Features that need a sharper artifact than a freewrite produces. They may return
 
 ## Delivery Rule
 
-Each phase ships domain types, adapter contracts, constellation UI with correct tier styling, and an eval contract plus Playwright workflow. Anything less is not done.
+Each phase ships domain types, adapter contracts (with a deterministic stub for tests), constellation UI with correct tier styling, and an agent-driven workflow spec in `eval/*.json`. Anything less is not done.
