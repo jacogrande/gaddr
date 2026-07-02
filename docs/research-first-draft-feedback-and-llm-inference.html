@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>First-Draft Feedback &amp; Unique LLM Inference — gaddr research</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #080b13;
+    --bg-2: #0c1120;
+    --panel: rgba(255, 255, 255, 0.035);
+    --panel-2: rgba(255, 255, 255, 0.06);
+    --line: rgba(190, 205, 235, 0.14);
+    --line-soft: rgba(190, 205, 235, 0.08);
+    --ink: #eef1f8;
+    --ink-2: #c3ccdd;
+    --ink-dim: #8792a8;
+    --gold: #e8b84b;
+    --gold-soft: rgba(232, 184, 75, 0.14);
+    --teal: #58d0c2;
+    --teal-soft: rgba(88, 208, 194, 0.13);
+    --rose: #e57568;
+    --rose-soft: rgba(229, 117, 104, 0.13);
+    --violet: #9aa6ff;
+    --display: "Fraunces", Georgia, serif;
+    --body: "Newsreader", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+    --edge: 6vw;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: radial-gradient(140% 120% at 78% -10%, #131b31 0%, var(--bg-2) 42%, var(--bg) 100%);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: clamp(16px, 1.15vw, 21px);
+    line-height: 1.5;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ---------- starfield + grain ---------- */
+  #sky { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .grain {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+  }
+  .vignette {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(120% 100% at 50% 40%, transparent 55%, rgba(3,5,10,0.55) 100%);
+  }
+
+  /* ---------- deck / slides ---------- */
+  #deck { position: relative; z-index: 2; height: 100%; width: 100%; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: clamp(48px, 7vh, 90px) var(--edge) clamp(70px, 9vh, 104px);
+    opacity: 0; transform: translateY(14px) scale(0.992);
+    transition: opacity 0.55s ease, transform 0.55s cubic-bezier(.2,.7,.2,1);
+    pointer-events: none;
+    overflow-y: auto; overflow-x: hidden;
+    scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+  }
+  .slide::-webkit-scrollbar { width: 8px; }
+  .slide::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+  .slide.active { opacity: 1; transform: none; pointer-events: auto; }
+  .slide > * { max-width: 1180px; width: 100%; margin-inline: auto; }
+
+  /* staggered reveal */
+  .slide.active .reveal { animation: rise 0.62s cubic-bezier(.2,.7,.2,1) backwards; }
+  .slide.active .reveal:nth-child(1) { animation-delay: .05s; }
+  .slide.active .reveal:nth-child(2) { animation-delay: .12s; }
+  .slide.active .reveal:nth-child(3) { animation-delay: .19s; }
+  .slide.active .reveal:nth-child(4) { animation-delay: .26s; }
+  .slide.active .reveal:nth-child(5) { animation-delay: .33s; }
+  .slide.active .reveal:nth-child(6) { animation-delay: .40s; }
+  .slide.active .reveal:nth-child(7) { animation-delay: .47s; }
+  .slide.active .reveal:nth-child(8) { animation-delay: .54s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- typography ---------- */
+  .kicker {
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.34em;
+    text-transform: uppercase; color: var(--gold); margin-bottom: 1.1rem;
+    display: flex; align-items: center; gap: 0.8rem;
+  }
+  .kicker::before { content: ""; width: 34px; height: 1px; background: var(--gold); opacity: 0.7; }
+
+  h1 {
+    font-family: var(--display); font-weight: 600;
+    font-size: clamp(2.4rem, 6vw, 5rem); line-height: 1.02;
+    letter-spacing: -0.02em; font-optical-sizing: auto;
+  }
+  h2 {
+    font-family: var(--display); font-weight: 600;
+    font-size: clamp(1.9rem, 3.9vw, 3.1rem); line-height: 1.06;
+    letter-spacing: -0.015em; margin-bottom: 0.4rem;
+  }
+  h3 {
+    font-family: var(--display); font-weight: 600;
+    font-size: clamp(1.2rem, 1.8vw, 1.55rem); letter-spacing: -0.01em;
+  }
+  .lede { font-size: clamp(1.05rem, 1.5vw, 1.4rem); color: var(--ink-2); max-width: 60ch; }
+  em { font-style: italic; color: #fff; }
+  strong { font-weight: 600; color: #fff; }
+  a { color: var(--teal); text-decoration: none; border-bottom: 1px solid rgba(88,208,194,0.3); }
+  a:hover { border-color: var(--teal); }
+  .accent { color: var(--gold); }
+
+  /* ---------- chips ---------- */
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.42em;
+    font-family: var(--mono); font-size: 0.62rem; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 0.3em 0.66em; border-radius: 100px; white-space: nowrap;
+    border: 1px solid; line-height: 1;
+  }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .chip.verified { color: var(--teal); border-color: rgba(88,208,194,0.4); background: var(--teal-soft); }
+  .chip.contextual { color: var(--gold); border-color: rgba(232,184,75,0.4); background: var(--gold-soft); }
+  .chip.refuted { color: var(--rose); border-color: rgba(229,117,104,0.4); background: var(--rose-soft); }
+
+  /* ---------- source refs ---------- */
+  .src { font-family: var(--mono); font-size: 0.74rem; color: var(--ink-dim); }
+  .src a { color: var(--ink-dim); border-color: var(--line-soft); }
+  .src a:hover { color: var(--teal); }
+
+  /* ---------- panels & layout ---------- */
+  .grid { display: grid; gap: clamp(14px, 1.5vw, 22px); }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .cols-5 { grid-template-columns: repeat(5, 1fr); }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line-soft);
+    border-radius: 14px; padding: clamp(16px, 1.6vw, 26px);
+    position: relative; overflow: hidden;
+  }
+  .card.lead { border-color: var(--line); background: linear-gradient(180deg, var(--panel-2), var(--panel)); }
+  .card .n {
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gold);
+    letter-spacing: 0.2em; margin-bottom: 0.7rem;
+  }
+  .card p { color: var(--ink-2); font-size: 0.98rem; margin-top: 0.4rem; }
+  .card h3 { color: var(--ink); }
+
+  .body-list { list-style: none; display: flex; flex-direction: column; gap: 0.85rem; }
+  .body-list li { position: relative; padding-left: 1.5rem; color: var(--ink-2); max-width: 78ch; }
+  .body-list li::before {
+    content: "✦"; position: absolute; left: 0; top: 0.05em;
+    color: var(--gold); font-size: 0.8em; opacity: 0.85;
+  }
+  .body-list.q li::before { content: "?"; font-family: var(--mono); color: var(--violet); font-weight: 600; }
+  .body-list.warn li::before { content: "!"; font-family: var(--mono); color: var(--rose); font-weight: 600; }
+
+  .quote {
+    font-family: var(--display); font-style: italic; font-weight: 400;
+    font-size: clamp(1.15rem, 1.9vw, 1.7rem); line-height: 1.32; color: #fff;
+    border-left: 2px solid var(--gold); padding-left: 1.1rem; max-width: 46ch;
+  }
+
+  .stat { display: flex; flex-direction: column; gap: 0.2rem; }
+  .stat .num {
+    font-family: var(--display); font-weight: 600; font-size: clamp(2rem, 4vw, 3.4rem);
+    line-height: 1; letter-spacing: -0.02em;
+  }
+  .stat .num.teal { color: var(--teal); }
+  .stat .num.gold { color: var(--gold); }
+  .stat .num.rose { color: var(--rose); }
+  .stat .lbl { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: clamp(0.8rem, 1.05vw, 1rem); }
+  thead th {
+    font-family: var(--mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.13em;
+    text-transform: uppercase; color: var(--gold); text-align: left;
+    padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--line);
+  }
+  tbody td { padding: 0.62rem 0.85rem; border-bottom: 1px solid var(--line-soft); color: var(--ink-2); vertical-align: top; }
+  tbody tr:hover td { background: rgba(255,255,255,0.02); }
+  tbody td:first-child { color: var(--ink); font-weight: 500; }
+  .tag-y { color: var(--teal); font-family: var(--mono); font-size: 0.8em; }
+  .tag-n { color: var(--rose); font-family: var(--mono); font-size: 0.8em; }
+  .tag-mid { color: var(--gold); font-family: var(--mono); font-size: 0.8em; }
+  .verdict { font-family: var(--display); font-style: italic; color: #fff; }
+
+  .flowline { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+  .flowline .step { flex: 1; min-width: 210px; }
+  .flowline .arrow { display: flex; align-items: center; color: var(--gold); font-size: 1.6rem; padding: 0 0.4rem; }
+
+  .two-col-text { column-count: 2; column-gap: 3rem; }
+  .two-col-text p { break-inside: avoid; margin-bottom: 0.8rem; color: var(--ink-2); }
+
+  /* ---------- cover specifics ---------- */
+  #s0 { justify-content: center; }
+  .cover-meta { display: flex; flex-wrap: wrap; gap: 1.4rem 2.4rem; margin-top: 2.4rem; }
+  .cover-meta .stat .num { font-size: clamp(1.5rem, 2.6vw, 2.3rem); }
+  .brandmark {
+    font-family: var(--mono); letter-spacing: 0.4em; text-transform: uppercase;
+    font-size: 0.8rem; color: var(--ink-dim);
+  }
+  .constellation-svg { position: absolute; top: 8%; right: 4%; width: min(40vw, 460px); opacity: 0.5; z-index: -1; }
+
+  .divider-num {
+    font-family: var(--display); font-weight: 700; font-size: clamp(6rem, 20vw, 17rem);
+    line-height: 0.8; color: transparent; -webkit-text-stroke: 1.5px rgba(232,184,75,0.55);
+    letter-spacing: -0.04em;
+  }
+
+  /* ---------- HUD: progress, counter, nav, dots ---------- */
+  #hud { position: fixed; z-index: 20; inset: 0; pointer-events: none; }
+  #progress {
+    position: fixed; top: 0; left: 0; height: 3px; z-index: 22;
+    background: linear-gradient(90deg, var(--gold), var(--teal)); width: 0;
+    transition: width 0.45s cubic-bezier(.2,.7,.2,1); box-shadow: 0 0 12px rgba(232,184,75,0.5);
+  }
+  .topbar {
+    position: fixed; top: 22px; left: var(--edge); right: var(--edge); z-index: 21;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--ink-dim); pointer-events: none;
+  }
+  .topbar .title-mini { color: var(--ink-2); }
+  .counter { color: var(--ink); }
+  .counter .cur { color: var(--gold); }
+
+  .nav-btns { position: fixed; bottom: 22px; right: var(--edge); z-index: 21; display: flex; gap: 10px; pointer-events: auto; }
+  .nav-btns button, .kbtn {
+    width: 44px; height: 44px; border-radius: 11px; cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
+    font-size: 1.1rem; display: grid; place-items: center;
+    transition: background 0.2s, border-color 0.2s, transform 0.1s;
+  }
+  .nav-btns button:hover, .kbtn:hover { background: rgba(232,184,75,0.16); border-color: var(--gold); }
+  .nav-btns button:active { transform: scale(0.93); }
+  .nav-btns button:disabled { opacity: 0.3; cursor: default; }
+
+  .dots { position: fixed; bottom: 30px; left: var(--edge); z-index: 21; display: flex; gap: 8px; pointer-events: auto; max-width: 62vw; flex-wrap: wrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,0.18); border: 0; cursor: pointer; padding: 0; transition: all 0.25s; }
+  .dot:hover { background: var(--ink-dim); transform: scale(1.25); }
+  .dot.on { background: var(--gold); box-shadow: 0 0 10px rgba(232,184,75,0.6); width: 24px; border-radius: 5px; }
+
+  .hint { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 21;
+    font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.16em; color: var(--ink-dim);
+    text-transform: uppercase; opacity: 0.65; transition: opacity 0.4s; pointer-events: none; }
+  .hint kbd { color: var(--gold); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+
+  /* ---------- overview grid ---------- */
+  #overview {
+    position: fixed; inset: 0; z-index: 40; background: rgba(6,9,16,0.94);
+    backdrop-filter: blur(8px); display: none; padding: clamp(40px, 6vh, 70px) var(--edge);
+    overflow-y: auto; scrollbar-width: thin;
+  }
+  #overview.show { display: block; }
+  #overview h4 { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.28em; text-transform: uppercase; color: var(--gold); margin-bottom: 1.6rem; }
+  .ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .ov-card {
+    text-align: left; cursor: pointer; background: var(--panel); border: 1px solid var(--line-soft);
+    border-radius: 12px; padding: 18px; color: var(--ink-2); transition: all 0.2s; font-family: inherit;
+  }
+  .ov-card:hover { border-color: var(--gold); background: rgba(232,184,75,0.08); transform: translateY(-2px); }
+  .ov-card.current { border-color: var(--teal); }
+  .ov-card .ov-n { font-family: var(--mono); font-size: 0.68rem; color: var(--gold); letter-spacing: 0.2em; }
+  .ov-card .ov-k { font-family: var(--mono); font-size: 0.6rem; color: var(--ink-dim); letter-spacing: 0.16em; text-transform: uppercase; margin-top: 8px; }
+  .ov-card .ov-t { font-family: var(--display); font-size: 1.1rem; color: var(--ink); margin-top: 3px; line-height: 1.15; }
+
+  @media (max-width: 820px) {
+    :root { --edge: 6vw; }
+    .cols-2, .cols-3, .cols-5 { grid-template-columns: 1fr; }
+    .two-col-text { column-count: 1; }
+    .dots { display: none; }
+    .slide { padding-top: 70px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .slide, .slide.active .reveal, #progress, .dot { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<div class="grain"></div>
+<div class="vignette"></div>
+
+<div id="progress"></div>
+<div class="topbar">
+  <span class="title-mini">gaddr&nbsp;·&nbsp;research brief</span>
+  <span class="counter"><span class="cur">01</span> / <span class="tot">16</span></span>
+</div>
+
+<main id="deck">
+
+  <!-- 0 — COVER -->
+  <section class="slide" id="s0" data-kicker="Cover" data-title="First-Draft Feedback &amp; LLM Inference">
+    <svg class="constellation-svg" viewBox="0 0 400 320" fill="none">
+      <line x1="60" y1="60" x2="150" y2="110" stroke="#e8b84b" stroke-width="1" opacity="0.5"/>
+      <line x1="150" y1="110" x2="120" y2="210" stroke="#e8b84b" stroke-width="1" opacity="0.5"/>
+      <line x1="150" y1="110" x2="260" y2="90" stroke="#e8b84b" stroke-width="1" opacity="0.5"/>
+      <line x1="260" y1="90" x2="330" y2="170" stroke="#e8b84b" stroke-width="1" opacity="0.5"/>
+      <line x1="120" y1="210" x2="230" y2="250" stroke="#e8b84b" stroke-width="1" opacity="0.5"/>
+      <line x1="330" y1="170" x2="230" y2="250" stroke="#e8b84b" stroke-width="1" opacity="0.5"/>
+      <g fill="#fff">
+        <circle cx="60" cy="60" r="3.5"/><circle cx="150" cy="110" r="5"/><circle cx="120" cy="210" r="3"/>
+        <circle cx="260" cy="90" r="4"/><circle cx="330" cy="170" r="3.5"/><circle cx="230" cy="250" r="4.5"/>
+      </g>
+    </svg>
+    <div class="reveal brandmark">gaddr research</div>
+    <h1 class="reveal" style="margin-top:1.2rem;">First-Draft Feedback<br />&amp; Unique LLM Inference</h1>
+    <p class="reveal lede" style="margin-top:1.4rem;">What feedback is genuinely valuable on <em>first drafts</em> of essays — and what can a July-2026 LLM do that would otherwise take a human editor a week or more?</p>
+    <div class="reveal cover-meta">
+      <div class="stat"><span class="num gold">5</span><span class="lbl">search angles</span></div>
+      <div class="stat"><span class="num">26</span><span class="lbl">sources fetched</span></div>
+      <div class="stat"><span class="num">124</span><span class="lbl">claims extracted</span></div>
+      <div class="stat"><span class="num teal">23</span><span class="lbl">verified 3-0</span></div>
+      <div class="stat"><span class="num rose">2</span><span class="lbl">refuted &amp; dropped</span></div>
+    </div>
+    <p class="reveal src" style="margin-top:2rem;">Method: fan-out web research → adversarial 3-vote verification per claim. Every claim below is tagged for confidence.</p>
+  </section>
+
+  <!-- 1 — TL;DR -->
+  <section class="slide" id="s1" data-kicker="Executive summary" data-title="The five things that matter">
+    <div class="reveal kicker">The bottom line</div>
+    <h2 class="reveal">Five findings, all verified 3-0</h2>
+    <div class="grid cols-2 reveal" style="margin-top:1.6rem;">
+      <div class="card lead">
+        <div class="n">01 · WHAT MATTERS</div>
+        <h3>First-draft feedback is higher-order, full stop</h3>
+        <p>Thesis, argument, structure, evidence, rhetorical fit — <em>not</em> surface copyediting. The settled consensus of composition research and writing-center practice.</p>
+      </div>
+      <div class="card lead">
+        <div class="n">02 · THE HUMAN GAP</div>
+        <h3>Humans are weak at the labor-intensive part</h3>
+        <p>Reviewers catch ~30% of seeded major errors; two reviewers agree at r≈0.34; ~18% of stats slip through. The bottleneck is <em>exhaustive, consistent coverage.</em></p>
+      </div>
+      <div class="card lead">
+        <div class="n">03 · THE LLM UNLOCK</div>
+        <h3>Systematic claim→evidence checking</h3>
+        <p>RIGOURATE grades over-claiming [0,1]; VeriFastScore verifies 6.6× faster, 39% cheaper. The week-long check compresses to seconds.</p>
+      </div>
+      <div class="card lead">
+        <div class="n">04 · THE MOAT</div>
+        <h3>"Does the source actually say this?"</h3>
+        <p>Existence-checking is solved. Source-<em>support</em> checking "remains far less tractable… the gap is wide and probably widening." No commodity tool has cracked it.</p>
+      </div>
+    </div>
+    <div class="card lead reveal" style="margin-top:1.4rem; border-color: var(--gold);">
+      <div class="n" style="color:var(--gold)">05 · THE SAFE SHAPE</div>
+      <h3>LLM-as-questioner, never ghostwriter</h3>
+      <p>The best-supported non-ghostwriting design: static findings repurposed as <em>conversation starters that prompt reflection</em> — an exact match for gaddr's "retrieve, structure, question, annotate" rule.</p>
+    </div>
+  </section>
+
+  <!-- 2 — METHOD -->
+  <section class="slide" id="s2" data-kicker="Methodology" data-title="How this was researched">
+    <div class="reveal kicker">How to read the confidence tags</div>
+    <h2 class="reveal">A fan-out, then an adversarial gate</h2>
+    <div class="reveal flowline" style="margin-top:2rem;">
+      <div class="step card"><div class="n">STEP 1</div><h3>5 angles</h3><p>Composition · peer review · journalism · LLM benchmarks · AI-feedback efficacy</p></div>
+      <div class="arrow">→</div>
+      <div class="step card"><div class="n">STEP 2</div><h3>26 sources → 124 claims</h3><p>Falsifiable claims extracted with verbatim quotes.</p></div>
+      <div class="arrow">→</div>
+      <div class="step card"><div class="n">STEP 3</div><h3>3-vote refutation</h3><p>Each claim faced 3 skeptics; a claim dies on 2/3 refutes.</p></div>
+    </div>
+    <div class="grid cols-3 reveal" style="margin-top:2rem;">
+      <div class="card"><span class="chip verified">Verified 3-0</span><p style="margin-top:0.8rem;">Three independent skeptics failed to refute it against the primary source. Load-bearing.</p></div>
+      <div class="card"><span class="chip contextual">Contextual</span><p style="margin-top:0.8rem;">Source is real and quoted, but the claim did not pass the adversarial gate this pass. Directional only.</p></div>
+      <div class="card"><span class="chip refuted">Refuted</span><p style="margin-top:0.8rem;">Killed in verification. Shown for transparency — <em>do not assert.</em></p></div>
+    </div>
+  </section>
+
+  <!-- 3 — PART 1 DIVIDER -->
+  <section class="slide" id="s3" data-kicker="Part One" data-title="What expert humans critique">
+    <div class="reveal divider-num">01</div>
+    <h1 class="reveal" style="margin-top:0.6rem;">What expert humans<br />critique on first drafts</h1>
+    <p class="reveal lede" style="margin-top:1.4rem;">Three traditions — composition pedagogy, academic peer review, and editorial craft — and they all point the same direction: <span class="accent">global before local.</span></p>
+  </section>
+
+  <!-- 4 — 1A COMPOSITION -->
+  <section class="slide" id="s4" data-kicker="1A · Composition &amp; writing centers" data-title="Global before local">
+    <div class="reveal kicker">Sommers 1980 · HOC-before-LOC · reverse outline</div>
+    <h2 class="reveal">Novices and experts mean different things by "revision"</h2>
+    <div class="grid cols-2 reveal" style="margin-top:1.5rem; align-items:start;">
+      <div style="display:flex; flex-direction:column; gap:1.1rem;">
+        <div class="quote">Students conceive revision as word-swapping; experienced writers revise recursively, at the level of meaning and structure.</div>
+        <p class="src">Sommers, <em>Revision Strategies of Student &amp; Experienced Adult Writers</em>, CCC 1980 · <a href="https://eric.ed.gov/?id=EJ240356">ERIC EJ240356</a> &nbsp;<span class="chip verified">Verified 3-0</span></p>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:1rem;">
+        <div class="card">
+          <h3>Higher-order concerns come first</h3>
+          <p><strong>Thesis · Organization · Development/Evidence · Audience</strong> — then, and only then, grammar. The operational spine of writing-center practice (Reigstad &amp; McAndrew 1984).</p>
+          <p class="src" style="margin-top:0.7rem;"><a href="https://www.southwestern.edu/live/files/3233-higher-vs-lower-orderpdf">Southwestern triage guide</a> &nbsp;<span class="chip verified">Verified 3-0</span></p>
+        </div>
+        <div class="card" style="border-color: var(--gold-soft);">
+          <h3 class="accent">The reverse outline</h3>
+          <p>Reconstruct the outline <em>from</em> the draft to expose its as-written skeleton — "a bullet-point view of your paper's structure." Always useful; a pure <strong>structuring</strong> task, not ghostwriting.</p>
+          <p class="src" style="margin-top:0.7rem;"><a href="https://writing.wisc.edu/handbook/reverseoutlines/">UW–Madison</a> &nbsp;<span class="chip verified">Verified 3-0</span></p>
+        </div>
+      </div>
+    </div>
+    <div class="card lead reveal" style="margin-top:1.4rem;">
+      <div class="n">→ gaddr consequence</div>
+      <p>Steer the writer toward the moves novices <em>skip</em> — argument, structure, evidence. Surfacing grammar first trains exactly the wrong revision reflex. Reverse-outlining is the cheapest, most legible, zero-ghostwriting feature available.</p>
+    </div>
+  </section>
+
+  <!-- 5 — 1B PEER REVIEW: WHAT IT ADDS -->
+  <section class="slide" id="s5" data-kicker="1B · Academic peer review" data-title="What review adds: higher-order gains">
+    <div class="reveal kicker">The most rigorously measured tradition</div>
+    <h2 class="reveal">What expert review adds is higher-order gain — not polish</h2>
+    <div class="grid cols-2 reveal" style="margin-top:1.6rem; align-items:start;">
+      <div class="card lead">
+        <h3>Add a statistician, not a checklist</h3>
+        <div class="grid cols-3" style="margin:1rem 0;">
+          <div class="stat"><span class="num teal">+5.5</span><span class="lbl">Goodman pts</span></div>
+          <div class="stat"><span class="num">0.50</span><span class="lbl">methods ES</span></div>
+          <div class="stat"><span class="num rose">~0</span><span class="lbl">checklist gain</span></div>
+        </div>
+        <p>Cobo et al. 2×2 RCT: a statistical reviewer most improved <em>quantitative methods, clear reporting, study design.</em> CONSORT/STARD checklists added a non-significant sliver.</p>
+        <p class="src" style="margin-top:0.6rem;"><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1824709/">Cobo et al. 2007</a> &nbsp;<span class="chip verified">Verified 3-0</span></p>
+      </div>
+      <div class="card lead">
+        <h3>Review forces self-acknowledged limits</h3>
+        <div class="grid cols-3" style="margin:1rem 0;">
+          <div class="stat"><span class="num gold">+56%</span><span class="lbl">limitation lines</span></div>
+          <div class="stat"><span class="num">2.5→3.9</span><span class="lbl">avg per paper</span></div>
+          <div class="stat"><span class="num">31%</span><span class="lbl">added first limit</span></div>
+        </div>
+        <p>Before/after study of 446 manuscript–publication pairs: peer review reliably increases limitation-acknowledging sentences — a <em>questioning</em> move, not an edit.</p>
+        <p class="src" style="margin-top:0.6rem;"><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6745784/">RIPR 2019</a> &nbsp;<span class="chip verified">Verified 3-0</span></p>
+      </div>
+    </div>
+    <p class="reveal" style="margin-top:1.3rem; color:var(--ink-2);">→ The target of valuable first-draft feedback is <span class="accent">methods, argument, and self-acknowledged weakness</span> — the exact things an LLM can surface as questions.</p>
+  </section>
+
+  <!-- 6 — 1B PEER REVIEW: WHERE IT FAILS -->
+  <section class="slide" id="s6" data-kicker="1B · Academic peer review" data-title="Where review fails: coverage &amp; consistency">
+    <div class="reveal kicker">The human gap is exhaustiveness, not judgment</div>
+    <h2 class="reveal">Humans miss errors and disagree with each other</h2>
+    <div class="grid cols-3 reveal" style="margin-top:1.6rem;">
+      <div class="card"><div class="stat"><span class="num rose">2.58/9</span><span class="lbl">major errors caught</span></div><p style="margin-top:0.8rem;">607-reviewer BMJ RCT: ~30% of seeded major errors found at baseline. Training's effect was "trivial."</p><p class="src" style="margin-top:0.5rem;"><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2586872/">Schroter 2008</a></p></div>
+      <div class="card"><div class="stat"><span class="num rose">r = 0.34</span><span class="lbl">inter-reviewer agreement</span></div><p style="margin-top:0.8rem;">Two reviewers on one paper barely correlate — acceptance is partly unpredictable.</p><p class="src" style="margin-top:0.5rem;"><a href="https://www.pnas.org/doi/10.1073/pnas.2401232121">PNAS 2025</a></p></div>
+      <div class="card"><div class="stat"><span class="num rose">18%</span><span class="lbl">stats misreported</span></div><p style="margin-top:0.8rem;">Incorrectly reported statistics routinely slip through review entirely.</p><p class="src" style="margin-top:0.5rem;"><a href="https://link.springer.com/article/10.1007/s11192-017-2516-6">Scientometrics 2017</a></p></div>
+    </div>
+    <div class="card reveal" style="margin-top:1.4rem; border-color: var(--rose-soft); background: var(--rose-soft);">
+      <div class="n" style="color:var(--rose)">⚠ Two claims were REFUTED — do not assert</div>
+      <ul class="body-list warn" style="margin-top:0.7rem;">
+        <li><strong>"Peer review doesn't reduce over-claiming."</strong> Killed 1-2. It <em>does.</em></li>
+        <li><strong>"Reviewers fixate on trivia instead of the big picture."</strong> Killed 0-3. Unsupported — humans <em>miss and disagree,</em> they don't neglect global concerns.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 7 — 1C JOURNALISM -->
+  <section class="slide" id="s7" data-kicker="1C · Journalism &amp; editing" data-title="The gold standard: source-representation">
+    <div class="reveal kicker">Contextual — real &amp; quoted, not gated this pass</div>
+    <h2 class="reveal">Verification is the discipline — and the bridge to Part 2</h2>
+    <div class="grid cols-2 reveal" style="margin-top:1.5rem; align-items:start;">
+      <div style="display:flex; flex-direction:column; gap:1.1rem;">
+        <div class="card">
+          <h3>Editing is a hierarchy</h3>
+          <p><strong>Developmental</strong> (idea, audience, structure) → <strong>line</strong> (sentence meaning) → <strong>copy</strong> (grammar, spelling). Early drafts belong to the top. <span class="chip contextual">Contextual</span></p>
+          <p class="src" style="margin-top:0.6rem;"><a href="https://press.uchicago.edu/ucp/books/book/chicago/D/bo201563215.html">Norton, <em>Developmental Editing</em></a></p>
+        </div>
+        <div class="card">
+          <p class="verdict" style="font-size:1.15rem;">"The discipline of verification is what separates journalism from entertainment, propaganda, fiction, or art."</p>
+          <p class="src" style="margin-top:0.6rem;">Kovach &amp; Rosenstiel, <em>Elements of Journalism</em> · <a href="https://niemanreports.org/the-essence-of-journalism-is-a-discipline-of-verifications/">Nieman</a> <span class="chip contextual">Contextual</span></p>
+        </div>
+      </div>
+      <div class="card lead" style="border-color: var(--gold);">
+        <div class="n" style="color:var(--gold)">The New Yorker method</div>
+        <div class="quote" style="border:none; padding:0; margin-bottom:1rem;">Checkers take the piece apart claim-by-claim and rebuild it against original sources — confirming the writer <em>read and represented</em> each source correctly.</div>
+        <p>Not just names and dates: "the USGS report that he read, he read correctly." Done manually, over days to weeks.</p>
+        <p class="src" style="margin-top:0.6rem;"><a href="https://www.cjr.org/critical_eye/fact-checking_at_the_new_yorker.php">Columbia Journalism Review</a> <span class="chip contextual">Contextual</span></p>
+        <p style="margin-top:1rem; color:var(--gold);">→ This is exactly the check gaddr aspires to automate — the highest-integrity move, and the one that takes a human a week.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 — PART 2 DIVIDER -->
+  <section class="slide" id="s8" data-kicker="Part Two" data-title="Unique LLM feedback">
+    <div class="reveal divider-num">02</div>
+    <h1 class="reveal" style="margin-top:0.6rem;">Unique LLM feedback<br />that's slow for humans</h1>
+    <p class="reveal lede" style="margin-top:1.4rem;">Retrieval, structuring, questioning, annotation — <span class="accent">never ghostwriting.</span> Where a July-2026 model does in seconds what an editor does in a week.</p>
+  </section>
+
+  <!-- 9 — LINEAGE -->
+  <section class="slide" id="s9" data-kicker="2 · The lineage" data-title="From atomic facts to graded over-claim">
+    <div class="reveal kicker">Decompose into claims → check each against evidence</div>
+    <h2 class="reveal">The capability arc, 2023 → 2026</h2>
+    <div class="reveal flowline" style="margin-top:2rem;">
+      <div class="step card">
+        <div class="n">2023 · FActScore</div>
+        <h3>Atomic-fact scoring</h3>
+        <p>Split output into atomic facts; score the share supported. Correlates with human annotation ρ≈0.82. SAFE / LongFact extend to long-form. <span class="chip contextual">Contextual</span></p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step card" style="border-color: var(--gold);">
+        <div class="n" style="color:var(--gold)">JAN 2026 · RIGOURATE</div>
+        <h3 class="accent">Graded over-claim [0,1]</h3>
+        <p>Retrieves each claim's supporting text/figures and scores whether its strength is <em>proportionally</em> supported — not true/false. "A learnable and evaluable problem." <span class="chip verified">Verified 3-0</span></p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step card" style="border-color: var(--teal-soft);">
+        <div class="n" style="color:var(--teal)">EMNLP 2025 · VeriFastScore</div>
+        <h3>Fast enough to be interactive</h3>
+        <p>8B model, single pass: <strong>6.6× faster</strong>, 39% cheaper retrieval. But: no rationales, ~29% missed claims. <span class="chip verified">Verified 3-0</span></p>
+      </div>
+    </div>
+    <div class="card lead reveal" style="margin-top:1.5rem;">
+      <div class="n">→ gaddr consequence</div>
+      <p>Claim-verification can run <em>off the keystroke path</em> affordably and at length — but the constellation view <strong>must show provenance and rationale</strong> (the raw model omits them) and cannot be assumed to catch every claim. Argues for human-in-the-loop acceptance, never silent auto-annotation.</p>
+    </div>
+    <p class="reveal src" style="margin-top:1rem;"><a href="https://arxiv.org/pdf/2601.04350">RIGOURATE</a> · <a href="https://arxiv.org/html/2505.16973v1">VeriFastScore</a> · <a href="https://aman.ai/primers/ai/factuality-in-LLMs/">FActScore/SAFE primer</a></p>
+  </section>
+
+  <!-- 10 — THE MOAT -->
+  <section class="slide" id="s10" data-kicker="2 · The tractability asymmetry" data-title="gaddr's actual moat">
+    <div class="reveal kicker">The most strategically important finding</div>
+    <h2 class="reveal">Two tasks wearing the same name</h2>
+    <div class="reveal" style="margin-top:1.4rem;">
+      <table>
+        <thead><tr><th>Citation task</th><th>Tractability (2026)</th><th>First-draft value</th></tr></thead>
+        <tbody>
+          <tr><td>Does this citation <strong>exist</strong>?</td><td><span class="tag-y">Near-solved</span> — structured, indexed, queryable</td><td>Low–medium (catches fabrications)</td></tr>
+          <tr><td>Does the source <strong>actually say</strong> what it's cited for?</td><td><span class="tag-n">Open problem — gap widening</span></td><td class="accent"><strong>Highest</strong> (the New Yorker check)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card lead reveal" style="margin-top:1.4rem; border-color: var(--gold);">
+      <div class="quote" style="border:none; padding:0;">"Citation verification is among the easiest hallucination problems… <em>detecting claims that misrepresent the content of real sources remains far less tractable, and the gap between what verifiers can detect and what LLMs can produce is wide and probably widening.</em>"</div>
+      <p class="src" style="margin-top:0.9rem;">arXiv:2605.07723 (Ginsparg et al., May 2026; 111M-reference audit) · <a href="https://www.nature.com/articles/d41586-026-01545-1">Nature</a> <span class="chip verified">Verified 3-0</span></p>
+    </div>
+    <p class="reveal" style="margin-top:1.2rem; color:var(--ink-2);">Corroborating 2026 benchmarks show source-support accuracy collapsing: <span class="tag-n">CiteAudit GPT-5.2 F1 96%→33%</span> · <span class="tag-n">DeepTRACE 40–80%</span>. → gaddr's differentiator is the bottom-right cell: most valuable, still unsolved — <em>ship it with provenance + human accept.</em></p>
+  </section>
+
+  <!-- 11 — DEMAND + SHAPE + HOMOGENIZATION -->
+  <section class="slide" id="s11" data-kicker="2 · Demand, shape &amp; risk" data-title="Why now, what shape, what to avoid">
+    <div class="reveal kicker">The market, the design, the guardrail</div>
+    <h2 class="reveal">A fabrication crisis meets a questioning interface</h2>
+    <div class="grid cols-3 reveal" style="margin-top:1.5rem; align-items:start;">
+      <div class="card">
+        <div class="n" style="color:var(--rose)">THE DEMAND</div>
+        <div class="stat" style="margin:0.6rem 0;"><span class="num rose">146,932</span><span class="lbl">hallucinated citations, 2025</span></div>
+        <p>Up to <strong>78–90%</strong> fabricated citations in some LLM settings; 50+ found across 300 ICLR 2026 submissions. The world is drowning in confidently-cited nonsense. <span class="chip contextual">Contextual</span></p>
+      </div>
+      <div class="card" style="border-color: var(--teal-soft);">
+        <div class="n" style="color:var(--teal)">THE SHAPE</div>
+        <h3>Findings as conversation starters</h3>
+        <p>"Repurposed as conversation starters, allowing writers to seek clarification… fostering deeper reflection." Explicitly questioning, explicitly non-ghostwriting. <span class="chip verified">Verified 3-0</span></p>
+        <p class="src" style="margin-top:0.5rem;"><a href="https://arxiv.org/pdf/2504.08687">Kim et al. 2025</a></p>
+      </div>
+      <div class="card" style="border-color: var(--gold-soft);">
+        <div class="n" style="color:var(--gold)">THE RISK</div>
+        <h3>Instruction-tuned = voice-flattening</h3>
+        <p>Co-writing with <em>InstructGPT</em> significantly reduced content diversity; the base model did not. The friendly, helpful model is the one that homogenizes. <span class="chip contextual">Contextual</span></p>
+        <p class="src" style="margin-top:0.5rem;"><a href="https://arxiv.org/pdf/2309.05196">Padmakumar &amp; He</a></p>
+      </div>
+    </div>
+    <p class="reveal" style="margin-top:1.4rem; color:var(--ink-2);">→ Direct evidence <span class="accent">for</span> gaddr's core bet: the moment AI writes prose, measured diversity of thought drops. Keeping AI on the retrieve/structure/question/annotate side isn't just brand — it's the empirically-supported way to protect the writer's voice.</p>
+  </section>
+
+  <!-- 12 — SYNTHESIS GRID -->
+  <section class="slide" id="s12" data-kicker="Synthesis" data-title="The tractability × value map">
+    <div class="reveal kicker">Where high value meets no-ghostwriting automation</div>
+    <h2 class="reveal">The whole report on one grid</h2>
+    <div class="reveal" style="margin-top:1.2rem;">
+      <table>
+        <thead><tr><th>Editor move</th><th>1st-draft value</th><th>LLM-automatable?</th><th>Ghostwriting risk</th><th>gaddr verdict</th></tr></thead>
+        <tbody>
+          <tr><td>Reverse outline / argument map</td><td class="tag-y">High</td><td class="tag-y">Yes — structuring</td><td>None</td><td class="verdict">Ship first</td></tr>
+          <tr><td>Claim→evidence / over-claim score</td><td class="tag-y">High</td><td class="tag-y">Yes — RIGOURATE-style</td><td class="tag-mid">Low</td><td class="verdict">Core feature</td></tr>
+          <tr><td>"Does the source actually say this?"</td><td class="accent">Highest</td><td class="tag-mid">Hard, improving — the moat</td><td class="tag-mid">Low</td><td class="verdict accent">Differentiator</td></tr>
+          <tr><td>Citation-existence check</td><td class="tag-mid">Medium</td><td class="tag-y">Near-solved</td><td>None</td><td class="verdict">Table stakes</td></tr>
+          <tr><td>Surface omitted limitations</td><td class="tag-y">High</td><td class="tag-y">Yes — questioning</td><td>None</td><td class="verdict">Constellation "issues"</td></tr>
+          <tr><td>Steelman opposing sources</td><td class="tag-y">High</td><td class="tag-mid">Plausible — <em>unmeasured</em></td><td class="tag-mid">Medium</td><td class="verdict">Retrieve; writer rebuts</td></tr>
+          <tr><td>Consistency / contradiction across draft</td><td class="tag-mid">Med–high</td><td class="tag-y">Yes — long-context</td><td>None</td><td class="verdict">Annotation candidate</td></tr>
+          <tr><td>Grammar / mechanics / style</td><td class="tag-n">Low on 1st draft</td><td class="tag-y">Trivially</td><td>N/A</td><td class="verdict">Keep OUT of the loop</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="reveal src" style="margin-top:1rem;">Every tradition prioritizes the global layer first; LLMs are strongest at the exhaustive, retrieval-heavy version of that work. The overlap sits squarely inside "no ghostwriting."</p>
+  </section>
+
+  <!-- 13 — PRODUCT IMPLICATIONS -->
+  <section class="slide" id="s13" data-kicker="For gaddr" data-title="Seven product implications">
+    <div class="reveal kicker">Designing the constellation review</div>
+    <h2 class="reveal">Seven implications</h2>
+    <div class="grid cols-2 reveal" style="margin-top:1.4rem; align-items:start;">
+      <ol class="body-list" style="counter-reset:none;">
+        <li><strong>Order it like a writing-center session:</strong> HOC before LOC. Lead with structure/argument/evidence; demote surface notes.</li>
+        <li><strong>Make the reverse outline a first-class early artifact.</strong> "Here's the argument your draft actually makes" — cheapest high-value, zero-ghostwriting move.</li>
+        <li><strong>Build claim→evidence as a graded annotation, not a verdict.</strong> Attach an over-claim score <em>and the evidence span.</em> "Half-supported" beats a red/green stamp.</li>
+        <li><strong>Treat "does the source say this" as the moat — ship defensively.</strong> Show provenance; require human acceptance; never auto-apply.</li>
+      </ol>
+      <ol class="body-list" start="5">
+        <li><strong>Frame findings as questions,</strong> not corrections — conversation starters the writer answers in their own words.</li>
+        <li><strong>Keep AI's hands off prose.</strong> The homogenization evidence says the voice cost is real and measured. The constraint is a feature.</li>
+        <li><strong>Everything stays off the keystroke path.</strong> Verification is now cheap enough to run async at length — exactly where "typing latency is P0" wants it.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 14 — CAVEATS + OPEN QUESTIONS -->
+  <section class="slide" id="s14" data-kicker="Honesty" data-title="Caveats &amp; open questions">
+    <div class="reveal kicker">What this research does NOT establish</div>
+    <h2 class="reveal">Limits, gaps, and what to check next</h2>
+    <div class="grid cols-2 reveal" style="margin-top:1.4rem; align-items:start;">
+      <div class="card" style="border-color: var(--gold-soft);">
+        <div class="n" style="color:var(--gold)">CAVEATS</div>
+        <ul class="body-list warn" style="margin-top:0.6rem;">
+          <li><strong>Tractability ≠ solved.</strong> RIGOURATE ~0.5 CCC; VeriFastScore r=0.80 with ~29% omission; citation-support 33–80%. Provenance + human accept mandatory.</li>
+          <li><strong>Domain-transfer risk.</strong> Peer-review + verification evidence is biomedical/structured. Transfer to open-web general essays is unproven.</li>
+          <li><strong>Part 1C (journalism) is under-verified</strong> — quoted, not gated. Re-source before load-bearing use.</li>
+          <li><strong>Recency.</strong> Core LLM sources are Jan–May 2026 preprints; figures move fast.</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color: rgba(154,166,255,0.25);">
+        <div class="n" style="color:var(--violet)">OPEN QUESTIONS</div>
+        <ul class="body-list q" style="margin-top:0.6rem;">
+          <li>Does claim→evidence checking transfer from structured papers to <strong>open-web general essays?</strong></li>
+          <li>What's the measured effect of <strong>AI vs instructor feedback</strong> on revision quality? (The classroom RCTs didn't surface — a real gap.)</li>
+          <li>How well can systems <strong>steelman opposing literature</strong> and surface the best missed source? Currently unmeasured — and it's a core gaddr feature.</li>
+          <li>What guardrails reliably keep annotation from sliding into <strong>ghostwriting or homogenization?</strong></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 15 — SOURCES / CLOSE -->
+  <section class="slide" id="s15" data-kicker="Appendix" data-title="Sources">
+    <div class="reveal kicker">Primary sources · ✅ verified &nbsp;◐ contextual</div>
+    <h2 class="reveal">The evidence base</h2>
+    <div class="grid cols-2 reveal" style="margin-top:1.4rem; align-items:start; font-size:0.92rem;">
+      <div style="display:flex; flex-direction:column; gap:0.9rem;">
+        <div class="card">
+          <div class="n">Composition &amp; writing centers</div>
+          <p class="src">✅ <a href="https://eric.ed.gov/?id=EJ240356">Sommers 1980, CCC</a><br/>✅ <a href="https://www.southwestern.edu/live/files/3233-higher-vs-lower-orderpdf">Southwestern HOC/LOC triage</a><br/>✅ <a href="https://writing.wisc.edu/handbook/reverseoutlines/">UW–Madison, Reverse Outlines</a><br/>◐ <a href="https://books.google.com/books/about/Engaging_Ideas.html?id=Xbgs9MvcsjsC">Bean, Engaging Ideas</a></p>
+        </div>
+        <div class="card">
+          <div class="n">Academic peer review</div>
+          <p class="src">✅ <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2586872/">Schroter 2008</a> · <a href="https://www.cochranelibrary.com/cdsr/doi/10.1002/14651858.MR000056">Cochrane MR000056</a><br/>✅ <a href="https://www.pnas.org/doi/10.1073/pnas.2401232121">Aczel 2025, PNAS</a> · <a href="https://link.springer.com/article/10.1007/s11192-017-2516-6">Jirschitzka 2017</a><br/>✅ <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1824709/">Cobo 2007</a> · <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6745784/">RIPR 2019</a></p>
+        </div>
+        <div class="card">
+          <div class="n">Journalism &amp; editing (contextual)</div>
+          <p class="src">◐ <a href="https://www.cjr.org/critical_eye/fact-checking_at_the_new_yorker.php">CJR — New Yorker fact-checking</a><br/>◐ <a href="https://niemanreports.org/the-essence-of-journalism-is-a-discipline-of-verifications/">Nieman — Elements of Journalism</a><br/>◐ <a href="https://press.uchicago.edu/ucp/books/book/chicago/D/bo201563215.html">Norton, Developmental Editing</a></p>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:0.9rem;">
+        <div class="card" style="border-color: var(--gold-soft);">
+          <div class="n" style="color:var(--gold)">LLM verification &amp; failure modes</div>
+          <p class="src">✅ <a href="https://arxiv.org/pdf/2601.04350">RIGOURATE (Jan 2026)</a><br/>✅ <a href="https://arxiv.org/html/2505.16973v1">VeriFastScore (EMNLP 2025)</a><br/>✅ <a href="https://arxiv.org/pdf/2605.07723">Ginsparg et al. 111M audit</a> · <a href="https://www.nature.com/articles/d41586-026-01545-1">Nature</a><br/>✅ <a href="https://arxiv.org/pdf/2504.08687">Kim et al. 2025 — feedback as dialogue</a><br/>◐ <a href="https://arxiv.org/pdf/2309.05196">Padmakumar &amp; He — content diversity</a><br/>◐ <a href="https://aman.ai/primers/ai/factuality-in-LLMs/">FActScore/SAFE primer</a> · <a href="https://arxiv.org/html/2510.17853v4">CiteAudit / ICLR figures</a></p>
+        </div>
+        <div class="card lead" style="border-color: var(--teal-soft);">
+          <div class="n" style="color:var(--teal)">The one-line takeaway</div>
+          <p style="color:var(--ink); font-family:var(--display); font-size:1.2rem; font-style:italic; line-height:1.3;">Every editorial tradition prioritizes the global layer first; LLMs are best at the exhaustive version of it — and the single unsolved, highest-value check, "does the source actually say this," is gaddr's to win.</p>
+        </div>
+        <p class="src">Full report: <span style="color:var(--ink-2)">docs/research-first-draft-feedback-and-llm-inference.md</span></p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- HUD -->
+<div class="dots" id="dots"></div>
+<div class="hint" id="hint"><kbd>←</kbd> <kbd>→</kbd> navigate · <kbd>O</kbd> overview · <kbd>F</kbd> fullscreen</div>
+<div class="nav-btns">
+  <button id="prev" aria-label="Previous slide">‹</button>
+  <button id="next" aria-label="Next slide">›</button>
+</div>
+
+<!-- Overview -->
+<div id="overview">
+  <h4>All slides — click to jump · Esc to close</h4>
+  <div class="ov-grid" id="ovGrid"></div>
+</div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var total = slides.length;
+  var cur = 0;
+  var progress = document.getElementById('progress');
+  var counterCur = document.querySelector('.counter .cur');
+  var counterTot = document.querySelector('.counter .tot');
+  var dotsWrap = document.getElementById('dots');
+  var prevBtn = document.getElementById('prev');
+  var nextBtn = document.getElementById('next');
+  var overview = document.getElementById('overview');
+  var ovGrid = document.getElementById('ovGrid');
+  var hint = document.getElementById('hint');
+
+  counterTot.textContent = pad(total);
+
+  // build dots
+  slides.forEach(function (s, i) {
+    var d = document.createElement('button');
+    d.className = 'dot';
+    d.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+    d.addEventListener('click', function () { go(i); });
+    dotsWrap.appendChild(d);
+  });
+  var dots = Array.prototype.slice.call(dotsWrap.children);
+
+  // build overview cards
+  slides.forEach(function (s, i) {
+    var c = document.createElement('button');
+    c.className = 'ov-card';
+    c.innerHTML = '<div class="ov-n">' + pad(i + 1) + '</div>' +
+      '<div class="ov-k">' + (s.dataset.kicker || '') + '</div>' +
+      '<div class="ov-t">' + (s.dataset.title || '') + '</div>';
+    c.addEventListener('click', function () { go(i); closeOverview(); });
+    ovGrid.appendChild(c);
+  });
+  var ovCards = Array.prototype.slice.call(ovGrid.children);
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  function go(i) {
+    i = Math.max(0, Math.min(total - 1, i));
+    var prev = cur;
+    cur = i;
+    slides.forEach(function (s, idx) {
+      if (idx === i) {
+        // re-trigger reveal animation
+        s.classList.remove('active');
+        void s.offsetWidth;
+        s.classList.add('active');
+        s.scrollTop = 0;
+      } else {
+        s.classList.remove('active');
+      }
+    });
+    dots.forEach(function (d, idx) { d.classList.toggle('on', idx === i); });
+    ovCards.forEach(function (c, idx) { c.classList.toggle('current', idx === i); });
+    counterCur.textContent = pad(i + 1);
+    progress.style.width = (total <= 1 ? 100 : (i / (total - 1)) * 100) + '%';
+    prevBtn.disabled = i === 0;
+    nextBtn.disabled = i === total - 1;
+    if (history.replaceState) history.replaceState(null, '', '#' + (i + 1));
+    else location.hash = '#' + (i + 1);
+  }
+
+  function next() { go(cur + 1); }
+  function prev() { go(cur - 1); }
+
+  function openOverview() { overview.classList.add('show'); }
+  function closeOverview() { overview.classList.remove('show'); }
+  function toggleOverview() { overview.classList.contains('show') ? closeOverview() : openOverview(); }
+
+  nextBtn.addEventListener('click', next);
+  prevBtn.addEventListener('click', prev);
+
+  document.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'j') { e.preventDefault(); overview.classList.contains('show') || next(); }
+    else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'k') { e.preventDefault(); overview.classList.contains('show') || prev(); }
+    else if (k === 'Home') { e.preventDefault(); go(0); }
+    else if (k === 'End') { e.preventDefault(); go(total - 1); }
+    else if (k === 'o' || k === 'O') { e.preventDefault(); toggleOverview(); }
+    else if (k === 'Escape') { closeOverview(); }
+    else if (k === 'f' || k === 'F') {
+      e.preventDefault();
+      if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || function(){})(); }
+      else { document.exitFullscreen && document.exitFullscreen(); }
+    }
+    else if (/^[0-9]$/.test(k)) { /* number key -> slide */ var n = parseInt(k, 10); if (n >= 1 && n <= total) go(n - 1); }
+  });
+
+  // touch / swipe
+  var tx = 0, ty = 0;
+  document.addEventListener('touchstart', function (e) { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    var dx = e.changedTouches[0].clientX - tx;
+    var dy = e.changedTouches[0].clientY - ty;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? next() : prev(); }
+  }, { passive: true });
+
+  // hide hint after a moment
+  setTimeout(function () { hint.style.opacity = '0'; }, 5200);
+
+  // deep-link on load + respond to hash edits/back-forward
+  function fromHash() {
+    var n = parseInt((location.hash || '').replace('#', ''), 10);
+    return isNaN(n) ? 0 : n - 1;
+  }
+  go(fromHash());
+  window.addEventListener('hashchange', function () {
+    var i = fromHash();
+    if (i !== cur) go(i);
+  });
+
+  /* ---------- starfield ---------- */
+  var canvas = document.getElementById('sky');
+  var ctx = canvas.getContext('2d');
+  var stars = [], W, H;
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function resize() {
+    W = canvas.width = window.innerWidth * (window.devicePixelRatio || 1);
+    H = canvas.height = window.innerHeight * (window.devicePixelRatio || 1);
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    var count = Math.min(220, Math.floor((window.innerWidth * window.innerHeight) / 9000));
+    stars = [];
+    for (var i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * W, y: Math.random() * H,
+        r: Math.random() * 1.4 * (window.devicePixelRatio || 1) + 0.2,
+        base: Math.random() * 0.5 + 0.15,
+        tw: Math.random() * 0.02 + 0.004,
+        ph: Math.random() * Math.PI * 2,
+        gold: Math.random() > 0.86
+      });
+    }
+  }
+  var t = 0;
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      var a = reduce ? s.base : s.base + Math.sin(t * s.tw * 60 + s.ph) * 0.28;
+      if (a < 0.04) a = 0.04;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = s.gold ? 'rgba(232,184,75,' + a + ')' : 'rgba(226,232,245,' + a + ')';
+      ctx.fill();
+    }
+    t += 0.016;
+    if (!reduce) requestAnimationFrame(draw);
+  }
+  resize();
+  draw();
+  window.addEventListener('resize', function () { resize(); if (reduce) draw(); });
+})();
+</script>
+</body>
+</html>
