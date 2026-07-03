@@ -91,6 +91,18 @@ export type InferenceRunner = {
   dispose(): void;
 };
 
+/**
+ * In-memory-only substrate id for the window between a runner's construction and
+ * its first `reset(sprintId)`. It is deliberately NOT a UUID and would fail the
+ * `sprintId()` brand validator — that is the point: this value must never leave
+ * the runner. It is never persisted to Postgres and never joined against; the
+ * durable sprint id used for spark logging and the constellation handoff is the
+ * client-generated UUID threaded in from the session, not `substrate.sprintId`.
+ * On the normal path `useBackgroundInference` resets the runner with the real
+ * id before the trigger detector is enabled, so bursts don't carry the
+ * placeholder — but that is an emergent property of effect ordering, not an
+ * enforced invariant; nothing downstream may assume it.
+ */
 const PLACEHOLDER_SPRINT_ID = "sprint-pending" as SprintId;
 
 export function createInferenceRunner(

@@ -126,7 +126,9 @@ describe("hashSprintId", () => {
   });
 
   test("different ids generally hash differently", () => {
-    expect(hashSprintId(sid("aaaa"))).not.toBe(hashSprintId(sid("bbbb")));
+    expect(
+      hashSprintId(sid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")),
+    ).not.toBe(hashSprintId(sid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")));
   });
 });
 

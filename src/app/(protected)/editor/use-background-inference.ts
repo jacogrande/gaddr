@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { sprintId as makeSprintId } from "../../../domain/types/branded";
+import type { SprintId } from "../../../domain/types/branded";
 import type { Substrate } from "../../../domain/constellation/types";
 import {
   createInferenceRunner,
@@ -28,8 +28,13 @@ import type { TriggerObserver } from "./use-trigger-detector";
  */
 
 export type UseBackgroundInferenceOptions = {
-  /** True while a sprint is running. Each false->true edge starts a new sprint. */
-  readonly active: boolean;
+  /**
+   * The durable id of the current sprint, or null while idle / pre-start. A new
+   * non-null id starts a fresh substrate; a repeated id (pause→resume, reload
+   * mid-sprint) preserves it. The reset keys on *id change*, never on a running
+   * edge — so pausing and resuming the same sprint does not wipe the substrate.
+   */
+  readonly sprintId: SprintId | null;
 };
 
 export type UseBackgroundInferenceResult = {
@@ -38,10 +43,9 @@ export type UseBackgroundInferenceResult = {
 };
 
 export function useBackgroundInference({
-  active,
+  sprintId,
 }: UseBackgroundInferenceOptions): UseBackgroundInferenceResult {
   const runnerRef = useRef<InferenceRunner | null>(null);
-  const sprintCounterRef = useRef(0);
 
   // Lazily create the runner, recreating it if a prior unmount disposed it.
   // Keeping this idempotent makes the hook StrictMode-safe: the simulated
@@ -73,15 +77,30 @@ export function useBackgroundInference({
     };
   }, [getRunner]);
 
-  // Start a fresh substrate on each new running sprint.
+  // Reset the runner when — and only when — a new sprint id arrives.
+  //
+  // The marker records *which runner instance* was last reset *for which id*.
+  // Keying on both is what makes this correct under two independent forces:
+  //   - Sprint id change (a genuinely new sprint) → id differs → reset. A
+  //     repeated id (pause→resume, reload mid-sprint) → id matches → no reset,
+  //     so the substrate survives.
+  //   - StrictMode's simulated remount disposes the runner and rebuilds a fresh
+  //     one on the second pass; the runner instance differs even though the id
+  //     did not, so the fresh runner still gets its reset. Without the runner
+  //     leg of the comparison, the rebuilt runner would be stranded on its
+  //     pre-reset placeholder substrate.
+  const lastResetRef = useRef<{
+    readonly runner: InferenceRunner;
+    readonly sprintId: SprintId;
+  } | null>(null);
   useEffect(() => {
-    if (!active) return;
-    sprintCounterRef.current += 1;
-    const id = makeSprintId(`sprint-${String(sprintCounterRef.current)}`);
-    if (id.ok) {
-      getRunner().reset(id.value);
-    }
-  }, [active, getRunner]);
+    if (sprintId === null) return;
+    const runner = getRunner();
+    const last = lastResetRef.current;
+    if (last && last.runner === runner && last.sprintId === sprintId) return;
+    lastResetRef.current = { runner, sprintId };
+    runner.reset(sprintId);
+  }, [sprintId, getRunner]);
 
   const observe = useCallback<TriggerObserver>(
     (observation) => {

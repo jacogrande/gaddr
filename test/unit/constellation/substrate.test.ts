@@ -14,7 +14,7 @@ import type {
 } from "../../../src/domain/constellation/types";
 
 const SID: SprintId = (() => {
-  const result = makeSprintId("sprint-test");
+  const result = makeSprintId("33333333-3333-3333-3333-333333333333");
   if (!result.ok) throw new Error("test sprint id");
   return result.value;
 })();

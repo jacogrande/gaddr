@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SprintPhase } from "../../../domain/editor/sprint";
+import { sprintId as brandSprintId } from "../../../domain/types/branded";
+import type { SprintId } from "../../../domain/types/branded";
 import type { WizardMode } from "./freewrite-wizard";
 import {
   SPRINT_STALE_THRESHOLD_MS,
@@ -13,6 +15,28 @@ import {
 const WIZARD_ENTER_MS = 900;
 const WIZARD_EXIT_MS = 520;
 const ONE_MINUTE_MS = 60_000;
+
+/**
+ * Mint a fresh, durable sprint id. Randomness lives in the app layer (the domain
+ * only validates shape). `crypto.randomUUID()` is guaranteed to produce a
+ * canonical UUID, so the brand cast is a trusted-source cast, not a bypass — the
+ * `sprintId()` validator exists to gate *untrusted* inputs (persisted strings).
+ */
+function mintSprintId(): SprintId {
+  return crypto.randomUUID() as SprintId;
+}
+
+/**
+ * Rehydrate a persisted sprint id (an untrusted string) back into a branded
+ * `SprintId`, or null if it is absent or fails the UUID shape check.
+ */
+function rehydrateSprintId(raw: string | null): SprintId | null {
+  if (raw === null) {
+    return null;
+  }
+  const result = brandSprintId(raw);
+  return result.ok ? result.value : null;
+}
 
 export type SprintOption = {
   readonly id: string;
@@ -30,6 +54,12 @@ export type SprintSession = {
   readonly pausedSprintRemainingMs: number | null;
   readonly sprintNowMs: number;
   readonly sprintOption: string;
+  /**
+   * The durable id of the current logical sprint. Null only while idle /
+   * pre-start (wizard shown, no sprint yet). Minted once at sprint creation and
+   * carried across pause/resume and reload; a completed sprint keeps its id.
+   */
+  readonly sprintId: SprintId | null;
   readonly hasRestored: boolean;
   readonly wizardMode: WizardMode;
   readonly resumeOption: ResumeOption | null;
@@ -68,6 +98,7 @@ export function useSprintSession({
   const [pausedSprintRemainingMs, setPausedSprintRemainingMs] = useState<number | null>(null);
   const [sprintNowMs, setSprintNowMs] = useState(() => Date.now());
   const [sprintOption, setSprintOption] = useState(defaultOptionId);
+  const [currentSprintId, setCurrentSprintId] = useState<SprintId | null>(null);
   const [wizardMode, setWizardMode] = useState<WizardMode>("hidden");
   const [hasRestored, setHasRestored] = useState(false);
   const [resumeOption, setResumeOption] = useState<ResumeOption | null>(null);
@@ -85,6 +116,8 @@ export function useSprintSession({
         return;
       }
       const now = Date.now();
+      // A brand-new logical sprint: mint a fresh durable id.
+      setCurrentSprintId(mintSprintId());
       setSprintNowMs(now);
       setSprintOption(option.id);
       setSprintPhase("running");
@@ -140,6 +173,8 @@ export function useSprintSession({
     setSprintPhase("idle");
     setSprintEndsAtMs(null);
     setPausedSprintRemainingMs(null);
+    // Back to pre-start: no sprint identity until the next one is minted.
+    setCurrentSprintId(null);
     setResumeOption(null);
     setWizardMode("transition_in");
     onSprintResetRef.current?.();
@@ -174,6 +209,10 @@ export function useSprintSession({
     if (options.some((option) => option.id === persisted.optionId)) {
       setSprintOption(persisted.optionId);
     }
+    // Resuming a stale sprint continues the same logical sprint: carry the
+    // persisted id if it survived (so its spark/constellation history still
+    // joins), minting only if the persisted payload lacked a valid one.
+    setCurrentSprintId(rehydrateSprintId(persisted.sprintId) ?? mintSprintId());
     setSprintPhase("running");
     setSprintEndsAtMs(now + remainingMs);
     setPausedSprintRemainingMs(null);
@@ -245,7 +284,17 @@ export function useSprintSession({
       return;
     }
 
+    // The persisted sprint has an identity to rehydrate. Restoring the same id
+    // is what keeps a reload mid-sprint the *same* sprint. It is applied only in
+    // the branches that revive an active or completed sprint; the stale-resume
+    // and wizard-fallback branches leave the id null (pre-start) and let
+    // handleWizardResume carry it forward instead.
+    const restoredSprintId = rehydrateSprintId(persisted.sprintId);
+
     if (persisted.phase === "completed") {
+      // A restored completed sprint keeps its id: the future constellation run
+      // hangs off it.
+      setCurrentSprintId(restoredSprintId);
       setSprintPhase("completed");
       onRestoredCompletedRef.current?.();
       setHasRestored(true);
@@ -273,6 +322,7 @@ export function useSprintSession({
 
     if (persisted.phase === "running" && persisted.endsAtMs !== null) {
       const shiftedEndsAt = persisted.endsAtMs + absenceMs;
+      setCurrentSprintId(restoredSprintId);
       if (shiftedEndsAt > now) {
         setSprintPhase("running");
         setSprintEndsAtMs(shiftedEndsAt);
@@ -282,6 +332,7 @@ export function useSprintSession({
         onRestoredCompletedRef.current?.();
       }
     } else if (persisted.phase === "paused" && persisted.pausedRemainingMs !== null) {
+      setCurrentSprintId(restoredSprintId);
       setSprintPhase("paused");
       setPausedSprintRemainingMs(persisted.pausedRemainingMs);
       setSprintNowMs(now);
@@ -301,8 +352,16 @@ export function useSprintSession({
       pausedRemainingMs: pausedSprintRemainingMs,
       optionId: sprintOption,
       lastActiveAtMs: Date.now(),
+      sprintId: currentSprintId,
     });
-  }, [hasRestored, sprintPhase, sprintEndsAtMs, pausedSprintRemainingMs, sprintOption]);
+  }, [
+    hasRestored,
+    sprintPhase,
+    sprintEndsAtMs,
+    pausedSprintRemainingMs,
+    sprintOption,
+    currentSprintId,
+  ]);
 
   // Persist on page hide with a fresh lastActiveAtMs so absence doesn't count
   // against the timer.
@@ -316,6 +375,7 @@ export function useSprintSession({
         pausedRemainingMs: pausedSprintRemainingMs,
         optionId: sprintOption,
         lastActiveAtMs: Date.now(),
+        sprintId: currentSprintId,
       });
     };
     window.addEventListener("pagehide", persistOnLeave);
@@ -324,7 +384,14 @@ export function useSprintSession({
       window.removeEventListener("pagehide", persistOnLeave);
       window.removeEventListener("beforeunload", persistOnLeave);
     };
-  }, [hasRestored, sprintPhase, sprintEndsAtMs, pausedSprintRemainingMs, sprintOption]);
+  }, [
+    hasRestored,
+    sprintPhase,
+    sprintEndsAtMs,
+    pausedSprintRemainingMs,
+    sprintOption,
+    currentSprintId,
+  ]);
 
   return {
     sprintPhase,
@@ -332,6 +399,7 @@ export function useSprintSession({
     pausedSprintRemainingMs,
     sprintNowMs,
     sprintOption,
+    sprintId: currentSprintId,
     hasRestored,
     wizardMode,
     resumeOption,

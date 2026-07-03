@@ -54,6 +54,8 @@ afterEach(() => {
   }
 });
 
+const SPRINT_UUID = "11111111-2222-4333-8444-555555555555";
+
 function validState() {
   return {
     schemaVersion: SPRINT_STATE_SCHEMA_VERSION,
@@ -62,6 +64,7 @@ function validState() {
     pausedRemainingMs: null,
     optionId: "10m",
     lastActiveAtMs: 1_699_999_990_000,
+    sprintId: SPRINT_UUID,
   };
 }
 
@@ -110,6 +113,56 @@ describe("isPersistedShape", () => {
     delete candidate.optionId;
     expect(isPersistedShape(candidate)).toBe(false);
   });
+
+  test("accepts a string sprintId, and null only alongside an idle phase", () => {
+    expect(isPersistedShape({ ...validState(), sprintId: SPRINT_UUID })).toBe(true);
+    expect(
+      isPersistedShape({
+        ...validState(),
+        phase: "idle" as const,
+        endsAtMs: null,
+        sprintId: null,
+      }),
+    ).toBe(true);
+  });
+
+  test("rejects a non-idle phase paired with a null sprintId", () => {
+    // A sprint with a phase but no identity cannot exist on the write path;
+    // restoring one would strand the inference runner on its placeholder id.
+    expect(isPersistedShape({ ...validState(), sprintId: null })).toBe(false);
+    expect(
+      isPersistedShape({
+        ...validState(),
+        phase: "completed" as const,
+        endsAtMs: null,
+        sprintId: null,
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects a non-string, non-null sprintId", () => {
+    expect(isPersistedShape({ ...validState(), sprintId: 42 })).toBe(false);
+    expect(isPersistedShape({ ...validState(), sprintId: {} })).toBe(false);
+  });
+
+  test("rejects missing sprintId (undefined is neither string nor null)", () => {
+    const candidate = { ...validState() } as Record<string, unknown>;
+    delete candidate.sprintId;
+    expect(isPersistedShape(candidate)).toBe(false);
+  });
+
+  test("rejects a v1 payload (no sprintId field, old schema version)", () => {
+    // The exact shape written before the durable-SprintId migration.
+    const v1Payload = {
+      schemaVersion: 1,
+      phase: "running",
+      endsAtMs: 1_700_000_000_000,
+      pausedRemainingMs: null,
+      optionId: "10m",
+      lastActiveAtMs: 1_699_999_990_000,
+    };
+    expect(isPersistedShape(v1Payload)).toBe(false);
+  });
 });
 
 describe("saveSprintState / loadSprintState round-trip", () => {
@@ -120,6 +173,7 @@ describe("saveSprintState / loadSprintState round-trip", () => {
       pausedRemainingMs: 5 * 60_000,
       optionId: "10m",
       lastActiveAtMs: 1_700_000_000_000,
+      sprintId: SPRINT_UUID,
     };
     saveSprintState(state);
     const loaded = loadSprintState();
@@ -130,6 +184,41 @@ describe("saveSprintState / loadSprintState round-trip", () => {
     expect(loaded?.schemaVersion).toBe(SPRINT_STATE_SCHEMA_VERSION);
   });
 
+  test("the durable sprintId survives the round-trip", () => {
+    saveSprintState({
+      phase: "running",
+      endsAtMs: 1_700_000_000_000,
+      pausedRemainingMs: null,
+      optionId: "10m",
+      lastActiveAtMs: 1_700_000_000_000,
+      sprintId: SPRINT_UUID,
+    });
+    expect(loadSprintState()?.sprintId).toBe(SPRINT_UUID);
+  });
+
+  test("a null sprintId round-trips only with an idle phase", () => {
+    saveSprintState({
+      phase: "idle",
+      endsAtMs: null,
+      pausedRemainingMs: null,
+      optionId: "10m",
+      lastActiveAtMs: 1_700_000_000_000,
+      sprintId: null,
+    });
+    expect(loadSprintState()?.sprintId).toBeNull();
+
+    // The same null identity under a running phase is rejected on load.
+    saveSprintState({
+      phase: "running",
+      endsAtMs: 1_700_000_000_000,
+      pausedRemainingMs: null,
+      optionId: "10m",
+      lastActiveAtMs: 1_700_000_000_000,
+      sprintId: null,
+    });
+    expect(loadSprintState()).toBeNull();
+  });
+
   test("save always attaches the current schema version", () => {
     saveSprintState({
       phase: "running",
@@ -137,6 +226,7 @@ describe("saveSprintState / loadSprintState round-trip", () => {
       pausedRemainingMs: null,
       optionId: "10m",
       lastActiveAtMs: 1_700_000_000_000,
+      sprintId: SPRINT_UUID,
     });
     const raw = (globalThis as { window?: { localStorage: Storage } }).window?.localStorage.getItem(
       STORAGE_KEY,
@@ -175,6 +265,21 @@ describe("loadSprintState error handling", () => {
     );
     expect(loadSprintState()).toBeNull();
   });
+
+  test("returns null for a persisted v1 payload (migration drops it cleanly)", () => {
+    (globalThis as { window?: { localStorage: Storage } }).window?.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        schemaVersion: 1,
+        phase: "running",
+        endsAtMs: 1_700_000_000_000,
+        pausedRemainingMs: null,
+        optionId: "10m",
+        lastActiveAtMs: 1_699_999_990_000,
+      }),
+    );
+    expect(loadSprintState()).toBeNull();
+  });
 });
 
 describe("SSR safety", () => {
@@ -192,6 +297,7 @@ describe("SSR safety", () => {
       pausedRemainingMs: null,
       optionId: "10m",
       lastActiveAtMs: 1_700_000_000_000,
+      sprintId: SPRINT_UUID,
     });
   });
 });

@@ -23,8 +23,8 @@ function sid(raw: string): SprintId {
   return result.value;
 }
 
-const SID = sid("sprint-1");
-const SID2 = sid("sprint-2");
+const SID = sid("11111111-1111-1111-1111-111111111111");
+const SID2 = sid("22222222-2222-2222-2222-222222222222");
 
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));

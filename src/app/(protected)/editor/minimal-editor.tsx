@@ -265,7 +265,7 @@ export function MinimalEditor() {
   // Gated on a running sprint; the runner stays off the keystroke path and
   // only does work when a trigger fires.
   const sprintRunning = session.sprintPhase === "running";
-  const inference = useBackgroundInference({ active: sprintRunning });
+  const inference = useBackgroundInference({ sprintId: session.sprintId });
   useTriggerDetector(editor, {
     enabled: sprintRunning,
     observer: inference.observe,
