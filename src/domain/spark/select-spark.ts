@@ -120,6 +120,53 @@ export function hashSprintId(sprintId: SprintId): number {
  * out and a different one is chosen deterministically. Returns `null` when
  * every candidate's lens has already been served (nothing left to rotate to).
  */
+/** A servable set carries at most this many candidates (plan §3.1: 2–3,
+ * distinct lenses, ranked). The assembly cap lives with the assembly rule. */
+export const SPARK_SET_MAX_CANDIDATES = 3;
+
+/**
+ * Assemble the servable candidate list from validator survivors (plan §4.3's
+ * "assemble SparkCandidateSet" step, kept pure so the adapter stays genuinely
+ * thin — architecture.md §7.1). Rules, in rank order (rank = input order = the
+ * model's emission order, which is preserved):
+ *  - drop candidates whose lens was already served this sprint
+ *    (belt-and-suspenders with the prompt exclusion and with `selectSpark`),
+ *  - dedupe by lens AND by question, keeping the first (highest-ranked)
+ *    occurrence — a repeated lens adds no rotation headroom and a repeated
+ *    question adds no variety,
+ *  - cap at `SPARK_SET_MAX_CANDIDATES`.
+ * May return an empty list: "every valid candidate is excluded" is a
+ * legitimate nothing-to-serve outcome, not an error — the caller decides what
+ * an empty assembly means for its flow.
+ */
+export function assembleSparkSet(
+  candidates: readonly SparkCandidate[],
+  servedLenses: readonly SparkLens[],
+): readonly SparkCandidate[] {
+  const served: ReadonlySet<SparkLens> = new Set(servedLenses);
+  const seenLenses = new Set<SparkLens>();
+  const seenQuestions = new Set<string>();
+  const assembled: SparkCandidate[] = [];
+  for (const candidate of candidates) {
+    if (served.has(candidate.lens)) {
+      continue;
+    }
+    if (
+      seenLenses.has(candidate.lens) ||
+      seenQuestions.has(candidate.question)
+    ) {
+      continue;
+    }
+    seenLenses.add(candidate.lens);
+    seenQuestions.add(candidate.question);
+    assembled.push(candidate);
+    if (assembled.length >= SPARK_SET_MAX_CANDIDATES) {
+      break;
+    }
+  }
+  return assembled;
+}
+
 export function selectSpark(
   set: SparkCandidateSet,
   servedLenses: readonly SparkLens[],

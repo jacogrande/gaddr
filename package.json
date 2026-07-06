@@ -30,6 +30,7 @@
     "typescript-eslint": "^8"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/postcss": "^4.1.18",
     "@tiptap/pm": "^3.19.0",

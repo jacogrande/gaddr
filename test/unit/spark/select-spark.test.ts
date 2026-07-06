@@ -5,6 +5,8 @@ import {
   CACHE_MAX_GROWTH_WORDS,
   CACHE_MAX_SHRINK_WORDS,
   MINIMUM_GROUND_WORDS,
+  SPARK_SET_MAX_CANDIDATES,
+  assembleSparkSet,
   countWords,
   hasMinimumGround,
   hashSprintId,
@@ -202,5 +204,74 @@ describe("selectSpark", () => {
     const chosen = selectSpark(set, [], Number.NaN);
     expect(chosen).not.toBeNull();
     expect(chosen?.lens).toBe("economic"); // non-finite → 0
+  });
+});
+
+describe("assembleSparkSet", () => {
+  test("preserves rank (input order = model emission order)", () => {
+    const input = [
+      candidate("economic"),
+      candidate("historical"),
+      candidate("personal"),
+    ];
+    expect(assembleSparkSet(input, []).map((c) => c.lens)).toEqual([
+      "economic",
+      "historical",
+      "personal",
+    ]);
+  });
+
+  test("excludes candidates whose lens was already served", () => {
+    const input = [
+      candidate("economic"),
+      candidate("historical"),
+      candidate("personal"),
+    ];
+    expect(
+      assembleSparkSet(input, ["economic", "personal"]).map((c) => c.lens),
+    ).toEqual(["historical"]);
+  });
+
+  test("dedupes by lens, keeping the first (highest-ranked) occurrence", () => {
+    const first = { ...candidate("economic"), question: "What about price?" };
+    const second = { ...candidate("economic"), question: "What about cost?" };
+    const assembled = assembleSparkSet([first, second, candidate("scale")], []);
+    expect(assembled.map((c) => c.question)).toEqual([
+      "What about price?",
+      "What about scale?",
+    ]);
+  });
+
+  test("dedupes by question across different lenses, keeping the first", () => {
+    const first = { ...candidate("economic"), question: "What about cost?" };
+    const second = { ...candidate("ethical"), question: "What about cost?" };
+    const assembled = assembleSparkSet([first, second], []);
+    expect(assembled.map((c) => c.lens)).toEqual(["economic"]);
+  });
+
+  test("caps at SPARK_SET_MAX_CANDIDATES, dropping the lowest-ranked", () => {
+    const input = [
+      candidate("economic"),
+      candidate("historical"),
+      candidate("personal"),
+      candidate("adversarial"),
+      candidate("scale"),
+    ];
+    const assembled = assembleSparkSet(input, []);
+    expect(assembled.length).toBe(SPARK_SET_MAX_CANDIDATES);
+    expect(assembled.map((c) => c.lens)).toEqual([
+      "economic",
+      "historical",
+      "personal",
+    ]);
+  });
+
+  test("returns empty when every valid candidate is excluded (nothing-to-serve, not an error)", () => {
+    const input = [candidate("economic"), candidate("historical")];
+    expect(assembleSparkSet(input, ["economic", "historical"])).toEqual([]);
+  });
+
+  test("returns empty for empty input", () => {
+    expect(assembleSparkSet([], [])).toEqual([]);
   });
 });
