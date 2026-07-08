@@ -34,8 +34,11 @@ import {
   elapsedMs,
   eventCandidate,
   parseGenerateResponse,
+  shouldAcceptSettle,
   shouldPrepare,
   shouldSettlePrepare,
+  sprintLeaveDetail,
+  telemetryEmitMode,
   telemetryForTransition,
   toCandidateSet,
   wordsSincePrepare,
@@ -111,6 +114,28 @@ export function useSpark({
   const sprintStartedAtMsRef = useRef<number>(Date.now());
   const lastResetSprintIdRef = useRef<SprintId | null>(null);
   const wasRunningRef = useRef(false);
+  // Monotonic request sequence: every generate request (prepare OR summon)
+  // captures the next value at FIRE time, and the cache records the seq that
+  // wrote it — so a stale settle can never regress a fresher one (plan §3.3
+  // staleness; see `shouldAcceptSettle`). Never reset: a reload/new sprint
+  // clears the cache (cacheSeq → null), so monotonicity across sprints is fine.
+  const requestSeqRef = useRef(0);
+  // Latches the below-minimum-ground `failed`/`insufficient-ground` log to at
+  // most once per resting period, so a held ⌘. (OS key auto-repeat, ~15–30/s)
+  // cannot flood durable rows. Cleared on the next edit (re-arm) and on reset.
+  const insufficientGroundLoggedRef = useRef(false);
+  // The prepare-time metadata of the SET a candidate about to be dispatched was
+  // selected from. Each dispatch site stamps this immediately before a
+  // candidate-bearing dispatch; `dispatchSpark` consumes it (one-shot) when
+  // building the active card. Reading `cacheRef` at dispatch time instead would
+  // race the keep-freshest rule: a fresher prepare may have won the cache while
+  // a summon serves its OWN response, and the served/faded staleness telemetry
+  // would then describe the wrong preparation.
+  const pendingServeContextRef = useRef<{
+    readonly preparedAtMs: number;
+    readonly preparedWordCount: number;
+    readonly promptVersion: string;
+  } | null>(null);
 
   const queueRef = useRef<ClientSparkEventPayload[]>([]);
   const flushTimerRef = useRef<number | null>(null);
@@ -208,13 +233,35 @@ export function useSpark({
   // Build and enqueue the durable event a transition warrants. Reads the served
   // card's captured context (`activeCardRef`) so a `faded`/`dismissed` reports the
   // exact spark that was on screen, plus the live counts.
+  //
+  // The sprint id comes from the CARD, not from `sprintIdRef`: a STOP nulls the
+  // live id in the same commit that ends the sprint, so a `dismissed`/`sprint-end`
+  // for a card that was up at stop would otherwise be dropped (null id → early
+  // return). The card carries the sprint it belongs to, so the row is attributed
+  // even after the live id is gone.
+  //
+  // Delivery timing follows `telemetryEmitMode` (spark-glue):
+  //  - keystroke-path transitions (faded, escape, served/rerolled) DEFER the
+  //    O(draft) `readWordCount` + enqueue via queueMicrotask — typing latency is
+  //    P0 (plan §5.3) and no draft-length work may sit on the keydown/capture
+  //    path. The flush is already async, so ordering and payload content are
+  //    unchanged; only the timing shifts.
+  //  - phase-edge dismissals (sprint-end / sprint-paused) enqueue SYNCHRONOUSLY:
+  //    they come from a stop/pause click or the timer (not the typing path), and
+  //    the phase-edge effect calls flushEvents() right after the dispatch — a
+  //    deferred enqueue would land AFTER that boundary flush and strand the
+  //    dismissal (on STOP the reset-effect flush is also skipped via the null-id
+  //    early-return, so the boundary flush is the only reliable carrier).
+  // `card` is snapshotted before any deferral so a later serve cannot swap it
+  // out from under a pending faded/dismissed row.
   const emitTelemetry = useCallback(
     (telemetry: TransitionTelemetry) => {
-      const sid = sprintIdRef.current;
       const card = activeCardRef.current;
-      if (sid === null || card === null) {
+      if (card === null) {
         return;
       }
+      const sid = card.sprintId;
+      const deliver = () => {
       const now = Date.now();
       const wordCount = readWordCount();
       const sprintElapsedMs = elapsedMs(sprintStartedAtMsRef.current, now);
@@ -278,6 +325,12 @@ export function useSpark({
           );
           return;
       }
+      };
+      if (telemetryEmitMode(telemetry) === "sync") {
+        deliver();
+      } else {
+        queueMicrotask(deliver);
+      }
     },
     [enqueueEvent, readWordCount],
   );
@@ -298,18 +351,33 @@ export function useSpark({
       const next = sparkSession(prev, event);
       const telemetry = telemetryForTransition(prev, event, next);
 
+      // One-shot consume of the serve context the dispatch site stamped (see
+      // `pendingServeContextRef`): cleared unconditionally so an ignored
+      // dispatch (e.g. a late candidatesReady outside `summoning`) cannot leak
+      // a stale context into a future serve.
+      const serveContext = pendingServeContextRef.current;
+      pendingServeContextRef.current = null;
+
       if (telemetry !== null && (telemetry.kind === "served" || telemetry.kind === "rerolled")) {
         const candidate = eventCandidate(event);
-        if (candidate !== null) {
+        const sid = sprintIdRef.current;
+        // A serve/reroll only reaches here with a live sprint (summon and reroll
+        // both early-return on a null id), so `sid` is non-null — captured onto
+        // the card so a later dismissal can be attributed to this sprint even
+        // after a STOP nulls the live id.
+        if (candidate !== null && sid !== null) {
           servedLensesRef.current = [...servedLensesRef.current, candidate.lens];
-          const cache = cacheRef.current;
-          const now = Date.now();
           activeCardRef.current = {
+            sprintId: sid,
             lens: candidate.lens,
             question: candidate.question,
-            promptVersion: cache?.set.promptVersion ?? SPARK_PROMPT_VERSION,
-            preparedAtMs: cache?.preparedAtMs ?? now,
-            preparedWordCount: cache?.preparedWordCount ?? readWordCount(),
+            // From the dispatch site's stamp — the metadata of the SET this
+            // candidate actually came from, immune to a fresher prepare having
+            // replaced cacheRef in the meantime. The fallbacks only cover a
+            // (should-be-unreachable) unstamped dispatch.
+            promptVersion: serveContext?.promptVersion ?? SPARK_PROMPT_VERSION,
+            preparedAtMs: serveContext?.preparedAtMs ?? Date.now(),
+            preparedWordCount: serveContext?.preparedWordCount ?? readWordCount(),
           };
         }
       }
@@ -330,7 +398,13 @@ export function useSpark({
 
   const firePrepare = useCallback(
     async (draft: string, wordCount: number, sid: SprintId): Promise<void> => {
-      const sprintElapsedMs = elapsedMs(sprintStartedAtMsRef.current, Date.now());
+      // Stamp identity + freshness at FIRE time: `seq` orders this request against
+      // every other, and `firedAtMs`/`wordCount` anchor the cache to the ground
+      // it was built on — never to the settle moment (a slow prepare must not
+      // look fresh, plan §3.3).
+      const seq = (requestSeqRef.current += 1);
+      const firedAtMs = Date.now();
+      const sprintElapsedMs = elapsedMs(sprintStartedAtMsRef.current, firedAtMs);
       try {
         const response = await fetch(SPARK_GENERATE_ENDPOINT, {
           method: "POST",
@@ -347,17 +421,22 @@ export function useSpark({
           return; // silent; the word-delta throttle already advanced, so we don't hammer
         }
         const data: unknown = await response.json();
-        if (!shouldSettlePrepare(sid, sprintIdRef.current)) {
-          return; // a prepare from a prior sprint must never populate this one's cache
-        }
         const parsed = parseGenerateResponse(data);
         if (parsed === null) {
           return;
         }
+        // Write only if this is still the current sprint AND no fresher request
+        // (a later prepare, or a summon-fallback) already wrote the cache.
+        if (
+          !shouldAcceptSettle(seq, cacheRef.current?.seq ?? null, sid, sprintIdRef.current)
+        ) {
+          return;
+        }
         cacheRef.current = {
           set: toCandidateSet(sid, parsed),
-          preparedAtMs: Date.now(),
-          preparedWordCount: parsed.draftWordCount,
+          preparedAtMs: firedAtMs,
+          preparedWordCount: wordCount,
+          seq,
         };
       } catch {
         // Transport failure — swallow. No UI, ever, from pre-warm (§5.3).
@@ -378,7 +457,9 @@ export function useSpark({
 
   const fireSummonRequest = useCallback(
     async (draft: string, wordCount: number, sid: SprintId): Promise<void> => {
-      const sprintElapsedMs = elapsedMs(sprintStartedAtMsRef.current, Date.now());
+      const seq = (requestSeqRef.current += 1);
+      const firedAtMs = Date.now();
+      const sprintElapsedMs = elapsedMs(sprintStartedAtMsRef.current, firedAtMs);
       // No explicit "settled" latch is needed: the reducer's laws make every
       // ordering idempotent. `candidatesReady` and `failed` take effect ONLY in
       // `summoning` (§3.4), so a late timeout after a card showed, or a late
@@ -436,12 +517,29 @@ export function useSpark({
           return;
         }
         const set = toCandidateSet(sid, parsed);
-        cacheRef.current = {
-          set,
-          preparedAtMs: Date.now(),
-          preparedWordCount: parsed.draftWordCount,
-        };
+        // Serve from THIS response unconditionally (it is what the writer
+        // summoned). Write it to the cache only if it is still the freshest
+        // request — a prepare that fired later must not be regressed by this
+        // summon's settle, nor vice versa (plan §3.3; `shouldAcceptSettle`).
+        if (
+          shouldAcceptSettle(seq, cacheRef.current?.seq ?? null, sid, sprintIdRef.current)
+        ) {
+          cacheRef.current = {
+            set,
+            preparedAtMs: firedAtMs,
+            preparedWordCount: wordCount,
+            seq,
+          };
+        }
         const candidate = selectSpark(set, servedLensesRef.current, hashSprintId(sid));
+        // Stamp THIS response's fire-time metadata for the serve — never read
+        // back from cacheRef, which a fresher prepare may have won (the served
+        // staleness telemetry must describe the set actually served).
+        pendingServeContextRef.current = {
+          preparedAtMs: firedAtMs,
+          preparedWordCount: wordCount,
+          promptVersion: parsed.promptVersion,
+        };
         dispatchSpark({ type: "candidatesReady", candidate });
       } catch {
         clearFallbackTimer();
@@ -473,16 +571,24 @@ export function useSpark({
     const wordCount = countWords(draft);
 
     if (!hasMinimumGround(wordCount)) {
-      // Quiet no-op below minimum ground: nothing renders, logged failed/insufficient-ground.
-      enqueueEvent(
-        buildInsufficientGroundEvent({
-          eventId: crypto.randomUUID(),
-          sprintId: sid,
-          draftWordCount: wordCount,
-          sprintElapsedMs: elapsedMs(sprintStartedAtMsRef.current, Date.now()),
-          promptVersion: SPARK_PROMPT_VERSION,
-        }),
-      );
+      // Quiet no-op below minimum ground: nothing renders. Log it at most ONCE
+      // per resting period — a held ⌘. auto-repeats ~15–30×/s and the TipTap
+      // shortcut API exposes no `event.repeat`, so without this latch every
+      // repeat would append a durable failed/insufficient-ground row. The latch
+      // clears on the next edit (`notifyEdit`), so a fresh below-ground summon
+      // after the writer types can log again.
+      if (!insufficientGroundLoggedRef.current) {
+        insufficientGroundLoggedRef.current = true;
+        enqueueEvent(
+          buildInsufficientGroundEvent({
+            eventId: crypto.randomUUID(),
+            sprintId: sid,
+            draftWordCount: wordCount,
+            sprintElapsedMs: elapsedMs(sprintStartedAtMsRef.current, Date.now()),
+            promptVersion: SPARK_PROMPT_VERSION,
+          }),
+        );
+      }
       return;
     }
 
@@ -490,6 +596,13 @@ export function useSpark({
     if (cache !== null && isCacheServable(cache.set, wordCount)) {
       const candidate = selectSpark(cache.set, servedLensesRef.current, hashSprintId(sid));
       if (candidate !== null) {
+        // Stamp the serving set's metadata for the dispatch (see
+        // `pendingServeContextRef`): here the cache IS the set being served.
+        pendingServeContextRef.current = {
+          preparedAtMs: cache.preparedAtMs,
+          preparedWordCount: cache.preparedWordCount,
+          promptVersion: cache.set.promptVersion,
+        };
         dispatchSpark({ type: "summon", candidate }); // fresh cache → render synchronously
         return;
       }
@@ -516,6 +629,15 @@ export function useSpark({
     // (it is already in servedLensesRef), so no second model call — instant, once.
     const candidate =
       cache !== null ? selectSpark(cache.set, servedLensesRef.current, hashSprintId(sid)) : null;
+    if (cache !== null && candidate !== null) {
+      // The reroll candidate is selected from the CURRENT cache, so its
+      // metadata is the correct serve context for the rerolled card.
+      pendingServeContextRef.current = {
+        preparedAtMs: cache.preparedAtMs,
+        preparedWordCount: cache.preparedWordCount,
+        promptVersion: cache.set.promptVersion,
+      };
+    }
     dispatchSpark({ type: "reroll", candidate });
   }, [dispatchSpark]);
 
@@ -523,6 +645,8 @@ export function useSpark({
     if (sprintPhaseRef.current !== "running") {
       return;
     }
+    // An edit re-arms below-ground logging (a new resting period begins).
+    insufficientGroundLoggedRef.current = false;
     dispatchSpark({ type: "edit" });
   }, [dispatchSpark]);
 
@@ -532,7 +656,13 @@ export function useSpark({
       if (sid === null || sprintPhaseRef.current !== "running") {
         return;
       }
-      const wordCount = countWords(observation.text);
+      // Word count is O(draft) and this runs on the keystroke path, so it is
+      // passed to `shouldPrepare` as a MEMOIZED thunk: the cheap O(1) gates
+      // (in-flight, reason, boundary) run first, and the count is computed at
+      // most once, only when a trigger actually qualifies (plan §5.3).
+      let cachedCount: number | null = null;
+      const wordCount = (): number =>
+        (cachedCount ??= countWords(observation.text));
       if (
         !shouldPrepare({
           reason: observation.reason,
@@ -545,10 +675,12 @@ export function useSpark({
         return;
       }
       // Advance the throttle anchor at ATTEMPT time (bounds cost regardless of
-      // outcome) and mark in-flight before firing.
-      lastPreparedWordCountRef.current = wordCount;
+      // outcome) and mark in-flight before firing. `wordCount()` reuses the
+      // memoized value shouldPrepare already computed — no second count.
+      const count = wordCount();
+      lastPreparedWordCountRef.current = count;
       prepareInFlightRef.current = true;
-      void firePrepare(observation.text, wordCount, sid);
+      void firePrepare(observation.text, count, sid);
     },
     [firePrepare],
   );
@@ -573,17 +705,29 @@ export function useSpark({
     lastPreparedWordCountRef.current = null;
     prepareInFlightRef.current = false;
     activeCardRef.current = null;
+    insufficientGroundLoggedRef.current = false;
+    pendingServeContextRef.current = null;
     sprintStartedAtMsRef.current = Date.now();
     stateRef.current = initialSparkSession();
     setState(initialSparkSession());
   }, [sprintId, flushEvents]);
 
-  // When the sprint stops (leaves `running`), dismiss any live card and flush.
-  // The machine is otherwise driven only while running (§3.4).
+  // When the sprint leaves `running` (stop, natural completion, OR pause),
+  // dismiss any live card and flush. The dismissal detail distinguishes a pause
+  // (running → paused, resumes under the same id → `sprint-paused`) from a true
+  // end (running → idle | completed → `sprint-end`), so a pause with a card up
+  // is no longer mislogged as an end of a sprint that in fact continues.
+  //
+  // Boundary-flush guarantee: phase-edge dismissals are enqueued SYNCHRONOUSLY
+  // inside the dispatch (`telemetryEmitMode` → "sync"), so the flushEvents()
+  // below ships them. Were they deferred to a microtask (like keystroke-path
+  // telemetry), they would land AFTER this flush and strand — on a STOP the
+  // reset effect never flushes either (the id is null), leaving only the 4s
+  // timer/pagehide. The machine is otherwise driven only while running (§3.4).
   useEffect(() => {
     const running = sprintPhase === "running";
     if (wasRunningRef.current && !running) {
-      dispatchSpark({ type: "sprintEnd" });
+      dispatchSpark({ type: "sprintEnd", detail: sprintLeaveDetail(sprintPhase) });
       flushEvents();
     }
     wasRunningRef.current = running;

@@ -116,7 +116,16 @@ export type SparkEventType =
  * A closed union so the reason distribution is a queryable signal, not free
  * text. Failure reasons: nothing to ground on, transport/model errors, the
  * validator exhausting every candidate, or rate limiting. Dismiss reasons: the
- * writer escaped, or the sprint ended under the card.
+ * writer escaped, the sprint ended under the card, or the sprint was PAUSED
+ * under the card.
+ *
+ * `sprint-end` vs `sprint-paused` is a load-bearing distinction: a card up when
+ * the sprint truly ends (stop / natural completion) is `sprint-end`, but a card
+ * up when the sprint is merely PAUSED (and will resume under the same sprint id)
+ * is `sprint-paused`. Conflating them let a pause masquerade as an end in
+ * telemetry — a sprint that resumes would show a spurious `sprint-end`
+ * dismissal, possibly several per sprint. The reader can now tell a genuine
+ * end-of-sprint dismissal from a mid-sprint pause dismissal.
  */
 export type SparkEventDetail =
   | "insufficient-ground"
@@ -124,7 +133,8 @@ export type SparkEventDetail =
   | "validation-exhausted"
   | "rate-limited"
   | "escape"
-  | "sprint-end";
+  | "sprint-end"
+  | "sprint-paused";
 
 /**
  * A durable Spark telemetry event (plan §4.4). This is the pure *semantic*

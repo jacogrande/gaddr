@@ -169,7 +169,9 @@ describe("structuredCall — stop_reason branches", () => {
     ];
     const { result, calls, attempts } = await run(
       [
-        reply({ stopReason: "pause_turn", rawContent: pauseContent }),
+        // Empty pre-pause text: this test isolates the block-echo behaviour; the
+        // text-accumulation across a pause has its own regression test below.
+        reply({ stopReason: "pause_turn", text: "", rawContent: pauseContent }),
         reply({ stopReason: "end_turn", text: "DONE" }),
       ],
       (text) =>
@@ -188,6 +190,33 @@ describe("structuredCall — stop_reason branches", () => {
     }
     expect(attempts.map((a) => a.outcome)).toEqual(["pause-turn", "ok"]);
     expect(attempts.map((a) => a.retryCount)).toEqual([0, 1]);
+  });
+
+  test("REGRESSION: pause_turn carries pre-pause text forward so parse sees the whole turn (finding 9)", async () => {
+    // The model emits the first half of the JSON, pauses, then completes it. The
+    // parse must receive the CONCATENATION of both chunks, not just the final one.
+    let sawText: string | undefined;
+    const { result, calls } = await run(
+      [
+        reply({
+          stopReason: "pause_turn",
+          text: '{"candidates":[',
+          rawContent: [{ type: "server_tool_use", id: "srv_1" }],
+        }),
+        reply({ stopReason: "end_turn", text: "]}" }),
+      ],
+      (text): StructuredParseOutcome<readonly string[]> => {
+        sawText = text;
+        return text === '{"candidates":[]}'
+          ? { result: ok<readonly string[]>(["whole"]) }
+          : { result: err({ reasons: [`partial: ${text}`] }) };
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual(["whole"]);
+    expect(sawText).toBe('{"candidates":[]}'); // concatenated across the pause
+    expect(calls.length).toBe(2);
   });
 
   test("an unknown stop_reason maps to malformed-output without crashing", async () => {

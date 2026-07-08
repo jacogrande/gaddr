@@ -11,6 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { handleSparkEvents } from "../../../src/app/api/spark/events/handler";
 import { INT4_MAX } from "../../../src/app/api/spark/validate";
+import { createRateLimiter } from "../../../src/app/api/spark/rate-limit";
 import type { SparkEventsDeps } from "../../../src/app/api/spark/deps";
 import type { RequireSession } from "../../../src/app/api/spark/deps";
 import {
@@ -61,6 +62,10 @@ function makeDeps(o: Partial<SparkEventsDeps> = {}): SparkEventsDeps {
   return {
     requireSession: o.requireSession ?? okSession,
     eventSink: o.eventSink ?? recordingSink().sink,
+    // A generous default limiter so existing tests are unaffected; the limiter
+    // test below injects a tight one.
+    eventsLimiter: o.eventsLimiter ?? createRateLimiter(1000, 60_000),
+    now: o.now ?? (() => 1000),
   };
 }
 
@@ -129,6 +134,24 @@ describe("handleSparkEvents — auth & batch shape", () => {
     expect(res.status).toBe(413);
     expect(records.length).toBe(0); // nothing was parsed or recorded
   });
+
+  test("REGRESSION: per-user rate limiter — over the cap → 429 with Retry-After (finding 4)", async () => {
+    // The route had NO limiter, so a hostile client / ⌘. auto-repeat flood past
+    // the client latch could write durable rows unbounded. Inject a tight cap.
+    const { sink, records } = recordingSink();
+    const deps = makeDeps({
+      eventSink: sink,
+      eventsLimiter: createRateLimiter(2, 60_000),
+      now: () => 1000,
+    });
+    expect((await handleSparkEvents(req([eventItem()]), deps)).status).toBe(202);
+    expect((await handleSparkEvents(req([eventItem()]), deps)).status).toBe(202);
+    const denied = await handleSparkEvents(req([eventItem()]), deps);
+    expect(denied.status).toBe(429);
+    expect(denied.headers.get("Retry-After")).not.toBeNull();
+    // The denied request never touched the sink (limiter runs before parsing).
+    expect(records.length).toBe(2);
+  });
 });
 
 describe("handleSparkEvents — per-item validation & accounting", () => {
@@ -189,9 +212,10 @@ describe("handleSparkEvents — per-item validation & accounting", () => {
       // The probe from the review: faded+rate-limited must not validate.
       { item: eventItem({ type: "faded", detail: "rate-limited" }), accepted: false },
       { item: eventItem({ type: "faded" }), accepted: true },
-      // dismissed REQUIRES escape or sprint-end.
+      // dismissed REQUIRES escape, sprint-end, or sprint-paused (finding 1).
       { item: eventItem({ type: "dismissed", detail: "escape" }), accepted: true },
       { item: eventItem({ type: "dismissed", detail: "sprint-end" }), accepted: true },
+      { item: eventItem({ type: "dismissed", detail: "sprint-paused" }), accepted: true },
       { item: eventItem({ type: "dismissed" }), accepted: false },
       { item: eventItem({ type: "dismissed", detail: "transport" }), accepted: false },
       // client failed: ONLY insufficient-ground.

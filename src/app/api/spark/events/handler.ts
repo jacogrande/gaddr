@@ -38,6 +38,7 @@ import {
   MAX_EVENTS_BODY_BYTES,
   parseEventItem,
 } from "../validate";
+import { EVENTS_RATE_WINDOW_MS } from "../rate-limit";
 import type { SparkEventsDeps } from "../deps";
 import type { SparkEvent } from "../../../../domain/spark/types";
 import type { SparkEventSink } from "../../../../domain/spark/ports";
@@ -79,6 +80,19 @@ export async function handleSparkEvents(
     return jsonError(401, "authentication required");
   }
   const userId = session.value.userId;
+
+  // Per-user request cap (review: this route had no limiter at all, so a hostile
+  // client — or a ⌘. auto-repeat flood past the client latch — could write
+  // durable rows unbounded). Over the cap → 429; the client fire-and-forgets, so
+  // a dropped beacon is a non-event. Checked before buffering the body.
+  const verdict = deps.eventsLimiter.check(userId, deps.now());
+  if (!verdict.allowed) {
+    return jsonError(429, "rate limited", {
+      "Retry-After": String(
+        verdict.retryAfterSeconds ?? Math.ceil(EVENTS_RATE_WINDOW_MS / 1000),
+      ),
+    });
+  }
 
   // Cheap pre-parse gate on the DECLARED size, before json() buffers anything
   // (review major: this route had no size guard at all). The header may be

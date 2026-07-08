@@ -47,7 +47,11 @@ function generateReq(sprintId: string, reason = "prepare"): Request {
   return new Request("http://test/api/spark", {
     method: "POST",
     body: JSON.stringify({
-      draft: "Mass production made goods affordable for ordinary people at scale.",
+      // Comfortably above the server-side minimum-ground floor (finding 7), so
+      // the mock adapter is reached rather than the below-ground 200-empty path.
+      draft:
+        "Mass production made goods affordable for ordinary people and slowly " +
+        "reshaped how households across the whole country bought everyday things.",
       draftWordCount: 20,
       sprintElapsedMs: 1000,
       sprintId,

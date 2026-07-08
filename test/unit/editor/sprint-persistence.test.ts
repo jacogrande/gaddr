@@ -145,6 +145,24 @@ describe("isPersistedShape", () => {
     expect(isPersistedShape({ ...validState(), sprintId: {} })).toBe(false);
   });
 
+  test("REGRESSION: rejects a non-idle phase with a non-UUID sprintId (finding 2)", () => {
+    // A legacy `sprint-1`-style id would pass the domain brand's shape check nowhere
+    // and rehydrate to null, stranding the session. Reject it at the trust boundary.
+    expect(isPersistedShape({ ...validState(), sprintId: "sprint-1" })).toBe(false);
+    expect(isPersistedShape({ ...validState(), sprintId: "not-a-uuid" })).toBe(false);
+    expect(
+      isPersistedShape({
+        ...validState(),
+        phase: "paused" as const,
+        endsAtMs: null,
+        pausedRemainingMs: 60_000,
+        sprintId: "sprint-pending",
+      }),
+    ).toBe(false);
+    // A genuine UUID on a non-idle phase still passes.
+    expect(isPersistedShape({ ...validState(), sprintId: SPRINT_UUID })).toBe(true);
+  });
+
   test("rejects missing sprintId (undefined is neither string nor null)", () => {
     const candidate = { ...validState() } as Record<string, unknown>;
     delete candidate.sprintId;
@@ -262,6 +280,17 @@ describe("loadSprintState error handling", () => {
     (globalThis as { window?: { localStorage: Storage } }).window?.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ ...validState(), schemaVersion: 99 }),
+    );
+    expect(loadSprintState()).toBeNull();
+  });
+
+  test("REGRESSION: returns null for a stored running payload with a non-UUID sprintId (finding 2)", () => {
+    // The probe input: a `sprint-1` id on a running phase. The shape gate rejects
+    // it at load, so the session resets cleanly to the wizard rather than
+    // restoring onto a null id.
+    (globalThis as { window?: { localStorage: Storage } }).window?.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...validState(), sprintId: "sprint-1" }),
     );
     expect(loadSprintState()).toBeNull();
   });

@@ -12,7 +12,11 @@
  *  2. Branch EXHAUSTIVELY on `stop_reason` before touching content:
  *       - refusal    → non-retryable InferenceError{malformed-output}
  *       - max_tokens → ONE retry with a larger budget, then dead-end
- *       - pause_turn → continue the turn (echo the assistant blocks back)
+ *       - pause_turn → continue the turn (echo the assistant blocks back AND
+ *                      carry the pre-pause text forward, so the eventual parse
+ *                      sees the whole turn). NB: continuation semantics are not
+ *                      yet verified against real Anthropic pause payloads — that
+ *                      lands with the first tool-bearing stage (S1).
  *       - end_turn   → parse
  *       - anything else / unknown → mapped to malformed-output, never a crash.
  *  3. Hand the text to the caller's parse+validate function. A validation failure
@@ -342,6 +346,16 @@ export async function structuredCall<T>(
   let repairUsed = false;
   let pauseContinuations = 0;
   let attemptIndex = 0;
+  // Text emitted BEFORE a pause_turn is carried forward and prepended to the
+  // continuation's text, so `parse` sees the whole turn's output, not just the
+  // final chunk (review: pre-pause text was echoed into `messages` but dropped
+  // from the parse input, so a JSON payload split across a pause never parsed).
+  // Reset whenever a NEW generation begins (a max_tokens retry or a repair),
+  // since those re-generate rather than continue. NOTE: pause_turn continuation
+  // semantics are not yet verified against real Anthropic pause payloads — that
+  // lands with the first tool-bearing harness stage (S1); Spark sends no tools,
+  // so this path should not fire in production before then.
+  let pausePrefix = "";
 
   const emit = (
     outcome: InferenceAttemptOutcome,
@@ -429,6 +443,7 @@ export async function structuredCall<T>(
         }
         maxTokensRetryUsed = true;
         currentMaxTokens = currentMaxTokens * MAX_TOKENS_RETRY_MULTIPLIER;
+        pausePrefix = ""; // a retry re-generates — discard any pause accumulation
         attemptIndex += 1;
         continue;
       }
@@ -443,8 +458,10 @@ export async function structuredCall<T>(
             ),
           );
         }
-        // Echo the assistant blocks back verbatim (merged into a trailing
-        // assistant turn if one exists); the server resumes the turn.
+        // Carry this chunk's text forward so the eventual parse sees the whole
+        // turn, and echo the assistant blocks back verbatim (merged into a
+        // trailing assistant turn if one exists); the server resumes the turn.
+        pausePrefix += response.text;
         messages = withAssistantEcho(messages, response.rawContent);
         pauseContinuations += 1;
         attemptIndex += 1;
@@ -454,7 +471,9 @@ export async function structuredCall<T>(
       case "end_turn":
       case "stop_sequence":
       case null: {
-        const parsed = options.parse(response.text);
+        // Prepend any text carried over from pause_turn continuations so parse
+        // sees the whole turn, not just this final chunk.
+        const parsed = options.parse(pausePrefix + response.text);
         const yieldInfo = {
           candidatesReturned: parsed.candidatesReturned,
           candidatesValid: parsed.candidatesValid,
@@ -475,6 +494,7 @@ export async function structuredCall<T>(
           );
         }
         repairUsed = true;
+        pausePrefix = ""; // the repair re-generates from scratch — drop the prefix
         // Standard repair shape: echo the bad turn (merging into a trailing
         // assistant echo left by a pause continuation, so roles stay strictly
         // alternating), then a user turn carrying the exact validator error

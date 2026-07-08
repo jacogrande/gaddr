@@ -104,7 +104,18 @@ function buildSet(
     MOCK_MAX_CANDIDATES,
   );
   if (chosen.length === 0) {
-    return err(mockError("Every lens has already been served this sprint"));
+    // Every lens already served → a legitimate NOTHING-TO-SERVE outcome, not a
+    // generation defect. Mirror the real adapter (spark-adapter.ts:166-172),
+    // which returns ok with an EMPTY set here (200 + a `prepared` row), NOT an
+    // err (which would 502 + a `validation-exhausted` row). The genuinely
+    // ungenerable case — no groundable span — stays `err` above, matching the
+    // real adapter's zero-validator-survivors path.
+    return ok({
+      sprintId,
+      candidates: [],
+      draftWordCount: countWords(draft),
+      promptVersion: SPARK_PROMPT_VERSION,
+    });
   }
 
   const candidates: readonly SparkCandidate[] = chosen.map((lens) => ({

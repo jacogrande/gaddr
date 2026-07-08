@@ -158,6 +158,14 @@ describe("showing — the card lifecycle", () => {
     expect(sparkSession(showing, event)).toEqual(SPENT);
   });
 
+  test("sprintEnd with a telemetry detail transitions identically (reducer ignores detail, finding 1)", () => {
+    // The `detail` field is telemetry-only; the machine must treat every
+    // sprintEnd the same, regardless of pause vs end.
+    expect(sparkSession(showing, { type: "sprintEnd", detail: "sprint-paused" })).toEqual(SPENT);
+    expect(sparkSession(showing, { type: "sprintEnd", detail: "sprint-end" })).toEqual(SPENT);
+    expect(sparkSession(showing, { type: "sprintEnd" })).toEqual(SPENT);
+  });
+
   test("keystroke fades the card even after a re-roll", () => {
     const rerolled = sparkSession(showing, {
       type: "reroll",

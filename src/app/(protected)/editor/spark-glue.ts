@@ -18,6 +18,7 @@ import type {
   BoundaryType,
   TriggerReason,
 } from "../../../domain/editor/trigger-detector";
+import type { SprintPhase } from "../../../domain/editor/sprint";
 import type { SprintId } from "../../../domain/types/branded";
 import { MINIMUM_GROUND_WORDS } from "../../../domain/spark/select-spark";
 import type {
@@ -79,16 +80,27 @@ export const SPARK_EVENT_MAX_BATCH = 20;
 // ── The cached candidate set plus the metadata telemetry needs ────────────────
 
 /** A prepared set held in the hook, with the two fields the `served`/`faded`
- * events carry for staleness calibration (plan §4.4). */
+ * events carry for staleness calibration (plan §4.4). `preparedAtMs` and
+ * `preparedWordCount` are stamped at request-FIRE time (not at settle time) so a
+ * slow prepare cannot masquerade as fresh; `seq` is the monotonic request
+ * sequence that wrote this cache, so a stale settle can never regress it (see
+ * `shouldAcceptSettle`). */
 export type SparkCache = {
   readonly set: SparkCandidateSet;
   readonly preparedAtMs: number;
   readonly preparedWordCount: number;
+  /** The request sequence that produced this cache. Monotonic across the hook's
+   * lifetime; a later settle (higher seq) always wins, an earlier one is dropped. */
+  readonly seq: number;
 };
 
 /** The context of the card currently on screen, captured at serve time so the
- * later `faded`/`dismissed` event reports the same spark it served. */
+ * later `faded`/`dismissed` event reports the same spark it served. Carries the
+ * `sprintId` the card belongs to so a dismissal can still be attributed to that
+ * sprint even after the live sprint id has been nulled (a STOP nulls the id in
+ * the same commit that ends the sprint — the card outlives the id). */
 export type ActiveCard = {
+  readonly sprintId: SprintId;
   readonly lens: SparkLens;
   readonly question: string;
   readonly promptVersion: string;
@@ -104,18 +116,25 @@ export type ActiveCard = {
  * one-in-flight, qualifying reason, meaningful boundary, minimum ground, then the
  * word-delta throttle (first prepare is always allowed once there is ground).
  *
- * Known limitation (documented, not fixed here): `countWords` — which feeds
- * `currentWordCount` and the min-ground gate below — is whitespace-delimited, so
- * space-less scripts (CJK, Thai, …) count a whole run as one "word" and
- * drastically under-count. Spark is effectively English-first until a
- * domain-level segmenter (e.g. `Intl.Segmenter`) lands in `select-spark.ts`;
- * the domain validator's interrogative-mood grammar is English-only anyway, so
- * the gate is not the binding constraint.
+ * KEYSTROKE-PATH COST (plan §5.3, typing latency is P0): `currentWordCount` is a
+ * THUNK, not a value, and the three O(1) gates (in-flight, reason, boundary) run
+ * BEFORE it is ever called. Only a genuinely qualifying trigger — a small
+ * fraction of keystrokes — pays the O(draft) word count. The hook memoizes the
+ * thunk so a qualifying trigger counts at most once. A non-qualifying keystroke
+ * does zero counting.
+ *
+ * Known limitation (documented, not fixed here): `countWords` — which the thunk
+ * and the min-ground gate below rest on — is whitespace-delimited, so space-less
+ * scripts (CJK, Thai, …) count a whole run as one "word" and drastically
+ * under-count. Spark is effectively English-first until a domain-level segmenter
+ * (e.g. `Intl.Segmenter`) lands in `select-spark.ts`; the domain validator's
+ * interrogative-mood grammar is English-only anyway, so the gate is not the
+ * binding constraint.
  */
 export function shouldPrepare(params: {
   readonly reason: TriggerReason;
   readonly boundary: BoundaryType | undefined;
-  readonly currentWordCount: number;
+  readonly currentWordCount: () => number;
   readonly lastPreparedWordCount: number | null;
   readonly inFlight: boolean;
 }): boolean {
@@ -128,13 +147,15 @@ export function shouldPrepare(params: {
   if (params.boundary === undefined || !MEANINGFUL_PREPARE_BOUNDARIES.has(params.boundary)) {
     return false; // weak or mid-word boundary — not worth a call
   }
-  if (params.currentWordCount < MINIMUM_GROUND_WORDS) {
+  // Only now — past the cheap gates — do we pay the O(draft) word count.
+  const wordCount = params.currentWordCount();
+  if (wordCount < MINIMUM_GROUND_WORDS) {
     return false; // nothing to ground on yet
   }
   if (params.lastPreparedWordCount === null) {
     return true; // never prepared this sprint — the first prepare is free of the throttle
   }
-  return params.currentWordCount - params.lastPreparedWordCount >= PREPARE_WORD_DELTA;
+  return wordCount - params.lastPreparedWordCount >= PREPARE_WORD_DELTA;
 }
 
 // ── Clocks & counts (clamped to the non-negative int the routes accept) ───────
@@ -168,7 +189,10 @@ export type TransitionTelemetry =
   | { readonly kind: "served" }
   | { readonly kind: "rerolled" }
   | { readonly kind: "faded" }
-  | { readonly kind: "dismissed"; readonly detail: "escape" | "sprint-end" };
+  | {
+      readonly kind: "dismissed";
+      readonly detail: "escape" | "sprint-end" | "sprint-paused";
+    };
 
 /**
  * Classify what durable event, if any, a spark-session transition emits (plan
@@ -206,10 +230,55 @@ export function classifyTransition(
       return { kind: "dismissed", detail: "escape" };
     }
     if (event.type === "sprintEnd") {
-      return { kind: "dismissed", detail: "sprint-end" };
+      // The phase-edge effect stamps `detail` (sprint-end for a stop/completion,
+      // sprint-paused for a pause); a bare sprintEnd defaults to sprint-end.
+      return { kind: "dismissed", detail: event.detail ?? "sprint-end" };
     }
   }
   return null;
+}
+
+/**
+ * Map the phase a running sprint just LEFT to the dismissal detail a card up at
+ * that moment carries. A pause (running → paused, same sprint id, resumes later)
+ * is `sprint-paused`; a stop or natural completion (running → idle | completed)
+ * is `sprint-end`. Pure, so the phase→detail classification is unit-tested
+ * without a browser; the hook feeds the result onto the `sprintEnd` event.
+ */
+export function sprintLeaveDetail(
+  nextPhase: SprintPhase,
+): "sprint-end" | "sprint-paused" {
+  return nextPhase === "paused" ? "sprint-paused" : "sprint-end";
+}
+
+/**
+ * How a transition's telemetry must be delivered to the client event queue:
+ *
+ *  - "sync": PHASE-EDGE dismissals (`sprint-end` / `sprint-paused`). These are
+ *    triggered by a stop/pause click or the sprint timer — never the typing hot
+ *    path — AND the phase-edge effect calls `flushEvents()` synchronously right
+ *    after the dispatch (the boundary-flush guarantee: on a STOP the sprint id
+ *    nulls, so the reset-effect flush never runs and the timer/pagehide is the
+ *    only other carrier). A deferred (microtask) enqueue would land AFTER that
+ *    flush and silently strand the dismissal, so it must be enqueued
+ *    synchronously, in the same call stack as the dispatch, before the flush.
+ *
+ *  - "defer": everything else — `faded` (keystroke), `dismissed`/`escape`
+ *    (keydown capture), `served`/`rerolled` (hotkey path). These ride the
+ *    synchronous keydown/capture path where typing latency is P0 (plan §5.3),
+ *    so the O(draft) word count and the enqueue are pushed to a microtask; no
+ *    synchronous flush follows them, so nothing is stranded.
+ */
+export function telemetryEmitMode(
+  telemetry: TransitionTelemetry,
+): "sync" | "defer" {
+  if (
+    telemetry.kind === "dismissed" &&
+    (telemetry.detail === "sprint-end" || telemetry.detail === "sprint-paused")
+  ) {
+    return "sync";
+  }
+  return "defer";
 }
 
 /**
@@ -248,6 +317,29 @@ export function shouldSettlePrepare(
   currentSprintId: SprintId | null,
 ): boolean {
   return firedForSprintId === currentSprintId;
+}
+
+/**
+ * May a resolving request WRITE its result into the cache? Sprint identity alone
+ * is not enough (the bug this closes): a prepare fired at word N can resolve
+ * AFTER a later request — a summon-fallback, or a fresher prepare — already
+ * populated the cache at word N+k, and would then REGRESS the cache to the older
+ * ground while looking fresh. So a settle writes only when (a) it still belongs
+ * to the current sprint AND (b) its monotonic request `seq` is strictly greater
+ * than the seq that last wrote the cache (`cacheSeq`, or `null` if the cache is
+ * empty). Because seq is assigned at FIRE time, "greater seq" means "issued
+ * later", so the freshest request always wins and a straggler never clobbers it.
+ */
+export function shouldAcceptSettle(
+  firedSeq: number,
+  cacheSeq: number | null,
+  firedForSprintId: SprintId,
+  currentSprintId: SprintId | null,
+): boolean {
+  if (firedForSprintId !== currentSprintId) {
+    return false; // wrong sprint — never write another sprint's cache
+  }
+  return cacheSeq === null || firedSeq > cacheSeq;
 }
 
 /** The candidate a reducer event carries (summon/candidatesReady/reroll), or
@@ -360,14 +452,14 @@ export function buildFadedEvent(params: {
   };
 }
 
-/** `dismissed`: escape or sprint-end over a live card; detail is REQUIRED by the
- * route's coherence check. */
+/** `dismissed`: escape, sprint-end, or sprint-paused over a live card; detail is
+ * REQUIRED by the route's coherence check. */
 export function buildDismissedEvent(params: {
   readonly eventId: string;
   readonly sprintId: SprintId;
   readonly lens: SparkLens;
   readonly question: string;
-  readonly detail: "escape" | "sprint-end";
+  readonly detail: "escape" | "sprint-end" | "sprint-paused";
   readonly draftWordCount: number;
   readonly sprintElapsedMs: number;
   readonly promptVersion: string;

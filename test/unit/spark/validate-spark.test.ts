@@ -369,6 +369,62 @@ describe("validateSparkCandidate — discourse markers and fronted prefixes", ()
     expect(reasonOf(validateSparkCandidate(wire({ question }), DRAFT))).toBe("OK");
   });
 
+  test.each([
+    // PROBE-CONFIRMED regressions (review round 2, item 1): the finite-verb
+    // screen must NOT run on the preposition branch — a plural-noun object
+    // right after a preposition is ordinary English, and a preposition cannot
+    // head a finite clause. All five were accepted before the finding-5 fix
+    // and must stay accepted.
+    "In factories, what changed?",
+    "For workers, what changed?",
+    "In cities, who benefited?",
+    "About costs, who paid?",
+    "Among consumers, what shifted?",
+  ])("a prep-fronted prefix with a plural-noun object passes: %s", (question) => {
+    expect(reasonOf(validateSparkCandidate(wire({ question }), DRAFT))).toBe("OK");
+  });
+
+  test.each([
+    // PROBE-CONFIRMED false-accepts (finding 5): an "-ing" pronoun/noun leading a
+    // declarative clause used to slip past the fronted-participle heuristic.
+    "Nothing lasts forever, why did repair culture die?",
+    "Everything is disposable now, who benefits from that?",
+    // Belt-and-suspenders: a gerund subject + finite verb is still a declarative.
+    "Painting sells well, who buys it?",
+  ])("an '-ing'-led declarative preamble is rejected: %s", (question) => {
+    expect(reasonOf(validateSparkCandidate(wire({ question }), DRAFT))).toBe(
+      "declarative-preamble",
+    );
+  });
+
+  test("a perfect-participial 'Having …' head is not a finite clause (review item 5)", () => {
+    // "Having" forces the verb that follows into participial form — "said" here
+    // is a participle, not a finite verb — so the second-token finite screen is
+    // exempt under this head.
+    expect(
+      reasonOf(
+        validateSparkCandidate(
+          wire({ question: "Having said that, what about quality?" }),
+          DRAFT,
+        ),
+      ),
+    ).toBe("OK");
+  });
+
+  test("a 'Having …' head with a LATER finite verb is still a declarative preamble", () => {
+    // Finiteness re-enters after the participle position ("is") — the
+    // gerund-subject clause reading. The closed finite-form scan past token 2
+    // catches it, so the having/being exemption does not re-open finding 5.
+    expect(
+      reasonOf(
+        validateSparkCandidate(
+          wire({ question: "Having doubts is normal, why worry about repair?" }),
+          DRAFT,
+        ),
+      ),
+    ).toBe("declarative-preamble");
+  });
+
   test("a fronted prefix followed by a pivot-led clause is still a preamble", () => {
     // Comma + pivot conjunction is the declarative-clause signature even when
     // the prefix itself is prepositional.
@@ -393,6 +449,39 @@ describe("validateSparkCandidate — discourse markers and fronted prefixes", ()
         ),
       ),
     ).toBe("declarative-preamble");
+  });
+});
+
+describe("validateSparkCandidate — Unicode normalization (finding 6)", () => {
+  const ACUTE = "́"; // combining acute accent (produces NFD when appended)
+  // Draft with "café" written in DECOMPOSED form: "cafe" + U+0301.
+  const nfdDraft = `The town has a lively cafe${ACUTE} culture that draws crowds nightly.`;
+  // Same phrase written in COMPOSED (NFC) form: U+00E9.
+  const nfcGrounding = "café culture";
+
+  test("an NFD draft matches an NFC grounding span (not falsely ungrounded)", () => {
+    const result = validateSparkCandidate(
+      wire({ question: "What about affordability?", grounding: nfcGrounding }),
+      nfdDraft,
+    );
+    expect(reasonOf(result)).toBe("OK");
+  });
+
+  test("NFC draft + NFC grounding control still matches", () => {
+    const nfcDraft = "The town has a lively café culture that draws crowds nightly.";
+    const result = validateSparkCandidate(
+      wire({ question: "What about affordability?", grounding: nfcGrounding }),
+      nfcDraft,
+    );
+    expect(reasonOf(result)).toBe("OK");
+  });
+
+  test("a genuinely-absent grounding span is still rejected under normalization", () => {
+    const result = validateSparkCandidate(
+      wire({ question: "What about affordability?", grounding: "berlin nightlife" }),
+      nfdDraft,
+    );
+    expect(reasonOf(result)).toBe("ungrounded");
   });
 });
 

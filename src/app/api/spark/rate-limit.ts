@@ -45,6 +45,19 @@ export const PREPARE_RATE_WINDOW_MS = 60_000;
 export const SUMMON_RATE_LIMIT = 15;
 export const SUMMON_RATE_WINDOW_MS = 60_000;
 
+/**
+ * Events-route cap: 120 telemetry POSTs per user per minute (review: the events
+ * route had NO limiter, so a hostile client — or a ⌘. auto-repeat flood that
+ * slipped the client latch — could write durable rows without bound). This caps
+ * REQUESTS, not individual events; each request is already batch-capped at
+ * `MAX_EVENT_BATCH` (20), so total events are bounded too. Generous against the
+ * real client, which flushes only every few seconds (~15/min). Over the cap →
+ * 429; the client fire-and-forgets its telemetry, so a dropped beacon is a
+ * non-event.
+ */
+export const EVENTS_RATE_LIMIT = 120;
+export const EVENTS_RATE_WINDOW_MS = 60_000;
+
 export interface RateLimitVerdict {
   readonly allowed: boolean;
   /** Seconds until the oldest hit ages out of the window; set only when denied. */

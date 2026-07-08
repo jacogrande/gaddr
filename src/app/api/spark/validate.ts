@@ -160,7 +160,8 @@ function isClientEventType(
  * (`SparkEvent` doc / plan §4.4):
  *  - served/rerolled/faded: no failure or dismiss reason exists — detail must
  *    be ABSENT.
- *  - dismissed: detail is REQUIRED and must say how — 'escape' or 'sprint-end'.
+ *  - dismissed: detail is REQUIRED and must say how — 'escape', 'sprint-end',
+ *    or 'sprint-paused' (a card up when the sprint was paused, not ended).
  *  - failed (client): detail must be 'insufficient-ground' — the one failure a
  *    client can legitimately observe (see `isClientEventType`).
  */
@@ -177,8 +178,14 @@ function checkDetailCoherence(
       }
       return ok(undefined);
     case "dismissed":
-      if (detail !== "escape" && detail !== "sprint-end") {
-        return err("dismissed requires detail 'escape' or 'sprint-end'");
+      if (
+        detail !== "escape" &&
+        detail !== "sprint-end" &&
+        detail !== "sprint-paused"
+      ) {
+        return err(
+          "dismissed requires detail 'escape', 'sprint-end', or 'sprint-paused'",
+        );
       }
       return ok(undefined);
     case "failed":
@@ -196,6 +203,7 @@ const EVENT_DETAILS: readonly SparkEventDetail[] = [
   "rate-limited",
   "escape",
   "sprint-end",
+  "sprint-paused",
 ];
 
 function isEventDetail(value: unknown): value is SparkEventDetail {

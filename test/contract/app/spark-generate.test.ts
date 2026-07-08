@@ -26,6 +26,7 @@ import {
   userId as makeUserId,
 } from "../../../src/domain/types/branded";
 import type { SprintId, UserId } from "../../../src/domain/types/branded";
+import { countWords } from "../../../src/domain/spark/select-spark";
 import { ok, err } from "../../../src/domain/types/result";
 import type {
   SparkCandidate,
@@ -143,9 +144,18 @@ function req(
     body: raw && typeof body === "string" ? body : JSON.stringify(body),
   });
 }
+// A draft comfortably ABOVE the minimum-ground floor (server-computed), so the
+// default generate flow reaches the model (finding 7 added a server-side floor).
+const GROUNDED_DRAFT =
+  "Mass production made goods affordable for ordinary people and slowly " +
+  "reshaped how households across the whole country bought everyday things.";
+const GROUNDED_DRAFT_WORDS = countWords(GROUNDED_DRAFT);
+// A draft BELOW the floor — the server must refuse to call the model.
+const THIN_DRAFT = "Only a few words here.";
+
 function generateBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    draft: "Mass production made goods affordable for ordinary people at scale.",
+    draft: GROUNDED_DRAFT,
     draftWordCount: 20,
     sprintElapsedMs: 1000,
     sprintId: SID_RAW,
@@ -357,6 +367,51 @@ describe("handleSparkGenerate — summon rate cap (abuse bound)", () => {
   });
 });
 
+// ── Server-side minimum-ground floor (finding 7) ─────────────────────────────
+
+describe("handleSparkGenerate — server-authoritative minimum-ground floor", () => {
+  test("prepare below the server-computed floor → 200 empty, NO model call, failed/insufficient-ground with SERVER count", async () => {
+    const { sink, records } = recordingSink();
+    let generated = false;
+    const res = await handleSparkGenerate(
+      // The client LIES with a high word count; the server counts the draft.
+      req(generateBody({ draft: THIN_DRAFT, draftWordCount: 500 })),
+      makeDeps({
+        eventSink: sink,
+        generationPortFor: okPort(DEFAULT_SET, () => {
+          generated = true;
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(generated).toBe(false); // the model was never called
+    const body = await readJson<{ candidates: readonly SparkCandidate[] }>(res);
+    expect(body.candidates).toEqual([]); // client fizzles quietly
+
+    const failed = records.find((r) => r.event.type === "failed");
+    expect(failed?.event.detail).toBe("insufficient-ground");
+    // The row records the server's own count, not the client's inflated claim.
+    expect(failed?.event.draftWordCount).toBe(countWords(THIN_DRAFT));
+    expect(failed?.event.draftWordCount).not.toBe(500);
+  });
+
+  test("summon below the floor is refused the same way (200 empty, no model call)", async () => {
+    let generated = false;
+    const res = await handleSparkGenerate(
+      req(generateBody({ draft: THIN_DRAFT, reason: "summon" })),
+      makeDeps({
+        generationPortFor: okPort(DEFAULT_SET, () => {
+          generated = true;
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(generated).toBe(false);
+    const body = await readJson<{ candidates: readonly SparkCandidate[] }>(res);
+    expect(body.candidates).toEqual([]);
+  });
+});
+
 // ── Success ──────────────────────────────────────────────────────────────────
 
 describe("handleSparkGenerate — success", () => {
@@ -377,8 +432,11 @@ describe("handleSparkGenerate — success", () => {
 
     const prepared = records.find((r) => r.event.type === "prepared");
     expect(prepared).toBeDefined();
-    // word count/elapsed come from the BODY; promptVersion from the returned set.
-    expect(prepared?.event.draftWordCount).toBe(42);
+    // draftWordCount is SERVER-derived (finding 7): the client claimed 42, but
+    // the row records the server's own count of the draft. promptVersion comes
+    // from the returned set.
+    expect(prepared?.event.draftWordCount).toBe(GROUNDED_DRAFT_WORDS);
+    expect(prepared?.event.draftWordCount).not.toBe(42);
     expect(prepared?.event.promptVersion).toBe("spark-v1");
     expect(prepared?.event.lens).toBeUndefined();
   });

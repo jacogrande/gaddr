@@ -36,6 +36,8 @@ import { createDbServedLensQuery } from "./served-lens";
 import type { RateLimiter } from "./rate-limit";
 import {
   createRateLimiter,
+  EVENTS_RATE_LIMIT,
+  EVENTS_RATE_WINDOW_MS,
   PREPARE_RATE_LIMIT,
   PREPARE_RATE_WINDOW_MS,
   SUMMON_RATE_LIMIT,
@@ -73,6 +75,10 @@ export interface SparkGenerateDeps {
 export interface SparkEventsDeps {
   readonly requireSession: RequireSession;
   readonly eventSink: SparkEventSink;
+  /** Per-user cap on telemetry POSTs (~120/min — unreachable by the real
+   * fire-and-forget client, a backstop against route abuse). */
+  readonly eventsLimiter: RateLimiter;
+  readonly now: () => number;
 }
 
 /**
@@ -89,6 +95,10 @@ const sharedPrepareLimiter = createRateLimiter(
 const sharedSummonLimiter = createRateLimiter(
   SUMMON_RATE_LIMIT,
   SUMMON_RATE_WINDOW_MS,
+);
+const sharedEventsLimiter = createRateLimiter(
+  EVENTS_RATE_LIMIT,
+  EVENTS_RATE_WINDOW_MS,
 );
 
 /** The real, db+model-backed backends. Memoized: the db pool and SDK client are
@@ -157,6 +167,8 @@ export async function resolveSparkEventsDeps(): Promise<SparkEventsDeps> {
     return {
       requireSession: () => Promise.resolve(resolveE2ESession()),
       eventSink: sharedE2ESparkStore.sink,
+      eventsLimiter: sharedEventsLimiter,
+      now: Date.now,
     };
   }
 
@@ -164,5 +176,7 @@ export async function resolveSparkEventsDeps(): Promise<SparkEventsDeps> {
   return {
     requireSession: backends.requireSession,
     eventSink: backends.eventSink,
+    eventsLimiter: sharedEventsLimiter,
+    now: Date.now,
   };
 }

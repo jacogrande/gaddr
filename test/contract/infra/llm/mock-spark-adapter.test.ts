@@ -14,6 +14,7 @@ import type {
   SparkCandidate,
   SparkLens,
 } from "../../../../src/domain/spark/types";
+import { SPARK_LENSES } from "../../../../src/domain/spark/types";
 import { createMockSparkGenerationPort } from "../../../../src/infra/llm/mock-spark-adapter";
 
 const DRAFT =
@@ -82,6 +83,35 @@ describe("createMockSparkGenerationPort", () => {
     if (!result.ok) return;
     const lenses = result.value.candidates.map((c) => c.lens);
     expect(new Set(lenses).size).toBe(lenses.length);
+  });
+
+  test("REGRESSION: all lenses served → ok with an EMPTY set, mirroring the real adapter (finding 8)", async () => {
+    // The real adapter returns ok(empty) for validated-but-all-excluded (200 +
+    // a `prepared` row); the mock used to err (502 + a `validation-exhausted`
+    // row). They must agree so E2E and prod behave identically.
+    const port = createMockSparkGenerationPort();
+    const result = await port.generate({
+      draft: DRAFT,
+      sprintId: SID,
+      servedLenses: SPARK_LENSES, // every lens already served this sprint
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.candidates).toEqual([]);
+    expect(result.value.draftWordCount).toBeGreaterThan(0);
+    expect(result.value.sprintId).toBe(SID);
+  });
+
+  test("a draft with no groundable two-word span still errs (matches real zero-survivors)", async () => {
+    const port = createMockSparkGenerationPort();
+    const result = await port.generate({
+      draft: "a", // no ≥2-token span to ground on
+      sprintId: SID,
+      servedLenses: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.reason).toBe("malformed-output");
   });
 
   test("rotates away from servedLenses", async () => {

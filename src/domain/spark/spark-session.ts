@@ -64,7 +64,13 @@ export type SparkSessionState =
  *    candidate, or `null` if none is left.
  *  - `keystroke`      — a keypress; dismisses a live card.
  *  - `escape`         — writer pressed Escape.
- *  - `sprintEnd`      — the sprint stopped.
+ *  - `sprintEnd`      — the sprint left `running` (stopped, completed, OR
+ *    paused). The optional `detail` distinguishes a genuine end from a pause for
+ *    the telemetry classifier ONLY — the machine treats every `sprintEnd`
+ *    identically (a live card drops to `spent`), so the reducer never reads
+ *    `detail` and its laws are unchanged. Threading the detail on the event
+ *    (rather than a second event type) keeps the reducer total and its switches
+ *    minimal; the phase→detail mapping is a pure helper in the hook glue.
  *  - `edit`           — writer produced new content (the re-arm signal).
  *  - `failed`         — the fallback request errored or timed out.
  */
@@ -74,7 +80,11 @@ export type SparkSessionEvent =
   | { readonly type: "reroll"; readonly candidate: SparkCandidate | null }
   | { readonly type: "keystroke" }
   | { readonly type: "escape" }
-  | { readonly type: "sprintEnd" }
+  | {
+      readonly type: "sprintEnd";
+      /** Telemetry-only: how the sprint left `running`. The reducer ignores it. */
+      readonly detail?: "sprint-end" | "sprint-paused";
+    }
   | { readonly type: "edit" }
   | { readonly type: "failed" };
 

@@ -259,11 +259,118 @@ const PIVOT_CONJUNCTIONS: ReadonlySet<string> = new Set<string>([
 const CLAUSE_PIVOT_PATTERN = /,\s*(?:but|so|and|yet)\b/iu;
 
 /**
+ * Words that END in "ing" but are NOT participles — indefinite pronouns and
+ * common nouns. Without this stoplist, a leading declarative like "Nothing lasts
+ * forever, why did repair culture die?" or "Everything is disposable now, who
+ * benefits from that?" would pass the fronted-participle heuristic (its first
+ * token ends in "ing") and let a stance-asserting preamble through. A genuine
+ * fronted participle ("Considering the factories, …") is not in this set.
+ */
+const ING_NON_PARTICIPLES: ReadonlySet<string> = new Set<string>([
+  "nothing",
+  "something",
+  "everything",
+  "anything",
+  "thing",
+  "things",
+  "morning",
+  "evening",
+  "king",
+]);
+
+/**
+ * Common finite-verb surface forms whose "-s/-ed" suffix test misses — copulas,
+ * auxiliaries, and irregular pasts. A finite verb as the SECOND token of a
+ * fronted prefix means the prefix is an independent declarative clause, not an
+ * adverbial phrase — so the whole string is a "declarative then question"
+ * preamble, not a fronted-adverbial interrogative.
+ */
+const FINITE_VERB_FORMS: ReadonlySet<string> = new Set<string>([
+  "is",
+  "was",
+  "are",
+  "were",
+  "am",
+  "has",
+  "had",
+  "have",
+  "got",
+  "made",
+  "said",
+  "went",
+  "came",
+  "did",
+  "does",
+  "done",
+  "will",
+  "would",
+  "can",
+  "could",
+  "should",
+  "must",
+]);
+
+/**
+ * Perfect/passive participial heads. "Having …" forces the verb that FOLLOWS it
+ * into participial (non-finite) form by construction — "Having said that",
+ * "Having considered X" — so a verb-like second token is NOT finiteness
+ * evidence under these heads, and the plain second-token screen would falsely
+ * reject legitimate fronted phrases ("Having said that, what about quality?" —
+ * "said" is a participle there, not a finite verb). "being" is included for
+ * symmetry, though in practice `AUX_OPENERS` intercepts "Being …" strings on
+ * the direct-opener path first (with the comma+pivot screen).
+ */
+const PARTICIPIAL_AUX_HEADS: ReadonlySet<string> = new Set<string>([
+  "having",
+  "being",
+]);
+
+/**
+ * Is a PARTICIPLE-fronted prefix really a declarative independent clause in
+ * disguise — i.e. does it carry a finite verb? A true fronted participial
+ * phrase ("Considering the factories") has no finite verb before the comma; a
+ * gerund-subject clause ("Painting sells well, …") does.
+ *
+ * This screen applies ONLY to the participial branch. A preposition cannot
+ * head a finite clause, and a plural-noun object right after one ("In
+ * factories, …") is ordinary English — running the screen on the preposition
+ * branch falsely rejected prep-fronted sparks (probe regressions: "In
+ * factories, what changed?", "For workers, what changed?").
+ *
+ * The signature, per head:
+ *  - "having"/"being" head: the second token is participial by construction
+ *    (see `PARTICIPIAL_AUX_HEADS`), so it is exempt; finiteness can only
+ *    re-enter LATER ("Having doubts IS normal, …"), so the remaining tokens
+ *    are screened against the closed finite-form set only — the -s/-ed suffix
+ *    heuristic is far too noisy at that distance (most plural nouns trip it).
+ *  - any other participle head: a second token that is a known finite form, or
+ *    ends in "-s"/"-ed" (a conjugated verb). Errs toward rejection — a phrase
+ *    whose second token happens to end in "-s" (a plural noun) is dropped, an
+ *    acceptable cost since the set always has spares (plan §3.2).
+ */
+function participlePrefixHasFiniteVerb(
+  prefixTokens: readonly string[],
+): boolean {
+  const first = prefixTokens[0];
+  if (first !== undefined && PARTICIPIAL_AUX_HEADS.has(first)) {
+    return prefixTokens.slice(2).some((token) => FINITE_VERB_FORMS.has(token));
+  }
+  const second = prefixTokens[1];
+  if (second === undefined) {
+    return false;
+  }
+  return FINITE_VERB_FORMS.has(second) || /(?:s|ed)$/u.test(second);
+}
+
+/**
  * Lowercased word tokens (letters, with internal apostrophes for contractions).
  * Curly apostrophes are folded to straight so "isn't" and "isn’t" both match.
  */
 function words(text: string): readonly string[] {
-  const normalized = text.toLowerCase().replace(/[‘’]/g, "'");
+  // NFC first so a decomposed letter+combining-mark (NFD) folds to its composed
+  // form before tokenizing — the same normalization the grounding path uses, so
+  // draft and question tokenize consistently regardless of Unicode form.
+  const normalized = text.normalize("NFC").toLowerCase().replace(/[‘’]/g, "'");
   return normalized.match(/[\p{L}]+(?:'[\p{L}]+)?/gu) ?? [];
 }
 
@@ -325,23 +432,35 @@ function opensInterrogativeMood(question: string): boolean {
 
   // Fronted adverbial prefix: "<PP / participial phrase>, <interrogative>?"
   // e.g. "In an age of factories, what happened to repair?". Accepted only
-  // when (a) the prefix opens with a preposition or a participle — shapes that
-  // cannot head a finite verb, so the prefix cannot be an independent clause
-  // (a noun-led prefix like "Craftsmanship declined, …" fails here), and
-  // (b) the clause after the comma is not pivot-led (", but what…" is the
-  // declarative-clause signature) and itself opens interrogatively.
+  // when (a) the prefix opens with a preposition or a genuine participle —
+  // (an "-ing" pronoun/noun like "Nothing"/"Everything" is stoplisted so it is
+  // NOT mistaken for a participle; a noun-led prefix like "Craftsmanship
+  // declined, …" fails outright), (b) a PARTICIPLE-fronted prefix carries no
+  // finite verb (so "Painting sells well, …" — a gerund-subject declarative —
+  // is rejected; the screen deliberately does NOT run on the preposition
+  // branch, where a plural noun after the preposition is normal and a
+  // preposition cannot head a finite clause), and (c) the clause after the
+  // comma is not pivot-led (", but what…" is the declarative-clause signature)
+  // and itself opens interrogatively.
   const commaIdx = stripped.indexOf(",");
   if (commaIdx < 0) {
     return false;
   }
-  const prefixFirst = words(stripped.slice(0, commaIdx))[0];
+  const prefixTokens = words(stripped.slice(0, commaIdx));
+  const prefixFirst = prefixTokens[0];
   if (prefixFirst === undefined) {
     return false;
   }
-  const frontable =
-    PREP_LEADINS.has(prefixFirst) || /ing$/u.test(prefixFirst);
-  if (!frontable) {
+  const prepFronted = PREP_LEADINS.has(prefixFirst);
+  const participleFronted =
+    !prepFronted &&
+    /ing$/u.test(prefixFirst) &&
+    !ING_NON_PARTICIPLES.has(prefixFirst);
+  if (!prepFronted && !participleFronted) {
     return false;
+  }
+  if (participleFronted && participlePrefixHasFiniteVerb(prefixTokens)) {
+    return false; // a finite verb before the comma ⇒ an independent clause, a preamble
   }
   const body = stripped.slice(commaIdx + 1);
   const bodyFirst = words(body)[0];
@@ -359,9 +478,15 @@ function opensInterrogativeMood(question: string): boolean {
 // than raw substrings so "car" does not match inside "oscar" — a stricter and
 // more correct reading of "appears in the draft after normalization".
 
-/** Lowercase, strip punctuation to spaces, collapse whitespace. */
+/** NFC-normalize, lowercase, strip punctuation to spaces, collapse whitespace.
+ * NFC comes FIRST: an accented character written in decomposed form (NFD, e.g.
+ * "cafe" + U+0301) would otherwise have its combining mark — a Mark, not a
+ * Letter — stripped to a space, so an NFD draft and an NFC grounding span (or
+ * vice versa) would never match and a genuinely grounded spark would be dropped
+ * as ungrounded. Folding both sides to NFC before tokenizing fixes that. */
 function normalize(text: string): string {
   return text
+    .normalize("NFC")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")

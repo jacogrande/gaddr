@@ -28,6 +28,12 @@ const STORAGE_KEY = "gaddr:sprint-state";
 
 export const SPRINT_STALE_THRESHOLD_MS = 60 * 60 * 1000;
 
+/** Canonical UUID shape (structural, case-insensitive) — kept byte-identical to
+ * the domain and route copies so `crypto.randomUUID()` output and test fixtures
+ * pass. A non-idle persisted sprint MUST carry a UUID id (below). */
+const UUID_SHAPE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function isPersistedShape(value: unknown): value is PersistedSprintState {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -57,12 +63,18 @@ export function isPersistedShape(value: unknown): value is PersistedSprintState 
   if (candidate.sprintId !== null && typeof candidate.sprintId !== "string") {
     return false;
   }
-  // A sprint with a phase but no identity cannot exist on the write path
-  // (start/resume always mint or carry an id). Rejecting it here keeps the
-  // "non-idle ⇒ sprintId present" invariant enforced at the trust boundary,
-  // not assumed — a null id restored into a running sprint would leave the
-  // inference runner on its placeholder substrate for the whole session.
-  if (candidate.phase !== "idle" && candidate.sprintId === null) {
+  // A sprint with a phase but no VALID identity cannot exist on the write path
+  // (start/resume always mint or carry a UUID id). Rejecting it here keeps the
+  // "non-idle ⇒ sprintId is a UUID" invariant enforced at the trust boundary,
+  // not assumed — a null OR malformed (e.g. legacy `sprint-1`) id restored into
+  // a running sprint would leave the inference runner on its placeholder
+  // substrate for the whole session. Tightened to the full UUID shape, not just
+  // "present": a non-UUID string would fail the domain brand on rehydrate and
+  // strand the session on a null id despite this guard passing.
+  if (
+    candidate.phase !== "idle" &&
+    (typeof candidate.sprintId !== "string" || !UUID_SHAPE.test(candidate.sprintId))
+  ) {
     return false;
   }
   return true;

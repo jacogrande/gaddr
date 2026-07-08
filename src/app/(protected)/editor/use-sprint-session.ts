@@ -289,12 +289,19 @@ export function useSprintSession({
     // the branches that revive an active or completed sprint; the stale-resume
     // and wizard-fallback branches leave the id null (pre-start) and let
     // handleWizardResume carry it forward instead.
+    //
+    // Mint fallback (defense in depth): `isPersistedShape` now rejects a
+    // non-idle payload whose id is not a UUID, so a restored active/completed
+    // sprint arrives with a valid id and `restoredSprintId` is non-null here.
+    // But reviving a sprint on a null id would strand the session — the runner
+    // and spark cache reset on id change, and a null id never changes — so if
+    // one ever slips through, mint a fresh id rather than persist the strand.
     const restoredSprintId = rehydrateSprintId(persisted.sprintId);
 
     if (persisted.phase === "completed") {
       // A restored completed sprint keeps its id: the future constellation run
       // hangs off it.
-      setCurrentSprintId(restoredSprintId);
+      setCurrentSprintId(restoredSprintId ?? mintSprintId());
       setSprintPhase("completed");
       onRestoredCompletedRef.current?.();
       setHasRestored(true);
@@ -322,7 +329,7 @@ export function useSprintSession({
 
     if (persisted.phase === "running" && persisted.endsAtMs !== null) {
       const shiftedEndsAt = persisted.endsAtMs + absenceMs;
-      setCurrentSprintId(restoredSprintId);
+      setCurrentSprintId(restoredSprintId ?? mintSprintId());
       if (shiftedEndsAt > now) {
         setSprintPhase("running");
         setSprintEndsAtMs(shiftedEndsAt);
@@ -332,7 +339,7 @@ export function useSprintSession({
         onRestoredCompletedRef.current?.();
       }
     } else if (persisted.phase === "paused" && persisted.pausedRemainingMs !== null) {
-      setCurrentSprintId(restoredSprintId);
+      setCurrentSprintId(restoredSprintId ?? mintSprintId());
       setSprintPhase("paused");
       setPausedSprintRemainingMs(persisted.pausedRemainingMs);
       setSprintNowMs(now);

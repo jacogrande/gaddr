@@ -27,6 +27,7 @@ import type {
   SparkLens,
 } from "../../../domain/spark/types";
 import type { SparkEventSink } from "../../../domain/spark/ports";
+import { countWords, hasMinimumGround } from "../../../domain/spark/select-spark";
 import type { InferenceError, PersistenceError } from "../../../domain/types/errors";
 import type { SprintId, UserId } from "../../../domain/types/branded";
 import type { Result } from "../../../domain/types/result";
@@ -138,6 +139,12 @@ export async function handleSparkGenerate(
   }
   const body = parsed.value;
 
+  // The word count the route TRUSTS is computed server-side from the draft, not
+  // taken from `body.draftWordCount` (which is a hostile/buggy client's claim,
+  // kept only as client telemetry). `sprintElapsedMs` stays client-supplied —
+  // the server genuinely has no sprint clock (documented asymmetry, plan §4.5).
+  const serverWordCount = countWords(body.draft);
+
   // Per-reason rate caps, SEPARATE buckets (review major: summon was server-side
   // unthrottled — unbounded spend for a hostile client). The prepare cap protects
   // cost from background pre-warm; the summon cap protects cost from raw-endpoint
@@ -163,6 +170,30 @@ export async function handleSparkGenerate(
     });
   }
 
+  // Minimum-ground floor, server-authoritative (review: the route trusted the
+  // client's word count and had no floor). Below the floor there is nothing to
+  // ground a spark on, so NO model call is made — for a summon OR a prepare. The
+  // real client never reaches here below ground (both the pre-warm gate and the
+  // summon no-op are client-side), so this only fires for a buggy/hostile
+  // client; it responds 200 with an EMPTY set (the real client just fizzles
+  // quietly) and writes the same server-authored failed/insufficient-ground row
+  // the client-side no-op would, with the SERVER word count.
+  if (!hasMinimumGround(serverWordCount)) {
+    await recordSafely(deps.eventSink, userId, {
+      sprintId: body.sprintId,
+      type: "failed",
+      detail: "insufficient-ground",
+      draftWordCount: serverWordCount,
+      sprintElapsedMs: body.sprintElapsedMs,
+      promptVersion: SPARK_PROMPT_VERSION,
+    });
+    return Response.json({
+      candidates: [],
+      draftWordCount: serverWordCount,
+      promptVersion: SPARK_PROMPT_VERSION,
+    });
+  }
+
   // servedLenses is derived SERVER-SIDE from spark_event — never from the client.
   // Failure posture is ASYMMETRIC by reason (review minor):
   //  - prepare → fail CLOSED (502): background work, nothing is lost, and
@@ -184,7 +215,7 @@ export async function handleSparkGenerate(
       sprintId: body.sprintId,
       type: "failed",
       detail: "transport",
-      draftWordCount: body.draftWordCount,
+      draftWordCount: serverWordCount,
       sprintElapsedMs: body.sprintElapsedMs,
       promptVersion: SPARK_PROMPT_VERSION,
     });
@@ -202,7 +233,7 @@ export async function handleSparkGenerate(
       sprintId: body.sprintId,
       type: "failed",
       detail: DETAIL_BY_REASON[result.error.reason],
-      draftWordCount: body.draftWordCount,
+      draftWordCount: serverWordCount,
       sprintElapsedMs: body.sprintElapsedMs,
       promptVersion: SPARK_PROMPT_VERSION,
     });
@@ -220,12 +251,13 @@ export async function handleSparkGenerate(
   const set = result.value;
 
   // Success — including an OK-but-EMPTY set (a legitimate nothing-to-serve
-  // outcome, still a completed prepare). draftWordCount/sprintElapsedMs come from
-  // the client body (the server has no sprint clock); promptVersion from the set.
+  // outcome, still a completed prepare). draftWordCount is SERVER-derived;
+  // sprintElapsedMs comes from the client body (the server has no sprint clock);
+  // promptVersion from the set.
   await recordSafely(deps.eventSink, userId, {
     sprintId: body.sprintId,
     type: "prepared",
-    draftWordCount: body.draftWordCount,
+    draftWordCount: serverWordCount,
     sprintElapsedMs: body.sprintElapsedMs,
     promptVersion: set.promptVersion,
   });
