@@ -222,6 +222,21 @@ The system should store whether a finding is:
 
 That distinction matters for both UX and debugging.
 
+### 7.4 Outbound data posture (server-side inference)
+
+Spark is gaddr's first server-side inference feature, and it changes the data flow: the freewrite draft now leaves the client *during* a sprint, not only at the constellation pass.
+
+- **The draft is transmitted to Anthropic on every pre-warm and every summon.** Pre-warm fires several times per sprint (throttled by a word-delta), so exposure is multiplied relative to an on-summon-only design. The freewrite is the writer's most private artifact, and the whole Spark contract rests on that privacy.
+- **Drafts are never persisted in gaddr's own database, and never appear in telemetry.** `inference_attempt` stores a content-free hash of the input plus counts (tokens, candidates returned vs. valid, latency); `spark_event` stores the served question text (model output needed for no-double-serving), never the writer's prose.
+- **Launch requirement — before any real-key production use:**
+  1. Confirm the Anthropic organization's no-training posture (API data is not used for model training by default at the org level).
+  2. Decide and document Zero-Data-Retention (ZDR) eligibility for the workspace.
+  3. Review Console prompt-logging visibility so the draft is not silently retained where it can be read.
+
+  This is a requirement, not a nice-to-have: pre-warm makes retention Spark's decision. The mock adapter path (`E2E_TESTING=true`) sends nothing outbound and is what the evals run against.
+
+See `docs/plans/spark-implementation.md` §4.4 for the full inbound/outbound content-posture rationale.
+
 ## 8. Environments
 
 - **Local**: fastest loop for editor and harness work

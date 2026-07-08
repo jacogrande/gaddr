@@ -40,9 +40,11 @@ bun run db:push          # Push schema changes directly
 Workflow evals are described in `eval/*.json`. To execute one, invoke the
 `agent-browser` skill — it drives Chrome via CDP, takes accessibility-tree
 snapshots, and walks the workflow steps. There is no headless CI test runner;
-evals are an agent-time activity. Auth-protected flows can run against the dev
-server with `E2E_BYPASS_AUTH=true bun run dev` so the skill can reach
-`/editor` without OAuth.
+evals are an agent-time activity. Auth-protected and inference-backed flows run
+against the dev server with `E2E_TESTING=true E2E_BYPASS_AUTH=true bun run dev` —
+`E2E_TESTING` selects the deterministic mock adapters and in-memory stores (no
+`DATABASE_URL`/`ANTHROPIC_API_KEY` needed), and `E2E_BYPASS_AUTH` skips OAuth so
+the skill can reach `/editor`.
 
 ## Architecture
 
@@ -75,8 +77,8 @@ Dependencies point inward: `app -> infra -> domain`.
 
 - `eval/*.json` contains human-readable workflow specs — the source of truth for user-facing behavior.
 - Workflows are executed agent-driven via the `agent-browser` skill (Chrome + CDP, accessibility-tree refs). There is no automated CI test runner for workflows.
-- `E2E_BYPASS_AUTH=true bun run dev` puts the dev server in a mode that lets the agent reach protected routes without OAuth.
-- Current covered workflows: auth, editor, sprint transition, theme, and navigation.
+- `E2E_TESTING=true E2E_BYPASS_AUTH=true bun run dev` puts the dev server in eval mode: `E2E_TESTING` selects the deterministic mock adapters and in-memory stores, and `E2E_BYPASS_AUTH` lets the agent reach protected routes without OAuth.
+- Current covered workflows: auth, editor, sprint transition, theme, navigation, and spark.
 
 ## Reference Docs
 

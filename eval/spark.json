@@ -1,0 +1,105 @@
+{
+  "module": "spark",
+  "description": "Summonable thinking prompts during a freewrite. Mid-sprint the writer can summon a single one-line dimensional question — a 'spark' — that names a lens their draft hasn't used. The AI never renders, signals, or animates unbidden: a spark card appears only when summoned, fades on the first keystroke, offers exactly one alternative, and never returns on its own. The writing surface stays interruption-free.",
+  "baseUrl": "http://localhost:8080",
+  "preamble": "Requires the dev server started with E2E_TESTING=true E2E_BYPASS_AUTH=true bun run dev. E2E_TESTING selects the deterministic mock spark model (so the served questions are fixed stand-ins, not real model output) and an in-memory event store; E2E_BYPASS_AUTH lets /editor load without OAuth. Spark is active only while a sprint is in the running phase. Summon a spark either by pressing the summon hotkey — Cmd+period on Mac, Ctrl+period otherwise, with the editor focused — or by clicking the small, static spark affordance at the bottom-right edge of the writing surface. A spark needs a minimum amount of draft to ground on (about fifteen words); below that, a summon is a deliberate quiet no-op. The contract to protect throughout: nothing about spark renders, pulses, badges, or animates until the writer summons it.",
+  "workflows": [
+    {
+      "id": "summon-renders-single-question",
+      "name": "Summoning mid-sprint renders exactly one one-line question",
+      "steps": [
+        "Clear local storage and navigate to /editor.",
+        "From the wizard, start a sprint.",
+        "Type a few sentences of a draft (at least twenty words) about some topic, then stop typing.",
+        "Summon a spark (press the summon hotkey or click the small spark affordance at the bottom-right edge of the surface).",
+        "Verify a single spark card appears at the edge of the surface, near the affordance — never at the cursor and never overlaying the draft text.",
+        "Verify the card contains exactly one short question on a single line, ending in a single question mark, with no preamble and no second question.",
+        "Verify the freewrite text itself is untouched — the card adds a question beside the surface, it does not edit or annotate the draft."
+      ]
+    },
+    {
+      "id": "typing-fades-the-card",
+      "name": "Typing fades the card, and it does not return unbidden",
+      "steps": [
+        "Start a sprint and type at least twenty words, then stop.",
+        "Summon a spark and confirm one card is showing.",
+        "Resume typing a few words into the draft.",
+        "Verify the spark card fades out and disappears after the first keystrokes.",
+        "Continue writing for several more seconds and pause again without summoning.",
+        "Verify no spark card reappears on its own — once it has faded it stays gone until the writer summons again."
+      ]
+    },
+    {
+      "id": "different-spark-once",
+      "name": "'Different spark' yields exactly one alternative, then the option disappears",
+      "steps": [
+        "Start a sprint, type at least twenty words, then stop.",
+        "Summon a spark and confirm one card with a question is showing.",
+        "Note the wording of the first question, then click the 'Different spark' control on the card.",
+        "Verify the card now shows one alternative question that differs from the first.",
+        "Verify the 'Different spark' control is gone after that single use — there is no way to re-roll a second time.",
+        "Verify only one card is present the whole time; re-rolling replaces the question in place, it does not stack a second card."
+      ]
+    },
+    {
+      "id": "sprint-with-no-summon-stays-silent",
+      "name": "A full sprint with no summon shows zero spark UI beyond the static affordance",
+      "steps": [
+        "Clear local storage and navigate to /editor, then start a sprint.",
+        "Note the appearance of the small spark affordance at the bottom-right edge of the surface.",
+        "Type a full sentence, then stop typing for about four seconds to force a real pause.",
+        "Type another sentence, then pause for about four seconds again.",
+        "Type a third sentence, then pause for about four seconds a final time — this drives the background preparation that the contract says must stay invisible.",
+        "Throughout the writing and all three pauses, verify no spark card, question, or prompt ever appears anywhere on the surface.",
+        "Verify the spark affordance never pulses, badges, spins, animates, or changes appearance — it looks identical at every moment, whether the writer is typing or paused.",
+        "Verify the writing surface stays completely quiet — no shimmer, no 'thinking' indicator, nothing that signals the writer is being watched."
+      ]
+    },
+    {
+      "id": "early-summon-still-works",
+      "name": "Summoning very early still serves a broad spark (graceful degradation)",
+      "steps": [
+        "Start a sprint and type just two short sentences — roughly fifteen to twenty words — then stop.",
+        "Summon a spark.",
+        "Verify a single spark card still appears with one one-line question, rather than nothing — with only a little draft to work from, a broad dimension is served instead of a sharp one.",
+        "Note: because the model layer is mocked, the exact wording is a fixed stand-in; the point is that an early summon degrades gracefully to a broad question instead of failing."
+      ]
+    },
+    {
+      "id": "summon-below-ground-does-nothing",
+      "name": "Summoning with almost nothing written quietly does nothing",
+      "steps": [
+        "Start a fresh sprint and type only a handful of words — well under a dozen — then stop.",
+        "Summon a spark.",
+        "Verify nothing renders at all: no spark card, no placeholder, no question, and no error or message.",
+        "Verify the spark affordance is unchanged and gives no feedback — the summon is a deliberate quiet no-op because there is not yet enough draft to ground a question on.",
+        "Type several more words so the draft comfortably clears twenty words, stop, and summon again.",
+        "Verify a spark card now appears — once there is enough ground, the same summon works."
+      ]
+    },
+    {
+      "id": "pause-resume-then-summon",
+      "name": "Pausing and resuming the sprint keeps sparks working in the same sprint",
+      "steps": [
+        "Start a sprint and type at least twenty words, then stop.",
+        "Pause the sprint using the timer's pause control.",
+        "Try to summon a spark while paused and verify nothing renders — spark is active only while the sprint is running.",
+        "Resume the sprint using the play control.",
+        "Summon a spark now that the sprint is running again.",
+        "Verify a single spark card appears — pausing and resuming does not end the sprint or reset spark, so sparks still work in the same sprint."
+      ]
+    },
+    {
+      "id": "escape-dismisses-card",
+      "name": "Escape dismisses a card, and a dismissed spark does not reappear",
+      "steps": [
+        "Start a sprint, type at least twenty words, then stop.",
+        "Summon a spark and confirm one card is showing.",
+        "Press Escape.",
+        "Verify the spark card fades out and disappears.",
+        "Pause for several seconds and then continue writing without summoning.",
+        "Verify the dismissed spark does not reappear on its own at any point — dismissal is final until the writer summons again."
+      ]
+    }
+  ]
+}
