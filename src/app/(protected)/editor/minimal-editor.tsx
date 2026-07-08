@@ -10,12 +10,16 @@ import { EditorCardProvider } from "./editor-card-context";
 import { EDITOR_MODIFIER_COMMANDS, type EditorCommand } from "./editor-commands";
 import { GlyphInputRules } from "./glyph-input-rules-extension";
 import { StandardHotkeys } from "./standard-hotkeys-extension";
+import { SparkHotkey } from "./spark-hotkey-extension";
 import { FreewriteWizard } from "./freewrite-wizard";
+import { SparkAffordance } from "./spark-affordance";
+import { SparkCard } from "./spark-card";
 import { useBoardEntry, type BoardMode } from "./use-board-entry";
 import { useSprintSession } from "./use-sprint-session";
 import { useTimerHoverControls } from "./use-timer-hover-controls";
-import { useTriggerDetector } from "./use-trigger-detector";
+import { useTriggerDetector, type TriggerObserver } from "./use-trigger-detector";
 import { useBackgroundInference } from "./use-background-inference";
+import { useSpark } from "./use-spark";
 import { rankFindings } from "../../../domain/constellation/substrate";
 import {
   collectExitingModifierKeys,
@@ -150,6 +154,13 @@ export function MinimalEditor() {
   const boardModeRef = useRef<BoardMode>("hidden");
   const setBoardModeRef = useRef<(mode: BoardMode) => void>(() => undefined);
   const boardEntryActionsRef = useRef<BoardEntryActions | null>(null);
+  // Spark wiring, hoisted so the editor config can reference them via ref (the
+  // editor is built once; these read the latest handler at event time):
+  //  - onUpdate composes in the spark `edit` signal (re-arm / card-end) rather
+  //    than adding a second editor listener (plan §5.1).
+  //  - the ⌘. accelerator reads the current summon-or-noop gate.
+  const sparkNotifyEditRef = useRef<(() => void) | null>(null);
+  const sparkSummonHotkeyRef = useRef<() => boolean>(() => false);
 
   // === Doc persistence callbacks (used by useEditor) ===
   const persistNow = useCallback((current: { getJSON: () => JSONContent }) => {
@@ -207,7 +218,12 @@ export function MinimalEditor() {
   const editor = useEditor({
     immediatelyRender: false,
     autofocus: "end",
-    extensions: [StarterKit, GlyphInputRules, StandardHotkeys],
+    extensions: [
+      StarterKit,
+      GlyphInputRules,
+      StandardHotkeys,
+      SparkHotkey.configure({ onSummon: () => sparkSummonHotkeyRef.current() }),
+    ],
     content: loadDoc(),
     editorProps: {
       attributes: {
@@ -220,6 +236,11 @@ export function MinimalEditor() {
       if (boardModeRef.current === "visible" || boardModeRef.current === "transition_in") {
         setBoardModeRef.current("transition_out");
       }
+      // Feed the spark reducer its `edit` signal off the SINGLE existing update
+      // handler (plan §5.1). It is an O(1) reducer dispatch that returns the same
+      // state object on the common no-op path, so React bails the re-render —
+      // nothing added to the keystroke path (typing latency is P0).
+      sparkNotifyEditRef.current?.();
       schedulePersist(current);
     },
     onBlur: () => {
@@ -261,15 +282,43 @@ export function MinimalEditor() {
   // === Timer chrome hover ===
   const hoverControls = useTimerHoverControls(session.sprintPhase);
 
-  // === Background intelligence (trigger detector -> tiered inference) ===
-  // Gated on a running sprint; the runner stays off the keystroke path and
-  // only does work when a trigger fires.
+  // === Background intelligence (trigger detector -> tiered inference + spark) ===
+  // Gated on a running sprint; nothing does work off the keystroke path except
+  // when a trigger fires.
   const sprintRunning = session.sprintPhase === "running";
   const inference = useBackgroundInference({ sprintId: session.sprintId });
+  const spark = useSpark({
+    editor,
+    sprintId: session.sprintId,
+    sprintPhase: session.sprintPhase,
+  });
+
+  // ONE detector, ONE combined observer fanning out to both consumers. A second
+  // `useTriggerDetector` is forbidden (plan §5.1): it would double-run the idle
+  // tick and fork the burst anchor, so we compose the observers here instead.
+  const observeTriggers = useCallback<TriggerObserver>(
+    (observation) => {
+      inference.observe(observation);
+      spark.observe(observation);
+    },
+    [inference, spark],
+  );
   useTriggerDetector(editor, {
     enabled: sprintRunning,
-    observer: inference.observe,
+    observer: observeTriggers,
   });
+
+  // Wire the spark refs the editor config / accelerator read (assigned during
+  // render, matching the file's ref idiom). The ⌘. accelerator returns false —
+  // letting the key pass through — whenever a sprint is not running (plan §5.2).
+  sparkNotifyEditRef.current = spark.notifyEdit;
+  sparkSummonHotkeyRef.current = () => {
+    if (session.sprintPhase !== "running") {
+      return false;
+    }
+    spark.summon();
+    return true;
+  };
 
   // === Timer toggle (pause/resume) ===
   const handleTimerToggle = useCallback(() => {
@@ -1042,6 +1091,19 @@ export function MinimalEditor() {
           resumeRemainingMs={session.resumeOption?.remainingMs ?? null}
           onResume={session.resumeOption ? session.handleWizardResume : undefined}
         />
+      ) : null}
+
+      {/* Spark: the static affordance and the summoned card, both only while the
+          sprint is running. Before a summon the affordance is the ONLY spark DOM
+          (the §5.3 contract) — pre-warm and event logging render nothing. */}
+      {sprintRunning ? (
+        <>
+          <SparkAffordance
+            onSummon={spark.summon}
+            shortcutHint={isMacLike ? "⌘ ." : "Ctrl ."}
+          />
+          <SparkCard state={spark.state} onReroll={spark.reroll} />
+        </>
       ) : null}
 
       {DEBUG_INFERENCE_ENABLED ? (

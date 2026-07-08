@@ -320,6 +320,66 @@ html[data-theme="dark"] body::after {
   border-color: color-mix(in srgb, var(--accent) 52%, var(--border-soft));
 }
 
+/* ── Spark (summonable thinking prompt) ──
+   Quiet, theme-aware surfaces. The affordance is deliberately state-free: one
+   fixed appearance, a focus-visible ring for a11y, and NOTHING that changes on
+   hover or while typing (the §5.3 contract). */
+
+.gaddr-spark-affordance {
+  color: var(--app-muted-soft);
+  border-color: color-mix(in srgb, var(--border-soft) 55%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 68%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.gaddr-spark-affordance:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.gaddr-spark-card {
+  color: var(--app-fg);
+  background-color: color-mix(in srgb, var(--surface-1) 95%, transparent);
+  border-color: color-mix(in srgb, var(--border-strong) 66%, transparent);
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--app-bg) 52%, transparent);
+  backdrop-filter: blur(2px);
+  /* MUST equal SPARK_CARD_FADE_MS in spark-glue.ts — the JS unmount timer waits
+     for this fade to finish. */
+  transition: opacity 400ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gaddr-spark-card {
+    transition: none;
+  }
+}
+
+.gaddr-spark-question {
+  color: var(--app-fg);
+}
+
+.gaddr-spark-placeholder {
+  color: var(--app-muted-soft);
+}
+
+.gaddr-spark-reroll {
+  color: var(--app-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.gaddr-spark-reroll:hover {
+  color: var(--accent-strong);
+}
+
+.gaddr-spark-reroll:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 /* ── Canvas (React Flow board) ── */
 
 .gaddr-canvas-container {
