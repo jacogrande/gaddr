@@ -122,6 +122,13 @@ export type InferenceAttemptOutcome =
 
 export interface InferenceAttempt {
   readonly stage: string;
+  /**
+   * Correlates the attempt to the sprint that produced it, when the stage has
+   * one (spark does; future harness stages may not). structured-call itself is
+   * sprint-agnostic — adapters enrich their caller's `onAttempt` with this
+   * before forwarding, so per-sprint yield stays a plain SQL slice.
+   */
+  readonly sprintId?: string;
   readonly inputHash: string;
   readonly promptVersion: string;
   readonly modelId: string;

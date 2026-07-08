@@ -213,7 +213,12 @@ export function createSparkGenerationPort(
             inputHash,
             promptVersion: SPARK_PROMPT_VERSION,
           },
-          onAttempt: deps.onAttempt,
+          // Enrich each attempt with the sprint it belongs to before forwarding;
+          // structured-call stays sprint-agnostic, and per-sprint yield becomes
+          // a plain SQL slice on inference_attempt.sprint_id.
+          onAttempt: deps.onAttempt
+            ? (attempt) => deps.onAttempt?.({ ...attempt, sprintId })
+            : undefined,
           clock: deps.clock,
         });
 

@@ -254,6 +254,8 @@ inference_attempt: {
   id           uuid pk
   user_id      text → user.id
   stage        text           // 'spark' now; 'triage'|'claims'|… later
+  sprint_id    uuid null      // correlates attempt → sprint when the stage has
+                              // one; per-sprint yield stays a plain SQL slice
   input_hash   text           // hash(draft+promptVersion+schemaVersion+modelId) — no content
   prompt_version text
   model_id     text

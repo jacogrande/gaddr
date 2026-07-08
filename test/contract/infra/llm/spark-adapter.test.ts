@@ -114,6 +114,11 @@ describe("createSparkGenerationPort — happy path", () => {
     expect(result.value.promptVersion).toBe(SPARK_PROMPT_VERSION);
     expect(result.value.draftWordCount).toBeGreaterThan(0);
 
+    // The adapter enriches every attempt with the sprint it belongs to
+    // (structured-call itself is sprint-agnostic).
+    expect(attempts.length).toBeGreaterThan(0);
+    expect(attempts.every((a) => a.sprintId === SID)).toBe(true);
+
     // Prove the assembled candidates pass the SHIPPED validator against the draft.
     const revalidated = validateSparkCandidateSet(
       result.value.candidates.map((c) => ({
