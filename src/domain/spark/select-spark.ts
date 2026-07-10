@@ -10,12 +10,16 @@
  *
  * Honest scope note (plan §3.3): within-sprint lens rotation plus seeded
  * selection is a *variety* mechanism, not a defence against cross-writer
- * homogenization (Doshi & Hauser). That needs cross-session lens weighting,
- * which is a documented follow-up fed by `spark_event`. Do not read more into
- * this module than variety.
+ * homogenization (Doshi & Hauser). `hintLensesForSprint` extends the seed to
+ * the GENERATION side (conditioning the model's proposal set, which selection
+ * alone cannot reach), and `CHALLENGE_CADENCE` adds a deliberate register
+ * beat — but *measured* cross-session lens weighting fed by `spark_event`
+ * distributions remains the documented follow-up. Do not read more into this
+ * module than seeded spread.
  */
 
 import type { SprintId } from "../types/branded";
+import { SPARK_LENSES } from "./types";
 import type { SparkCandidate, SparkCandidateSet, SparkLens } from "./types";
 
 /**
@@ -167,6 +171,30 @@ export function assembleSparkSet(
   return assembled;
 }
 
+/**
+ * Every Nth spark of a sprint is a "challenge beat": if an unserved adversarial
+ * candidate is available, it is served in preference to the seeded pick. This is
+ * register bias done harness-side (deterministic, logged via `spark_event.lens`,
+ * instantly reversible) rather than model-side — conditioning beats sampling for
+ * controlled variation. A re-roll counts as a serve for cadence purposes: the
+ * writer saw that spark, so the beat advances. When no adversarial candidate is
+ * available (or it was already served), the beat silently falls through to the
+ * seeded pick — the cadence is a preference, never a blocking requirement.
+ */
+export const CHALLENGE_CADENCE = 3;
+
+/** The lens a challenge beat prefers: the steelmanned case against the draft's
+ * direction — the register the writer least seeks out unprompted. */
+const CHALLENGE_LENS: SparkLens = "adversarial";
+
+/** Does the spark at this 0-based serve position land on a challenge beat?
+ * Shared by `selectSpark` (serve side) and `hintLensesForSprint` (generation
+ * side) so the two mechanisms compose: the hint puts adversarial on the menu
+ * for exactly the serves where selection will prefer it. */
+function isChallengeBeat(serveOrdinal: number): boolean {
+  return (serveOrdinal + 1) % CHALLENGE_CADENCE === 0;
+}
+
 export function selectSpark(
   set: SparkCandidateSet,
   servedLenses: readonly SparkLens[],
@@ -179,6 +207,16 @@ export function selectSpark(
   if (available.length === 0) {
     return null;
   }
+  // Challenge cadence: the spark about to be served sits at 0-based ordinal
+  // `servedLenses.length` within the sprint.
+  if (isChallengeBeat(servedLenses.length)) {
+    const challenge = available.find(
+      (candidate) => candidate.lens === CHALLENGE_LENS,
+    );
+    if (challenge !== undefined) {
+      return challenge;
+    }
+  }
   // Normalize the seed defensively. Hash-derived seeds are already
   // non-negative integers, but a negative, fractional, or NaN seed from a
   // future caller must degrade to a valid index — never silently return null
@@ -187,4 +225,59 @@ export function selectSpark(
   const len = available.length;
   const index = ((finite % len) + len) % len;
   return available[index] ?? null;
+}
+
+/** A generation hint names at most this many lenses. Two is deliberate: one
+ * hint would over-steer the proposal set toward a single lens; three would
+ * dictate the whole set and erase the model's own gap-reading. */
+export const HINT_LENS_COUNT = 2;
+
+/**
+ * Seeded anti-homogenization hint for the GENERATION side (the documented
+ * follow-up in this module's header: seeded selection can only pick within
+ * what the model proposes, so a model that never proposes a lens starves that
+ * lens for every writer). The hint names lenses for the prompt to *consider* —
+ * the prompt text keeps draft-lack as the overriding criterion, so a hinted
+ * lens the draft already works in is still skipped by the model.
+ *
+ * Deterministic and recomputable by design: the hint is a pure function of
+ * (sprintId, servedLenses), so it is never persisted — telemetry can re-derive
+ * it — and the same sprint state always hints the same way while different
+ * sprints spread across the taxonomy. Serve progress is mixed into the seed so
+ * each regeneration within a sprint nudges different territory.
+ *
+ * Composition with the challenge cadence: when the NEXT serve lands on a
+ * challenge beat and adversarial is unserved, adversarial leads the hint — the
+ * generation side puts the lens on the menu for exactly the serve where
+ * `selectSpark` will prefer it.
+ *
+ * Returns the whole remaining pool when it has shrunk to the hint size, and an
+ * empty list when every lens has been served.
+ */
+export function hintLensesForSprint(
+  sprintId: SprintId,
+  servedLenses: readonly SparkLens[],
+): readonly SparkLens[] {
+  const served: ReadonlySet<SparkLens> = new Set(servedLenses);
+  const pool = SPARK_LENSES.filter((lens) => !served.has(lens));
+  if (pool.length <= HINT_LENS_COUNT) {
+    return pool;
+  }
+  // Golden-ratio mix of sprint identity and serve progress: stable per state,
+  // well-spread across sprints and across successive serves in one sprint.
+  const seed =
+    (hashSprintId(sprintId) ^
+      Math.imul(servedLenses.length + 1, 0x9e3779b1)) >>>
+    0;
+  const cadenceWantsChallenge =
+    isChallengeBeat(servedLenses.length) && !served.has(CHALLENGE_LENS);
+  const first = cadenceWantsChallenge
+    ? CHALLENGE_LENS
+    : pool[seed % pool.length];
+  if (first === undefined) {
+    return pool.slice(0, HINT_LENS_COUNT);
+  }
+  const rest = pool.filter((lens) => lens !== first);
+  const second = rest[(seed >>> 8) % rest.length];
+  return second === undefined ? [first] : [first, second];
 }
