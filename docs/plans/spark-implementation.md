@@ -384,3 +384,33 @@ Step 1 is pure and independent; 3 and 4 are independent of each other once 2 has
 ## 10. Review log (2026-07-03)
 
 Two independent Opus reviews (AI-research lens; systems/architecture lens). Accepted and folded in: SprintId full lifecycle + atomic migration step + reset-on-id-change; server-derived served lenses; sprint-scoped request cancellation + StrictMode rules + `candidatesReady` reducer law; visually-constant affordance (resolving the §5.2/§5.3/Journey-H contradiction); prepare-only rate cap; `spark_event` index, event-id dedup, `detail`/calibration columns, client-supplied word-count/elapsed fields; eval env-var correction (`E2E_TESTING` + `E2E_BYPASS_AUTH`); normalized verbatim grounding match; structural stance check replacing the connective blacklist + grounding-exempt ghost-echo; honest homogenization scoping + seeded selection + offline diversity check; delayed-structure single call; four-field prompt contract; yield metric + reject-reason logging + 20–30-freewrite rubric lane; outbound data-retention requirement; draft length cap; observer fan-out specification; shrink tolerance. Declined: none outright; the cross-family LLM judge and cross-session lens weighting are deferred (documented fast-follows), not rejected.
+
+## 11. Post-ship tuning log (2026-07-10)
+
+First real-model runs (`claude-haiku-4-5`, 120-word test draft) confirmed §9's
+first risk in its mirror image: first-attempt yield was 0% with uniform
+`too-long` rejects — the repair loop rescued every call (correct behavior, 2×
+cost/latency). Fixes, per the §9 doctrine (tune the prompt, never the repair
+cap first):
+
+- **`spark-v2`** — the `QUESTION_MAX_CHARS` budget is now *stated* in the
+  system prompt (derived from the imported domain constant, so prompt and
+  validator cannot drift); `SPARK_MODEL_ID` pinned to the dated snapshot
+  `claude-haiku-4-5-20251001` (alias re-resolution would silently confound
+  cross-version telemetry under an unchanged `inputHash`). Yield 0/3 → 3/3.
+- **`spark-v3`** — the anti-homogenization follow-up §3.3 deferred, done at
+  the generation side where selection cannot reach: `hintLensesForSprint`
+  (domain, seeded FNV × golden-ratio progress mix, deterministic and
+  recomputable — never persisted) feeds a "consider especially" clause in the
+  user turn, explicitly subordinated to draft-lack. `CHALLENGE_CADENCE = 3`
+  in `selectSpark`: every third serve prefers an unserved adversarial
+  candidate (falls through silently otherwise), and the hint leads with
+  adversarial on those beats so the lens is on the menu exactly when
+  selection wants it. Plus: a leading-question contrast pair (the one
+  validator-blind failure mode) and a long-draft recency preference in
+  source guidance. Tuning note: the added prompt material re-broke the
+  length budget (too-long returned at ~5/9) until a one-line budget reminder
+  was placed at the END of the user turn, after the draft — position, not
+  repetition, is what held. Verified live: 8/9 first-attempt yield, hint
+  compliance on all calls, and the challenge beat serving a steelmanned
+  adversarial question end-to-end.
