@@ -20,7 +20,10 @@
  *                        matches it after normalization; paraphrase is dropped).
  *   4. Boundaries      — no stance; no leading/rhetorical questions; no positions,
  *                        counterarguments, or prose; exclude servedLenses; one
- *                        line each, one question each.
+ *                        line each, one question each, within the validator's
+ *                        QUESTION_MAX_CHARS budget (stated here since spark-v2:
+ *                        real-model telemetry showed 0% first-attempt yield with
+ *                        uniform too-long rejects when the budget was unstated).
  *
  * The stance/format rules live in the prompt AND in the domain validator — prompt
  * wording is never the sole enforcement (architecture.md §6.6). The one vector the
@@ -38,19 +41,23 @@
 
 import { SPARK_LENSES } from "../../../domain/spark/types";
 import type { SparkLens } from "../../../domain/spark/types";
+import { QUESTION_MAX_CHARS } from "../../../domain/spark/validate-spark";
 import type { JsonSchema } from "../structured-call";
 
 /** Bump this when the system prompt or schema text changes. The attempt log
  * records it; the git diff is the registry (plan §4.2). */
-export const SPARK_PROMPT_VERSION = "spark-v1";
+export const SPARK_PROMPT_VERSION = "spark-v3";
 
 /** Bumped independently of the prompt when the wire schema shape changes; folded
  * into the input hash so a schema change invalidates cached attempt identity. */
 export const SPARK_SCHEMA_VERSION = "spark-schema-v1";
 
-/** Haiku-class current model id (from the claude-api skill), never hardcoded at a
- * call site — the adapter and telemetry read it from here (plan §4.1). */
-export const SPARK_MODEL_ID = "claude-haiku-4-5";
+/** Haiku-class model, PINNED to a dated snapshot rather than the `claude-haiku-4-5`
+ * alias: the alias can re-resolve to a newer snapshot server-side without changing
+ * `inputHash`, silently confounding cross-prompt-version telemetry comparisons.
+ * Never hardcoded at a call site — the adapter and telemetry read it from here
+ * (plan §4.1). */
+export const SPARK_MODEL_ID = "claude-haiku-4-5-20251001";
 
 /** Enough headroom for a short prose analysis plus ~3 one-line questions; the
  * structured-call bumps this once on a max_tokens stop. */
@@ -96,10 +103,12 @@ Return a single JSON object with two fields, in this order:
 # 3. Source guidance
 Ground every question in a specific span of the writer's own draft. COPY THE GROUNDING SPAN VERBATIM FROM THE DRAFT, CHARACTER FOR CHARACTER — at least two consecutive words, taken exactly as they appear. Do not paraphrase, summarize, or clean up the span; a paraphrased span is discarded.
 
+If the draft is long, prefer grounding in its later passages — that is where the writer's thinking currently is — unless an earlier span marks a clearly sharper gap.
+
 # 4. Boundaries
-- Never assert a stance. Never pose a leading or rhetorical question — a question that presupposes its own answer ("Isn't X really the cause?") is a stance and is forbidden.
+- Never assert a stance. Never pose a leading or rhetorical question — a question that presupposes its own answer is a stance and is forbidden. Contrast: "Isn't overregulation really what killed these shops?" presupposes its answer — forbidden. "What was actually driving the shop closures?" opens the same ground genuinely — correct.
 - No positions, no counterarguments, no advice, no prose answers. A candidate is ONE question and nothing else.
-- Each "question" is a single line, opens as a genuine question, and ends with exactly one "?".
+- Each "question" is a single line of at most ${String(QUESTION_MAX_CHARS)} characters — aim for 60 to 100. It opens as a genuine question and ends with exactly one "?".
 - Exclude any lens listed as already served in the user message.
 - If the draft is too thin to ground a real question, return an empty "candidates" array rather than inventing one.
 
@@ -165,10 +174,20 @@ function neutralizeDraftDelimiters(draft: string): string {
 }
 
 /**
- * Build the per-call user turn: the draft plus the lenses to exclude. Keeping the
- * excluded lenses out of the (static) system prompt and here is what "build the
- * prompt with servedLenses exclusion" means at the adapter (plan §4.3). Passing an
- * empty exclusion list simply omits the clause.
+ * Build the per-call user turn: the draft, the lenses to exclude, and an
+ * optional seeded consideration hint. Keeping the excluded lenses out of the
+ * (static) system prompt and here is what "build the prompt with servedLenses
+ * exclusion" means at the adapter (plan §4.3). Passing an empty exclusion list
+ * simply omits the clause.
+ *
+ * The hint (spark-v3) is the anti-homogenization conditioning from
+ * `hintLensesForSprint`: research on mode collapse says an RLHF'd model
+ * converges on favourite outputs, and selection-side seeding cannot reach a
+ * lens the model never proposes. The hint's wording deliberately subordinates
+ * itself to the draft ("only if the draft genuinely lacks them") so the
+ * product mandate — weighted by what the draft lacks, never by what a
+ * randomizer likes — survives the nudge. Deterministic and recomputable from
+ * (sprintId, servedLenses); intentionally not persisted.
  *
  * UNTRUSTED-DATA DELIMITING — HARNESS PRECEDENT. The draft is writer-controlled
  * input embedded in a prompt, so it travels inside `<draft>...</draft>` tags
@@ -180,10 +199,19 @@ function neutralizeDraftDelimiters(draft: string): string {
 export function buildSparkUserContent(
   draft: string,
   servedLenses: readonly SparkLens[],
+  hintLenses: readonly SparkLens[] = [],
 ): string {
   const exclusion =
     servedLenses.length > 0
       ? `Already served this sprint — DO NOT use these lenses: ${servedLenses.join(", ")}.\n\n`
       : "";
-  return `${exclusion}Draft so far:\n<draft>\n${neutralizeDraftDelimiters(draft)}\n</draft>`;
+  const hint =
+    hintLenses.length > 0
+      ? `Consider especially: ${hintLenses.join(", ")} — but only if the draft genuinely lacks them; the draft's actual gaps always win over this hint.\n\n`
+      : "";
+  // The budget reminder sits AFTER the draft — the position the model attends
+  // to most — because real-model telemetry showed the system-prompt budget
+  // alone stops holding once the draft and per-call clauses sit between it and
+  // generation (too-long rejects returned when spark-v3 grew the prompt).
+  return `${exclusion}${hint}Draft so far:\n<draft>\n${neutralizeDraftDelimiters(draft)}\n</draft>\n\nEach question: one line, under ${String(QUESTION_MAX_CHARS)} characters, exactly one "?".`;
 }

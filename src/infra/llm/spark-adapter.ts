@@ -34,6 +34,7 @@ import type {
 import {
   assembleSparkSet,
   countWords,
+  hintLensesForSprint,
 } from "../../domain/spark/select-spark";
 import { validateSparkCandidateSet } from "../../domain/spark/validate-spark";
 import {
@@ -203,7 +204,14 @@ export function createSparkGenerationPort(
           client,
           modelId: SPARK_MODEL_ID,
           system: SPARK_SYSTEM_PROMPT,
-          userContent: buildSparkUserContent(draft, servedLenses),
+          // The hint is deterministic from (sprintId, servedLenses) — never
+          // persisted; telemetry re-derives it when a distribution question
+          // needs it (see hintLensesForSprint).
+          userContent: buildSparkUserContent(
+            draft,
+            servedLenses,
+            hintLensesForSprint(sprintId, servedLenses),
+          ),
           schema: SPARK_WIRE_SCHEMA,
           maxTokens: SPARK_MAX_TOKENS,
           parse: (rawText) =>
