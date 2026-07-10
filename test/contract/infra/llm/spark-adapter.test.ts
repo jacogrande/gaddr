@@ -11,6 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { sprintId as makeSprintId } from "../../../../src/domain/types/branded";
 import type { SprintId } from "../../../../src/domain/types/branded";
+import { hintLensesForSprint } from "../../../../src/domain/spark/select-spark";
 import { validateSparkCandidateSet } from "../../../../src/domain/spark/validate-spark";
 import type { WireSparkCandidate } from "../../../../src/domain/spark/types";
 import {
@@ -302,5 +303,49 @@ describe("createSparkGenerationPort — failure passthrough", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.reason).toBe("transport");
+  });
+});
+
+describe("createSparkGenerationPort — seeded consideration hint (spark-v3)", () => {
+  test("the user turn carries the hint derived from (sprintId, servedLenses)", async () => {
+    const { client, calls } = recordingClient(modelJson(VALID_CANDIDATES));
+    const port = createSparkGenerationPort(client);
+
+    await port.generate({ draft: DRAFT, sprintId: SID, servedLenses: [] });
+
+    const expected = hintLensesForSprint(SID, []);
+    const userTurn = calls[0]?.messages.find((m) => m.role === "user");
+    expect(userTurn).toBeDefined();
+    if (userTurn?.role === "user") {
+      expect(userTurn.text).toContain(
+        `Consider especially: ${expected.join(", ")}`,
+      );
+      // The hint subordinates itself to the draft in the prompt text itself.
+      expect(userTurn.text).toContain("only if the draft genuinely lacks them");
+    }
+  });
+
+  test("the hint never names a served lens, and coexists with the exclusion", async () => {
+    const { client, calls } = recordingClient(modelJson(VALID_CANDIDATES));
+    const port = createSparkGenerationPort(client);
+    const served = ["economic", "historical"] as const;
+
+    await port.generate({
+      draft: DRAFT,
+      sprintId: SID,
+      servedLenses: [...served],
+    });
+
+    const expected = hintLensesForSprint(SID, [...served]);
+    for (const lens of expected) {
+      expect(served).not.toContain(lens);
+    }
+    const userTurn = calls[0]?.messages.find((m) => m.role === "user");
+    if (userTurn?.role === "user") {
+      expect(userTurn.text.toUpperCase()).toContain("DO NOT USE");
+      expect(userTurn.text).toContain(
+        `Consider especially: ${expected.join(", ")}`,
+      );
+    }
   });
 });

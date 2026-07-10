@@ -4,15 +4,19 @@ import type { SprintId } from "../../../src/domain/types/branded";
 import {
   CACHE_MAX_GROWTH_WORDS,
   CACHE_MAX_SHRINK_WORDS,
+  CHALLENGE_CADENCE,
+  HINT_LENS_COUNT,
   MINIMUM_GROUND_WORDS,
   SPARK_SET_MAX_CANDIDATES,
   assembleSparkSet,
   countWords,
   hasMinimumGround,
   hashSprintId,
+  hintLensesForSprint,
   isCacheServable,
   selectSpark,
 } from "../../../src/domain/spark/select-spark";
+import { SPARK_LENSES } from "../../../src/domain/spark/types";
 import type {
   SparkCandidate,
   SparkCandidateSet,
@@ -273,5 +277,121 @@ describe("assembleSparkSet", () => {
 
   test("returns empty for empty input", () => {
     expect(assembleSparkSet([], [])).toEqual([]);
+  });
+});
+
+describe("selectSpark — challenge cadence", () => {
+  // A set that CONTAINS an adversarial candidate; served lenses in these tests
+  // are chosen from lenses NOT in the set so availability is unaffected.
+  const withChallenge = setOf(["economic", "adversarial", "personal"]);
+
+  test("the 3rd spark of a sprint prefers adversarial regardless of seed", () => {
+    for (let seed = 0; seed < 10; seed++) {
+      const chosen = selectSpark(withChallenge, ["historical", "temporal"], seed);
+      expect(chosen?.lens).toBe("adversarial");
+    }
+  });
+
+  test("the 6th spark is also a challenge beat", () => {
+    const served: SparkLens[] = [
+      "historical",
+      "temporal",
+      "causal",
+      "scale",
+      "ethical",
+    ];
+    expect(selectSpark(withChallenge, served, 0)?.lens).toBe("adversarial");
+  });
+
+  test("the 1st and 2nd sparks are seed-governed, not challenge beats", () => {
+    // Seed 0 indexes the first available candidate: economic, not adversarial.
+    expect(selectSpark(withChallenge, [], 0)?.lens).toBe("economic");
+    expect(selectSpark(withChallenge, ["historical"], 0)?.lens).toBe("economic");
+  });
+
+  test("a challenge beat with adversarial already served falls through to the seed", () => {
+    const chosen = selectSpark(withChallenge, ["historical", "adversarial"], 0);
+    expect(chosen?.lens).toBe("economic"); // never double-serves adversarial
+  });
+
+  test("a challenge beat with no adversarial candidate falls through to the seed", () => {
+    const plain = setOf(["economic", "historical", "personal"]);
+    const chosen = selectSpark(plain, ["temporal", "causal"], 0);
+    expect(chosen?.lens).toBe("economic"); // cadence is a preference, not a requirement
+  });
+
+  test("the cadence constant is the documented every-third beat", () => {
+    expect(CHALLENGE_CADENCE).toBe(3);
+  });
+});
+
+describe("hintLensesForSprint", () => {
+  test("is deterministic for the same sprint state", () => {
+    expect(hintLensesForSprint(SID, [])).toEqual(hintLensesForSprint(SID, []));
+    expect(hintLensesForSprint(SID, ["economic"])).toEqual(
+      hintLensesForSprint(SID, ["economic"]),
+    );
+  });
+
+  test("returns two distinct lenses from the taxonomy when the pool is large", () => {
+    const hint = hintLensesForSprint(SID, []);
+    expect(hint.length).toBe(HINT_LENS_COUNT);
+    expect(new Set(hint).size).toBe(HINT_LENS_COUNT);
+    for (const lens of hint) {
+      expect(SPARK_LENSES).toContain(lens);
+    }
+  });
+
+  test("never hints a served lens", () => {
+    const served: SparkLens[] = ["economic", "historical", "personal", "causal"];
+    const hint = hintLensesForSprint(SID, served);
+    for (const lens of hint) {
+      expect(served).not.toContain(lens);
+    }
+  });
+
+  test("returns the whole remaining pool once it shrinks to hint size, then empty", () => {
+    const eightServed = SPARK_LENSES.slice(0, 8);
+    const hint = hintLensesForSprint(SID, eightServed);
+    expect([...hint].sort()).toEqual([...SPARK_LENSES.slice(8)].sort());
+    expect(hintLensesForSprint(SID, [...SPARK_LENSES])).toEqual([]);
+  });
+
+  test("adversarial leads the hint when the next serve is a challenge beat", () => {
+    // Two served (next serve ordinal 2 = 3rd spark) and five served (6th spark):
+    // the generation side puts adversarial on the menu for the beat.
+    expect(hintLensesForSprint(SID, ["historical", "temporal"])[0]).toBe(
+      "adversarial",
+    );
+    expect(
+      hintLensesForSprint(SID, [
+        "historical",
+        "temporal",
+        "causal",
+        "scale",
+        "ethical",
+      ])[0],
+    ).toBe("adversarial");
+  });
+
+  test("a challenge beat with adversarial already served hints without it", () => {
+    const hint = hintLensesForSprint(SID, ["adversarial", "historical"]);
+    expect(hint).not.toContain("adversarial");
+    expect(hint.length).toBe(HINT_LENS_COUNT);
+  });
+
+  test("different sprints spread their hints across the taxonomy", () => {
+    const sids = [
+      "11111111-2222-3333-4444-555555555555",
+      "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "12345678-1234-1234-1234-123456789abc",
+      "deadbeef-dead-beef-dead-beefdeadbeef",
+      "0f0f0f0f-1e1e-2d2d-3c3c-4b4b4b4b4b4b",
+      "99999999-8888-7777-6666-555544443333",
+      "abcdef01-2345-6789-abcd-ef0123456789",
+      "fedcba98-7654-3210-fedc-ba9876543210",
+    ].map(sid);
+    const firsts = new Set(sids.map((s) => hintLensesForSprint(s, [])[0]));
+    expect(firsts.size).toBeGreaterThan(1);
   });
 });
