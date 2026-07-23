@@ -27,8 +27,9 @@
  *                     preserves the raw provider value in `providerStopReason`
  *                     for the error message).
  *  3. Hand the text to the caller's parse+validate function. A validation failure
- *     triggers ONE repair retry carrying the EXACT validator error text in the
- *     retry prompt; a second failure dead-ends as malformed-output.
+ *     triggers a repair retry carrying the EXACT validator error text in the
+ *     retry prompt — capped per call (`repairCap`, default 1); exhausting the
+ *     cap dead-ends as malformed-output.
  *  4. Map every SDK/transport failure (rate limit, timeout, network, 4xx/5xx)
  *     into the existing `InferenceError` variants. No exception escapes.
  *  5. Surface one `InferenceAttempt` record per model call as DATA (the
@@ -230,6 +231,11 @@ export interface StructuredCallOptions<T> {
   readonly onAttempt?: (attempt: InferenceAttempt) => void;
   /** Injected clock for latency, defaults to Date.now (infra is allowed clocks). */
   readonly clock?: () => number;
+  /** Validation-repair retries permitted before dead-ending (default 1 —
+   * spark's disposable-artifact cap). Per-call because stages differ: a
+   * constellation discovery call may afford more than a spark. Sustained
+   * repair rate at ANY cap is a prompt defect, never an operating cost. */
+  readonly repairCap?: number;
   /** Override the repair prompt wording; must still carry the reason texts. */
   readonly buildRepairPrompt?: (reasons: readonly string[]) => string;
   /** Cancellation signal, forwarded on every model call this run makes. */
@@ -238,14 +244,19 @@ export interface StructuredCallOptions<T> {
 
 // ── Bounds ──────────────────────────────────────────────────────────────────
 
-/** Spark's repair cap is 1 (a spark is disposable — plan §4.1). One max_tokens
- * retry, one validation repair. */
 const MAX_TOKENS_RETRY_MULTIPLIER = 2;
-/** Safety net against a runaway pause_turn loop (server tools aren't used by
+/** Safety net against a runaway pause loop (server tools aren't used by
  * Spark, so this should never bind — but the harness must not spin). */
 const MAX_PAUSE_CONTINUATIONS = 4;
-/** Absolute ceiling on model calls per structuredCall, belt-and-suspenders. */
-const MAX_TOTAL_ATTEMPTS = 6;
+/** The default validation-repair cap. Spark's is 1 (a spark is disposable —
+ * plan §4.1); constellation stages pass their own via `repairCap`
+ * (constellation plan D8.5). */
+const DEFAULT_REPAIR_CAP = 1;
+/** Model calls possible outside the repair path: the initial call, one
+ * max_tokens retry, and the pause continuations. The absolute per-call ceiling
+ * is this plus the repair cap — resized with the cap, as a belt-and-suspenders
+ * backstop the sub-budgets should always bind before. */
+const NON_REPAIR_ATTEMPT_BUDGET = 2 + MAX_PAUSE_CONTINUATIONS;
 
 function inferenceError(
   reason: InferenceError["reason"],
@@ -374,13 +385,15 @@ export async function structuredCall<T>(
 ): Promise<Result<T, InferenceError>> {
   const clock = options.clock ?? Date.now;
   const buildRepair = options.buildRepairPrompt ?? defaultRepairPrompt;
+  const repairCap = options.repairCap ?? DEFAULT_REPAIR_CAP;
+  const maxTotalAttempts = NON_REPAIR_ATTEMPT_BUDGET + repairCap;
 
   let messages: StructuredTurn[] = [
     { role: "user", text: options.userContent },
   ];
   let currentMaxTokens = options.maxTokens;
   let maxTokensRetryUsed = false;
-  let repairUsed = false;
+  let repairsUsed = 0;
   let pauseContinuations = 0;
   let attemptIndex = 0;
   // Text emitted BEFORE a pause_turn is carried forward and prepended to the
@@ -421,7 +434,7 @@ export async function structuredCall<T>(
   };
 
   for (;;) {
-    if (attemptIndex >= MAX_TOTAL_ATTEMPTS) {
+    if (attemptIndex >= maxTotalAttempts) {
       // No attempt record here: no model call happened. "One record per model
       // call" holds exactly — a phantom record with zero latency would corrupt
       // the per-attempt telemetry Phase 4 persists.
@@ -521,7 +534,7 @@ export async function structuredCall<T>(
         }
         emit("validation-failed", latencyMs, usage, yieldInfo);
         const reasons = parsed.result.error.reasons;
-        if (repairUsed) {
+        if (repairsUsed >= repairCap) {
           return err(
             inferenceError(
               "malformed-output",
@@ -529,7 +542,7 @@ export async function structuredCall<T>(
             ),
           );
         }
-        repairUsed = true;
+        repairsUsed += 1;
         pausePrefix = ""; // the repair re-generates from scratch — drop the prefix
         // Standard repair shape: echo the bad turn (merging into a trailing
         // assistant echo left by a pause continuation, so roles stay strictly
