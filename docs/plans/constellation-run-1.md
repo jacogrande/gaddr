@@ -147,7 +147,7 @@ Failure shape: any stage error the process survives → `status: failed`, `faile
 
 ### 4.3 Node validation (`validate-node.ts`)
 
-Extends the spark validator machinery — **extract shared primitives first** (§8 step 1): the normalized verbatim span matcher and the ghost-echo n-gram check move from `validate-spark.ts` into a shared domain module both validators import. Rules, each with a machine-readable reject reason:
+Extends the spark validator machinery — the shared primitives are **already extracted** (§8 step 1 done): `domain/text/span-matching.ts` exports `matchTokens`, `indexOfSubsequence`, `ngramSet`, and `echoesSourceBeyondSpan` (n-gram size is the caller's constant), and both validators import them. Rules, each with a machine-readable reject reason:
 
 1. `payoff`/`body` non-empty, within caps (budgets stated in prompts per D8).
 2. `grounding` matches the draft verbatim after normalization (except off-map nodes, which ground on the *topic* — checked only for non-empty rationale).
@@ -182,13 +182,13 @@ The existing `TriagePort`/`AnalysisPort` are untouched (D2).
 
 ### 5.1 Prompts (`src/infra/llm/prompts/`)
 
-- `fence.ts` — extracted `fenceUntrusted(tag, content)` + the data-not-instructions clause; `spark.ts` refactors onto it (behavior-identical; the fence/forgery test from the spark backlog lands here).
+- `fence.ts` — **[DONE §8 step 1]** `fenceUntrusted(tag, content)` + `dataNotInstructionsClause(tag, noun, shortNoun)`, both parameterized by tag; `spark.ts` refactored onto it behavior-identically (forgery test + byte-identity lock shipped). S1/S3 import it for the fenced draft and the fenced substrate snapshot (D8).
 - `discovery.ts` (S1) and `nodes.ts` (S3) — four-field contracts, versioned (`discovery-v1`, `nodes-v1`), pinned Sonnet snapshot, delayed structure, budgets stated from domain constants **and** restated at the end of the user turn (D8). The S3 system prompt is shared across kinds (cacheable prefix); kind-specific instruction blocks travel in the user turn after the draft, and **all four kinds carry explicit contracts** (MAST — spec gaps are the largest failure class — applies to our own prompt modules): `counterargument` — the steelman contract (strongest sincere opposing case, separate factual from framing dispute, engineered against the agreeable default; sycophancy is the enemy); `question` — generative, non-leading, one `?`; `argument` — the D9 commitment-test posture, testing/wondering stars only; `direction` — a lead + why it matters + what to test, never a conclusion. Each kind block also states the *other* kinds' remits as explicit boundaries ("do not propose research directions — another pass owns those"): the four calls share the same gap notes, and unbounded contracts are the systematic duplicate generator §4.4's cross-kind dedup exists to catch.
 - Wire schemas strict-mode-thin; richness in validators. The six-kind enum plus star assignment stays well under the strict-schema union budget.
 
 ### 5.2 structured-call
 
-Reused as-is with one change: the repair cap becomes a per-call parameter (`MAX_TOTAL_ATTEMPTS` resized accordingly; `maxTokens` is **already** per-call in `structured-call.ts` — the work is smaller than the backlog note implies) — the documented below-cut item, now needed because S1 (bigger output) and S3 share the seam with spark. `stage` telemetry values: `discovery`, `nodes:counterargument`, `nodes:question`, `nodes:argument`, `nodes:direction`.
+Reused as-is; the one seam change is **done** (§8 step 1): the repair cap is now a per-call `repairCap` option (default 1 — spark's disposable-artifact cap), the absolute attempt ceiling resizes with it, and `maxTokens` was already per-call. S1/S3 pass their own `repairCap`; the neutral outcome vocabulary (from the provider-portability work) means S1/S3 branch on `complete | truncated | refused | paused | other`, not provider stop strings. `stage` telemetry values: `discovery`, `nodes:counterargument`, `nodes:question`, `nodes:argument`, `nodes:direction`.
 
 ### 5.3 Schema (`schema.ts` + migration `000X`)
 
@@ -240,9 +240,9 @@ Per-stage yield (candidates returned vs valid), reject-reason distribution, run 
 
 ## 8. Sequencing
 
-0. **Doc refresh** — mvp-cycle Sprint 1.5/2 status + backlog items superseded by spark and by this plan (§2); link this plan as Sprint 2's spec.
-0.5. **Corpus kickoff** — start the 20–30 golden-freewrite corpus (authored + donated; D11 forbids usage exhaust — §7). Gates step 4's prompt tune; runs in parallel with everything below.
-1. **Shared domain primitives** — extract span-matcher + ghost-echo from validate-spark into a shared module (spark suite must stay green); `fence.ts` extraction with forgery test; parameterize the structured-call repair cap (`maxTokens` is already per-call, §5.2).
+0. **Doc refresh** — mvp-cycle Sprint 1.5/2 status + backlog items superseded by spark and by this plan (§2); link this plan as Sprint 2's spec. **[DONE 2026-07-23]**
+0.5. **Corpus kickoff** — the golden-freewrite corpus (D11 forbids usage exhaust — §7). **[DONE 2026-07-23]** `eval/corpus/` holds 24 synthetic drafts (register/length/intent spread, four fixed diversity anchors, provenance frontmatter) + a README stating what synthetic drafts are and aren't valid for. First live pass on `gpt-5.6-luna`: 24/24 first-attempt yield, all ten lenses represented (`scripts/spark-smoke.ts --corpus`). Donated real drafts fold in as they arrive.
+1. **Shared domain primitives** — **[DONE 2026-07-23]** span-matcher + ghost-echo extracted to `domain/text/span-matching.ts` (spark suite green unchanged — the refactor proof); `prompts/fence.ts` extracted behavior-identically with the forgery test + a byte-identity lock on the spark-v3 wording; structured-call repair cap parameterized per-call (`maxTokens` was already per-call). 489 tests green.
 2. **Domain** — NodeKind/Star/ConstellationNode/Discovery types, validate-node, assemble-constellation, ports; full unit table. Pure and independent.
 3. **Schema + repos** — migration (direct-SQL application), run/star/node repos, `inference_attempt.run_id`; contract tests.
 4. **Prompts + adapters** — discovery.ts, nodes.ts, real adapters over structured-call; contract tests with stubbed client; first real-model smoke on a genuine freewrite (expect a v1→v2 prompt tune from yield telemetry — budget for it, the spark precedent says the first live run finds one).

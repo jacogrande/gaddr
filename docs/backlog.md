@@ -6,51 +6,58 @@ detail is [intelligence-roadmap.md](./intelligence-roadmap.md). This file is the
 running list of concrete follow-ups and the debt each shipped increment left
 behind.
 
-## Next Steps — Background Inference (Intelligence Phase 1 / Sprint 2)
+## Next Steps — updated 2026-07-23 after Spark + provider portability shipped
 
-Ordered by dependency.
+The old numbered list is retired; most of it either shipped with Spark or was
+reshaped by `docs/plans/constellation-run-1.md` (the Sprint 2 spec). Current
+state, ordered by dependency:
 
-1. **Real model adapters behind the existing ports.** Replace
-   `infra/llm/mock-{triage,analysis}-adapter.ts` with a server-backed Anthropic
-   adapter (Haiku triage / Sonnet analysis). The `TriagePort` / `AnalysisPort`
-   contracts do not change — swap at the composition root.
-   - Move model calls server-side (secret keys): a `/api/triage` route the
-     client `observe` callback posts bursts to, instead of calling the port
-     in-process.
-   - Prompt caching: system + tool definitions + freewrite-so-far as a stable
-     cached prefix (see background-inference-during-freewrite.md).
-2. **Substrate persistence.** The substrate is in-memory only and lost on
-   reload. Add a per-sprint store (`constellation_run` + findings) so it
-   survives reload and feeds the board. Depends on a durable `SprintId`
-   (see debt below).
-3. **Retrieval + hallucination defense.** A real `sourced` finding needs a
-   retrieval port and span verification before Phase 2 (canon dialogue) can
-   ship. This is load-bearing for the headline feature.
-4. **Tier-3 assembly at the sprint boundary.** An Opus pass that aggregates the
-   substrate + tier-2 findings into the ranked constellation. The current
-   pipeline is during-sprint only.
-5. **Constellation board UI (Sprint 3).** Render the substrate properly with
-   per-tier styling. The current `substrate-debug` panel is a dev-only
-   placeholder behind `NEXT_PUBLIC_DEBUG_TRIGGERS`.
-6. **Run the eval.** `eval/constellation.json` is authored but not yet executed
-   against a running dev server via the agent-browser skill.
+1. **Constellation Run 1** — the active sprint. Steps 0–1 (doc refresh, golden
+   corpus, shared primitives: span-matcher extraction, `fence.ts`, per-call
+   repair caps) are done; next is step 2, the constellation domain
+   (`NodeKind`/`Star`/validate-node/assembly). The plan is the checklist.
+2. **Run the drip eval.** `eval/constellation.json` is authored but has never
+   been executed via agent-browser (needs `E2E_TESTING=true
+   E2E_BYPASS_AUTH=true` plus the debug overlay). Oldest open item in this
+   file.
+3. **Drip mocks → server-side** (decoupled from Run 1 by design). Replace
+   `infra/llm/mock-{triage,analysis}-adapter.ts` using the spark
+   mock-behind-route template (`/api/spark` + `deps.ts` composition) and the
+   provider registry (`providers.ts`) — NOT a hardcoded Anthropic adapter as
+   this item originally said.
+4. **Retrieval + entailment (Run 2).** Landing zone mapped in the plan §10.
+   Note the citations redesign finding first
+   (`docs/research/llm-provider-portability.md` §4): the Citations API is
+   incompatible with structured outputs even on Anthropic — Run 2 uses
+   schema-level quote-and-verify over the shared span-matcher.
+5. **Sprint 3 interaction layer** — tour, node chats, reaction-gated
+   resolution, map editing, riding on Run 1's data model.
+
+Done since the last revision of this file: server-side inference route +
+adapter discipline + per-attempt telemetry (spark, 2026-07-08); durable
+`SprintId`; LLM provider portability + spark on `gpt-5.6-luna` (2026-07-23);
+golden freewrite corpus + live yield instrument (`scripts/spark-smoke.ts
+--corpus`, first run: 24/24 first-attempt yield, all ten lenses represented).
 
 ## Tech Debt — introduced by the mocked pipeline
 
-- **`SprintId` is a client-side counter** (`sprint-N`), not durable or unique;
-  it collides across reloads. Needs a real id when persistence lands (step 2).
+- ~~**`SprintId` is a client-side counter**~~ — RESOLVED (spark, 2026-07):
+  durable client-minted UUID with full mint/restore/resume lifecycle.
+- ~~**No retries / rate-limit / cost handling / telemetry.**~~ — RESOLVED for
+  the server inference path (`structured-call.ts` repair/retry discipline,
+  neutral error taxonomy, `inference_attempt` telemetry, per-route rate
+  buckets). Still true of the browser-side drip mocks, which by design never
+  emit errors.
 - **Mock adapters are regex heuristics**, not intelligence. Intent/signal/theme
   classification is surface-level by design — fine for wiring and deterministic
-  evals, not for product behavior.
+  evals, not for product behavior. (Still true; see Next Steps item 3.)
 - **Multiple in-flight concurrency is supported but disabled.** The runner
   honors `maxConcurrent`; `DEFAULT_RUNNER_CONFIG` pins it to 1. Bumping it needs
   a dedupe/backpressure review — the queue currently drops the oldest burst and
   there is no cross-burst finding dedup.
-- **No retries / rate-limit / cost handling / telemetry.** `InferenceError`
-  variants exist but the mocks never emit them; the real adapter must map SDK
-  failures and the runner should surface degraded states.
-- **Client-side inference is temporary.** The mock ports run in the browser; the
-  real version must move model calls server-side (keys, caching, batching).
+- **Client-side inference is temporary for the drip.** The mock triage/analysis
+  ports run in the browser; the migration path is the spark mock-behind-route
+  template plus the provider registry.
 
 ## Known Limitations — acceptable for now
 
