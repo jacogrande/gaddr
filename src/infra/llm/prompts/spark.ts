@@ -2,9 +2,14 @@
  * prompts/spark.ts — the versioned Spark prompt. THE PROMPT-REGISTRY SEED.
  *
  * The convention set here is the one every future constellation stage inherits
- * (plan §4.2): one module per stage, exporting `{ version, model, system, schema }`,
+ * (plan §4.2): one module per stage, exporting `{ version, system, schema }`,
  * with the attempt log recording the version and a git diff serving as the
- * registry — changing a prompt means bumping `SPARK_PROMPT_VERSION`.
+ * registry — changing a prompt means bumping `SPARK_PROMPT_VERSION`. The MODEL
+ * moved out to `providers.ts` (llm-provider-portability §2 P3): with two
+ * providers it is a deployment choice, resolved per stage at the composition
+ * root — but this prompt was TUNED against specific models (v2/v3 against
+ * Haiku 4.5), so a provider flip must re-run the quality lane, and any tune it
+ * forces ships as a new prompt version.
  *
  * The system prompt is authored as the FOUR-FIELD worker contract — the
  * strongest-verified claim in the harness research (spec defects are the largest
@@ -51,13 +56,6 @@ export const SPARK_PROMPT_VERSION = "spark-v3";
 /** Bumped independently of the prompt when the wire schema shape changes; folded
  * into the input hash so a schema change invalidates cached attempt identity. */
 export const SPARK_SCHEMA_VERSION = "spark-schema-v1";
-
-/** Haiku-class model, PINNED to a dated snapshot rather than the `claude-haiku-4-5`
- * alias: the alias can re-resolve to a newer snapshot server-side without changing
- * `inputHash`, silently confounding cross-prompt-version telemetry comparisons.
- * Never hardcoded at a call site — the adapter and telemetry read it from here
- * (plan §4.1). */
-export const SPARK_MODEL_ID = "claude-haiku-4-5-20251001";
 
 /** Enough headroom for a short prose analysis plus ~3 one-line questions; the
  * structured-call bumps this once on a max_tokens stop. */

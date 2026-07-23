@@ -3,8 +3,8 @@
  *
  * The handler cores are pure-ish: they take their dependencies as data. This
  * module is the ONE place that decides, per `isE2ETesting()`, whether those
- * dependencies are the real Anthropic/Postgres stack or the mock/in-memory
- * stack. Splitting composition from the handler is what lets the cores be
+ * dependencies are the real provider/Postgres stack (provider chosen by the
+ * `providers.ts` registry) or the mock/in-memory stack. Splitting composition from the handler is what lets the cores be
  * contract-tested exhaustively with stubs (auth-missing, error mapping, rate
  * caps, …) and lets E2E mode run with no env at all.
  *
@@ -20,7 +20,10 @@
 import { isE2ETesting } from "../../../infra/env";
 import { createMockSparkGenerationPort } from "../../../infra/llm/mock-spark-adapter";
 import { createSparkGenerationPort } from "../../../infra/llm/spark-adapter";
-import { createAnthropicStructuredClient } from "../../../infra/llm/anthropic-client";
+import {
+  createStructuredClientFor,
+  resolveSparkLlm,
+} from "../../../infra/llm/providers";
 import { createSparkEventSink } from "../../../infra/db/spark-event-repo";
 import {
   createInferenceAttemptSink,
@@ -124,10 +127,15 @@ async function getRealBackends(): Promise<RealBackends> {
     const eventSink = createSparkEventSink(db);
     const attemptSink = createInferenceAttemptSink(db);
     const servedLensQuery = createDbServedLensQuery(db);
-    const client = createAnthropicStructuredClient();
+    // Provider + model resolved once per process from LLM_PROVIDER (the
+    // registry, portability research §2 P3). Both client factories read their
+    // API key lazily, so composition itself needs no key.
+    const sparkLlm = resolveSparkLlm();
+    const client = createStructuredClientFor(sparkLlm.provider);
 
     const generationPortFor: GenerationPortFor = (userId) =>
       createSparkGenerationPort(client, {
+        modelId: sparkLlm.modelId,
         onAttempt: toOnAttempt(attemptSink, userId),
       });
 

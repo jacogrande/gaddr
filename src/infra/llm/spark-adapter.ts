@@ -46,7 +46,6 @@ import {
 import {
   buildSparkUserContent,
   SPARK_MAX_TOKENS,
-  SPARK_MODEL_ID,
   SPARK_PROMPT_VERSION,
   SPARK_SCHEMA_VERSION,
   SPARK_SYSTEM_PROMPT,
@@ -174,6 +173,9 @@ function parseSparkCandidates(
 }
 
 export interface SparkAdapterDeps {
+  /** The model to call — resolved per provider by `providers.ts` at the
+   * composition root, never hardcoded here (portability research §2 P3). */
+  readonly modelId: string;
   /** Per-attempt telemetry sink (the inference_attempt seam, Phase 4). */
   readonly onAttempt?: (attempt: InferenceAttempt) => void;
   /** Injected clock for latency; defaults to Date.now inside structured-call. */
@@ -182,12 +184,13 @@ export interface SparkAdapterDeps {
 
 /**
  * Build the real Spark generation port over an injected structured-call client
- * (the Anthropic-backed one in production; a stub in contract tests). Composition
- * only — no business logic beyond wiring the pieces together.
+ * (Anthropic- or OpenAI-backed in production, per the provider registry; a stub
+ * in contract tests). Composition only — no business logic beyond wiring the
+ * pieces together.
  */
 export function createSparkGenerationPort(
   client: StructuredCallClient,
-  deps: SparkAdapterDeps = {},
+  deps: SparkAdapterDeps,
 ): SparkGenerationPort {
   return {
     async generate(input) {
@@ -196,13 +199,13 @@ export function createSparkGenerationPort(
         draft,
         promptVersion: SPARK_PROMPT_VERSION,
         schemaVersion: SPARK_SCHEMA_VERSION,
-        modelId: SPARK_MODEL_ID,
+        modelId: deps.modelId,
       });
 
       const generated: Result<readonly SparkCandidate[], InferenceError> =
         await structuredCall<readonly SparkCandidate[]>({
           client,
-          modelId: SPARK_MODEL_ID,
+          modelId: deps.modelId,
           system: SPARK_SYSTEM_PROMPT,
           // The hint is deterministic from (sprintId, servedLenses) — never
           // persisted; telemetry re-derives it when a distribution question
