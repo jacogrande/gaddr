@@ -100,6 +100,7 @@ async function run<T>(
   replies: readonly Reply[],
   parse: (rawText: string) => StructuredParseOutcome<T>,
   maxTokens = 200,
+  repairCap?: number,
 ): Promise<RunResult<T>> {
   const attempts: InferenceAttempt[] = [];
   const { client, calls } = makeStub(replies);
@@ -111,6 +112,7 @@ async function run<T>(
     schema: { type: "object" },
     maxTokens,
     parse,
+    repairCap,
     telemetry: { stage: "spark", inputHash: "hash-1", promptVersion: "v1" },
     onAttempt: (attempt) => attempts.push(attempt),
     clock: makeClock(),
@@ -469,12 +471,14 @@ describe("structuredCall — turn alternation", () => {
   });
 });
 
-// ── Attempt budget exhaustion ───────────────────────────────────────────────
+// ── Repair cap (per-call) + attempt accounting ──────────────────────────────
 
-describe("structuredCall — attempt budget", () => {
-  test("budget exhaustion emits NO phantom record: one record per model call, exactly", async () => {
-    // 4 pause continuations + 1 max_tokens retry + 1 validation failure =
-    // 6 model calls; the repair would be call 7, which exceeds the budget.
+describe("structuredCall — repair cap and attempt accounting", () => {
+  test("the full pathological chain emits exactly one record per model call, no phantom", async () => {
+    // 4 pause continuations + 1 max_tokens retry + 1 validation failure +
+    // 1 repair (default cap) = 7 model calls, every sub-budget exhausted; the
+    // dead-end is repair exhaustion, and the absolute ceiling never has to
+    // bind (it is a backstop sized as the sum of the sub-budgets).
     const { result, calls, attempts } = await run(
       [
         reply({ outcome: "paused" }),
@@ -482,6 +486,7 @@ describe("structuredCall — attempt budget", () => {
         reply({ outcome: "paused" }),
         reply({ outcome: "paused" }),
         reply({ outcome: "truncated" }),
+        reply({ outcome: "complete" }),
         reply({ outcome: "complete" }),
       ],
       (): StructuredParseOutcome<readonly string[]> => ({
@@ -492,16 +497,55 @@ describe("structuredCall — attempt budget", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.reason).toBe("malformed-output");
-      expect(result.error.message).toContain("attempt budget");
+      expect(result.error.message).toContain("Validation exhausted");
     }
-    expect(calls.length).toBe(6);
-    expect(attempts.length).toBe(6); // no 7th phantom record
+    expect(calls.length).toBe(7);
+    expect(attempts.length).toBe(7); // no phantom record
     expect(attempts.map((a) => a.outcome)).toEqual([
       "pause-turn",
       "pause-turn",
       "pause-turn",
       "pause-turn",
       "max-tokens",
+      "validation-failed",
+      "validation-failed",
+    ]);
+  });
+
+  test("repairCap: 0 dead-ends on the first validation failure with no repair call", async () => {
+    const { result, calls, attempts } = await run(
+      [reply({ outcome: "complete" })],
+      (): StructuredParseOutcome<readonly string[]> => ({
+        result: err({ reasons: ["bad"] }),
+      }),
+      200,
+      0,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(calls.length).toBe(1);
+    expect(attempts.map((a) => a.outcome)).toEqual(["validation-failed"]);
+  });
+
+  test("repairCap: 2 permits two repairs before dead-ending", async () => {
+    const { result, calls, attempts } = await run(
+      [
+        reply({ outcome: "complete" }),
+        reply({ outcome: "complete" }),
+        reply({ outcome: "complete" }),
+      ],
+      (): StructuredParseOutcome<readonly string[]> => ({
+        result: err({ reasons: ["still bad"] }),
+      }),
+      200,
+      2,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(calls.length).toBe(3);
+    expect(attempts.map((a) => a.outcome)).toEqual([
+      "validation-failed",
+      "validation-failed",
       "validation-failed",
     ]);
   });

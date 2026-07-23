@@ -67,7 +67,7 @@ function textMessage(text: string): unknown {
 // ── Request building ────────────────────────────────────────────────────────
 
 describe("buildResponsesRequest", () => {
-  const built = buildResponsesRequest(REQUEST, "minimal");
+  const built = buildResponsesRequest(REQUEST, "none");
 
   test("NEVER stores: store is false on every request (infra.md §7.4)", () => {
     expect(built.store).toBe(false);
@@ -82,7 +82,7 @@ describe("buildResponsesRequest", () => {
   });
 
   test("pins reasoning effort (spark-class latency budgets)", () => {
-    expect(built.reasoning?.effort).toBe("minimal");
+    expect(built.reasoning?.effort).toBe("none");
   });
 
   test("threads model, system-as-instructions, and the token budget", () => {
