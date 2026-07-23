@@ -19,7 +19,6 @@ import {
   createSparkGenerationPort,
 } from "../../../../src/infra/llm/spark-adapter";
 import {
-  SPARK_MODEL_ID,
   SPARK_PROMPT_VERSION,
   SPARK_SCHEMA_VERSION,
 } from "../../../../src/infra/llm/prompts/spark";
@@ -42,9 +41,14 @@ function sid(raw: string): SprintId {
 
 const SID = sid("11111111-1111-1111-1111-111111111111");
 
+/** The model is injected by the composition root (providers.ts) in production;
+ * tests inject their own so no assertion depends on the registry's choice. */
+const TEST_MODEL_ID = "test-model-1";
+
 function response(text: string): StructuredCallResponse {
   return {
-    stopReason: "end_turn",
+    outcome: "complete",
+    providerStopReason: "end_turn",
     stopDetails: null,
     text,
     rawContent: [{ type: "text", text }],
@@ -93,6 +97,7 @@ describe("createSparkGenerationPort — happy path", () => {
     const { client } = recordingClient(modelJson(VALID_CANDIDATES));
     const attempts: InferenceAttempt[] = [];
     const port = createSparkGenerationPort(client, {
+      modelId: TEST_MODEL_ID,
       onAttempt: (attempt) => attempts.push(attempt),
     });
 
@@ -137,13 +142,13 @@ describe("createSparkGenerationPort — happy path", () => {
     expect(attempts[0]?.stage).toBe("spark");
     expect(attempts[0]?.candidatesReturned).toBe(3);
     expect(attempts[0]?.candidatesValid).toBe(3);
-    expect(attempts[0]?.modelId).toBe(SPARK_MODEL_ID);
+    expect(attempts[0]?.modelId).toBe(TEST_MODEL_ID);
     expect(attempts[0]?.inputHash).toBe(
       computeSparkInputHash({
         draft: DRAFT,
         promptVersion: SPARK_PROMPT_VERSION,
         schemaVersion: SPARK_SCHEMA_VERSION,
-        modelId: SPARK_MODEL_ID,
+        modelId: TEST_MODEL_ID,
       }),
     );
   });
@@ -152,7 +157,7 @@ describe("createSparkGenerationPort — happy path", () => {
 describe("createSparkGenerationPort — servedLenses exclusion", () => {
   test("the served lens appears in the prompt as an exclusion", async () => {
     const { client, calls } = recordingClient(modelJson(VALID_CANDIDATES));
-    const port = createSparkGenerationPort(client);
+    const port = createSparkGenerationPort(client, { modelId: TEST_MODEL_ID });
 
     await port.generate({
       draft: DRAFT,
@@ -171,7 +176,7 @@ describe("createSparkGenerationPort — servedLenses exclusion", () => {
   test("a served lens returned by the model is dropped from the set", async () => {
     // Model ignores the exclusion and returns the served lens first.
     const { client } = recordingClient(modelJson(VALID_CANDIDATES));
-    const port = createSparkGenerationPort(client);
+    const port = createSparkGenerationPort(client, { modelId: TEST_MODEL_ID });
 
     const result = await port.generate({
       draft: DRAFT,
@@ -233,6 +238,7 @@ describe("createSparkGenerationPort — exclusion vs. generation failure", () =>
     const { client, calls } = recordingClient(modelJson(excluded));
     const attempts: InferenceAttempt[] = [];
     const port = createSparkGenerationPort(client, {
+      modelId: TEST_MODEL_ID,
       onAttempt: (attempt) => attempts.push(attempt),
     });
 
@@ -265,6 +271,7 @@ describe("createSparkGenerationPort — exclusion vs. generation failure", () =>
     const { client, calls } = recordingClient(modelJson(ungrounded));
     const attempts: InferenceAttempt[] = [];
     const port = createSparkGenerationPort(client, {
+      modelId: TEST_MODEL_ID,
       onAttempt: (attempt) => attempts.push(attempt),
     });
 
@@ -293,7 +300,7 @@ describe("createSparkGenerationPort — failure passthrough", () => {
       create: () =>
         Promise.reject({ name: "APIConnectionError", message: "conn" }),
     };
-    const port = createSparkGenerationPort(client);
+    const port = createSparkGenerationPort(client, { modelId: TEST_MODEL_ID });
 
     const result = await port.generate({
       draft: DRAFT,
@@ -309,7 +316,7 @@ describe("createSparkGenerationPort — failure passthrough", () => {
 describe("createSparkGenerationPort — seeded consideration hint (spark-v3)", () => {
   test("the user turn carries the hint derived from (sprintId, servedLenses)", async () => {
     const { client, calls } = recordingClient(modelJson(VALID_CANDIDATES));
-    const port = createSparkGenerationPort(client);
+    const port = createSparkGenerationPort(client, { modelId: TEST_MODEL_ID });
 
     await port.generate({ draft: DRAFT, sprintId: SID, servedLenses: [] });
 
@@ -327,7 +334,7 @@ describe("createSparkGenerationPort — seeded consideration hint (spark-v3)", (
 
   test("the hint never names a served lens, and coexists with the exclusion", async () => {
     const { client, calls } = recordingClient(modelJson(VALID_CANDIDATES));
-    const port = createSparkGenerationPort(client);
+    const port = createSparkGenerationPort(client, { modelId: TEST_MODEL_ID });
     const served = ["economic", "historical"] as const;
 
     await port.generate({

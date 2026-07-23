@@ -3,7 +3,7 @@
  *
  * Everything runs against a STUBBED injectable client — no network, no
  * ANTHROPIC_API_KEY. These lock the harness-seed behaviour every future stage
- * inherits: each stop_reason branch, the bounded repair loop (with the exact
+ * inherits: each neutral CallOutcome branch, the bounded repair loop (with the exact
  * validator text threaded into the retry prompt), strict turn alternation
  * across pause/repair, per-attempt telemetry sequencing, and total
  * transport-error mapping (never a throw).
@@ -42,7 +42,8 @@ function reply(overrides: Partial<StructuredCallResponse> = {}): Reply {
   return {
     kind: "response",
     response: {
-      stopReason: "end_turn",
+      outcome: "complete",
+      providerStopReason: "end_turn",
       stopDetails: null,
       text: "{}",
       rawContent: [{ type: "text", text: "{}" }],
@@ -121,15 +122,15 @@ const okParse =
   <T>(value: T, yieldInfo: Partial<StructuredParseOutcome<T>> = {}) =>
   (): StructuredParseOutcome<T> => ({ result: ok(value), ...yieldInfo });
 
-// ── stop_reason branches ────────────────────────────────────────────────────
+// ── CallOutcome branches ────────────────────────────────────────────────────
 
-describe("structuredCall — stop_reason branches", () => {
+describe("structuredCall — outcome branches", () => {
   test("refusal is a non-retryable malformed-output; parse is never called", async () => {
     let parseCalls = 0;
     const { result, calls, attempts } = await run(
       [
         reply({
-          stopReason: "refusal",
+          outcome: "refused",
           stopDetails: { category: "cyber", explanation: "declined" },
         }),
       ],
@@ -149,7 +150,7 @@ describe("structuredCall — stop_reason branches", () => {
 
   test("max_tokens retries ONCE with a doubled budget, then dead-ends", async () => {
     const { result, calls, attempts } = await run(
-      [reply({ stopReason: "max_tokens" }), reply({ stopReason: "max_tokens" })],
+      [reply({ outcome: "truncated" }), reply({ outcome: "truncated" })],
       okParse<readonly string[]>([]),
       500,
     );
@@ -171,8 +172,8 @@ describe("structuredCall — stop_reason branches", () => {
       [
         // Empty pre-pause text: this test isolates the block-echo behaviour; the
         // text-accumulation across a pause has its own regression test below.
-        reply({ stopReason: "pause_turn", text: "", rawContent: pauseContent }),
-        reply({ stopReason: "end_turn", text: "DONE" }),
+        reply({ outcome: "paused", text: "", rawContent: pauseContent }),
+        reply({ outcome: "complete", text: "DONE" }),
       ],
       (text) =>
         text === "DONE"
@@ -199,11 +200,11 @@ describe("structuredCall — stop_reason branches", () => {
     const { result, calls } = await run(
       [
         reply({
-          stopReason: "pause_turn",
+          outcome: "paused",
           text: '{"candidates":[',
           rawContent: [{ type: "server_tool_use", id: "srv_1" }],
         }),
-        reply({ stopReason: "end_turn", text: "]}" }),
+        reply({ outcome: "complete", text: "]}" }),
       ],
       (text): StructuredParseOutcome<readonly string[]> => {
         sawText = text;
@@ -219,9 +220,9 @@ describe("structuredCall — stop_reason branches", () => {
     expect(calls.length).toBe(2);
   });
 
-  test("an unknown stop_reason maps to malformed-output without crashing", async () => {
+  test("an 'other' outcome (unmapped provider stop value) maps to malformed-output without crashing", async () => {
     const { result, calls, attempts } = await run(
-      [reply({ stopReason: "tool_use" })],
+      [reply({ outcome: "other", providerStopReason: "tool_use" })],
       okParse<readonly string[]>([]),
     );
 
@@ -233,7 +234,7 @@ describe("structuredCall — stop_reason branches", () => {
 
   test("end_turn takes the parse path and returns the parsed value", async () => {
     const { result, attempts } = await run(
-      [reply({ stopReason: "end_turn", text: "OK" })],
+      [reply({ outcome: "complete", text: "OK" })],
       okParse<readonly string[]>(["value"], {
         candidatesReturned: 2,
         candidatesValid: 2,
@@ -260,11 +261,11 @@ describe("structuredCall — repair loop", () => {
     const { calls } = await run(
       [
         reply({
-          stopReason: "end_turn",
+          outcome: "complete",
           text: "ATTEMPT_ONE",
           rawContent: [{ type: "text", text: "ATTEMPT_ONE" }],
         }),
-        reply({ stopReason: "end_turn", text: "ATTEMPT_TWO" }),
+        reply({ outcome: "complete", text: "ATTEMPT_TWO" }),
       ],
       () => ({
         result: err({ reasons: [EXACT_VALIDATOR_TEXT] }),
@@ -286,7 +287,7 @@ describe("structuredCall — repair loop", () => {
 
   test("a second validation failure dead-ends as malformed-output", async () => {
     const { result, calls, attempts } = await run(
-      [reply({ stopReason: "end_turn" }), reply({ stopReason: "end_turn" })],
+      [reply({ outcome: "complete" }), reply({ outcome: "complete" })],
       () => ({
         result: err({ reasons: ["still bad"] }),
         candidatesReturned: 3,
@@ -311,7 +312,7 @@ describe("structuredCall — repair loop", () => {
   test("a repair that succeeds on the second attempt returns ok", async () => {
     let call = 0;
     const { result, attempts } = await run(
-      [reply({ stopReason: "end_turn" }), reply({ stopReason: "end_turn" })],
+      [reply({ outcome: "complete" }), reply({ outcome: "complete" })],
       (): StructuredParseOutcome<readonly string[]> => {
         call += 1;
         return call === 1
@@ -438,9 +439,9 @@ describe("structuredCall — turn alternation", () => {
 
     const { result, calls } = await run(
       [
-        reply({ stopReason: "pause_turn", rawContent: pauseBlocks }),
-        reply({ stopReason: "end_turn", text: "BAD", rawContent: badBlocks }),
-        reply({ stopReason: "end_turn", text: "GOOD" }),
+        reply({ outcome: "paused", rawContent: pauseBlocks }),
+        reply({ outcome: "complete", text: "BAD", rawContent: badBlocks }),
+        reply({ outcome: "complete", text: "GOOD" }),
       ],
       (text): StructuredParseOutcome<readonly string[]> => {
         parseCalls += 1;
@@ -476,12 +477,12 @@ describe("structuredCall — attempt budget", () => {
     // 6 model calls; the repair would be call 7, which exceeds the budget.
     const { result, calls, attempts } = await run(
       [
-        reply({ stopReason: "pause_turn" }),
-        reply({ stopReason: "pause_turn" }),
-        reply({ stopReason: "pause_turn" }),
-        reply({ stopReason: "pause_turn" }),
-        reply({ stopReason: "max_tokens" }),
-        reply({ stopReason: "end_turn" }),
+        reply({ outcome: "paused" }),
+        reply({ outcome: "paused" }),
+        reply({ outcome: "paused" }),
+        reply({ outcome: "paused" }),
+        reply({ outcome: "truncated" }),
+        reply({ outcome: "complete" }),
       ],
       (): StructuredParseOutcome<readonly string[]> => ({
         result: err({ reasons: ["never good"] }),
