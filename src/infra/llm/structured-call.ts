@@ -9,16 +9,23 @@
  *  1. Call the model with a caller-owned JSON output schema (the wire schema is
  *     the caller's — this helper never imposes one, so a stage whose schema puts
  *     free-text reasoning first, as Spark's does, is expressible without change).
- *  2. Branch EXHAUSTIVELY on `stop_reason` before touching content:
- *       - refusal    → non-retryable InferenceError{malformed-output}
- *       - max_tokens → ONE retry with a larger budget, then dead-end
- *       - pause_turn → continue the turn (echo the assistant blocks back AND
- *                      carry the pre-pause text forward, so the eventual parse
- *                      sees the whole turn). NB: continuation semantics are not
- *                      yet verified against real Anthropic pause payloads — that
- *                      lands with the first tool-bearing stage (S1).
- *       - end_turn   → parse
- *       - anything else / unknown → mapped to malformed-output, never a crash.
+ *  2. Branch EXHAUSTIVELY on the neutral `CallOutcome` before touching content.
+ *     The vocabulary is PROVIDER-NEUTRAL (llm-provider-portability research §2
+ *     P1): each client adapter translates its native taxonomy — Anthropic
+ *     `stop_reason`, OpenAI `status`/`incomplete_details`/refusal parts — into
+ *     this closed set; the discipline never sees provider strings:
+ *       - refused   → non-retryable InferenceError{malformed-output}
+ *       - truncated → ONE retry with a larger budget, then dead-end
+ *       - paused    → continue the turn (echo the assistant blocks back AND
+ *                     carry the pre-pause text forward, so the eventual parse
+ *                     sees the whole turn). Anthropic-only (`pause_turn`); the
+ *                     OpenAI adapter never emits it. NB: continuation semantics
+ *                     are not yet verified against real Anthropic pause
+ *                     payloads — that lands with the first tool-bearing stage.
+ *       - complete  → parse
+ *       - other     → mapped to malformed-output, never a crash (the adapter
+ *                     preserves the raw provider value in `providerStopReason`
+ *                     for the error message).
  *  3. Hand the text to the caller's parse+validate function. A validation failure
  *     triggers ONE repair retry carrying the EXACT validator error text in the
  *     retry prompt; a second failure dead-ends as malformed-output.
@@ -29,10 +36,10 @@
  *     record is shaped so that phase can persist it without reshaping.
  *
  * The model client is INJECTED (a parameter, never a module import): the seam the
- * contract tests stub, and the seam future stages swap. The real implementation
- * wraps the Anthropic SDK — see `anthropic-client.ts`. This module imports no SDK
- * type and knows nothing about Anthropic; it duck-types transport errors so it
- * stays provider-agnostic.
+ * contract tests stub, and the seam future stages swap. Real implementations wrap
+ * the native provider SDKs — `anthropic-client.ts` / `openai-client.ts`, selected
+ * per stage by `providers.ts`. This module imports no SDK type and knows nothing
+ * about any provider; it duck-types transport errors so it stays provider-agnostic.
  *
  * Infra, not domain: latency is timed with an injected clock defaulting to
  * `Date.now()`, which this layer is allowed to call.
@@ -49,11 +56,13 @@ export type JsonSchema = { readonly [key: string]: unknown };
 
 // ── The injectable model-call seam ──────────────────────────────────────────
 //
-// A narrow, provider-agnostic interface. The real adapter (anthropic-client.ts)
-// translates Anthropic wire payloads into these shapes; a contract-test stub
-// implements them directly with canned responses. Assistant echo turns carry the
-// prior response's content blocks OPAQUELY (`unknown[]`), so pause_turn
-// continuation round-trips losslessly without this module knowing block shapes.
+// A narrow, provider-agnostic interface. The real adapters (anthropic-client.ts,
+// openai-client.ts) translate their wire payloads into these shapes; a
+// contract-test stub implements them directly with canned responses. Assistant
+// echo turns carry the prior response's content blocks OPAQUELY (`unknown[]`),
+// so pause/repair continuation round-trips losslessly without this module
+// knowing block shapes — each adapter defines (and consumes) its own block
+// convention; blocks never cross adapters.
 
 /** One conversation turn. User turns carry text; assistant echo turns carry the
  * opaque prior content blocks (for pause_turn / repair continuation). */
@@ -83,10 +92,29 @@ export interface StructuredCallRequest {
   readonly signal?: AbortSignal;
 }
 
+/**
+ * The neutral outcome vocabulary — the closed set the discipline branches on.
+ * Each client adapter owns the translation from its provider's native taxonomy
+ * (the full mapping table lives in `docs/research/llm-provider-portability.md`
+ * §2 P1). `paused` is Anthropic-only; adapters for providers without a pause
+ * concept simply never emit it.
+ */
+export type CallOutcome =
+  | "complete"
+  | "truncated"
+  | "refused"
+  | "paused"
+  | "other";
+
 /** The normalized model response. `text` is the concatenated text blocks (for
- * parsing); `rawContent` is the opaque block list (echoed back on continuation). */
+ * parsing); `rawContent` is the opaque block list (echoed back on continuation,
+ * in a shape only the emitting adapter needs to understand). */
 export interface StructuredCallResponse {
-  readonly stopReason: string | null;
+  readonly outcome: CallOutcome;
+  /** The raw provider stop value (`stop_reason` / `status`+`incomplete_details`
+   * shorthand), preserved for diagnostics and the `other`-outcome error message.
+   * Never branched on here — that is what `outcome` is for. */
+  readonly providerStopReason: string | null;
   readonly stopDetails: {
     readonly category: string | null;
     readonly explanation?: string;
@@ -96,6 +124,10 @@ export interface StructuredCallResponse {
   readonly usage: {
     readonly inputTokens: number;
     readonly outputTokens: number;
+    /** Prompt tokens served from the provider's cache, when reported
+     * (Anthropic `cache_read_input_tokens` / OpenAI `cached_tokens`).
+     * Optional: absent when the provider omits the detail. */
+    readonly cachedInputTokens?: number;
   };
 }
 
@@ -154,6 +186,11 @@ export interface InferenceAttempt {
   readonly latencyMs: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
+  /** Cached prompt tokens, when the provider reports them. Not yet persisted —
+   * the `inference_attempt` column piggybacks on the constellation migration
+   * (portability research §2 P5); sinks map fields explicitly and ignore it
+   * until then. */
+  readonly cachedInputTokens?: number;
 }
 
 // ── The caller's parse+validate seam ────────────────────────────────────────
@@ -376,6 +413,7 @@ export async function structuredCall<T>(
       latencyMs,
       inputTokens: usage?.inputTokens ?? 0,
       outputTokens: usage?.outputTokens ?? 0,
+      cachedInputTokens: usage?.cachedInputTokens,
       candidatesReturned: yieldInfo?.candidatesReturned,
       candidatesValid: yieldInfo?.candidatesValid,
       rejectReasons: yieldInfo?.rejectReasons,
@@ -416,8 +454,8 @@ export async function structuredCall<T>(
     const latencyMs = clock() - startedAt;
     const usage = response.usage;
 
-    switch (response.stopReason) {
-      case "refusal": {
+    switch (response.outcome) {
+      case "refused": {
         emit("refusal", latencyMs, usage);
         const explanation =
           response.stopDetails?.explanation ??
@@ -431,7 +469,7 @@ export async function structuredCall<T>(
         );
       }
 
-      case "max_tokens": {
+      case "truncated": {
         emit("max-tokens", latencyMs, usage);
         if (maxTokensRetryUsed) {
           return err(
@@ -448,7 +486,7 @@ export async function structuredCall<T>(
         continue;
       }
 
-      case "pause_turn": {
+      case "paused": {
         emit("pause-turn", latencyMs, usage);
         if (pauseContinuations >= MAX_PAUSE_CONTINUATIONS) {
           return err(
@@ -468,10 +506,8 @@ export async function structuredCall<T>(
         continue;
       }
 
-      case "end_turn":
-      case "stop_sequence":
-      case null: {
-        // Prepend any text carried over from pause_turn continuations so parse
+      case "complete": {
+        // Prepend any text carried over from pause continuations so parse
         // sees the whole turn, not just this final chunk.
         const parsed = options.parse(pausePrefix + response.text);
         const yieldInfo = {
@@ -505,13 +541,15 @@ export async function structuredCall<T>(
         continue;
       }
 
-      default: {
-        // tool_use or any unknown/future stop reason: explicit, never a crash.
+      case "other": {
+        // tool_use or any unknown/future provider stop value the adapter could
+        // not classify: explicit, never a crash. The switch is exhaustive over
+        // the closed CallOutcome union — TypeScript enforces it.
         emit("malformed-output", latencyMs, usage);
         return err(
           inferenceError(
             "malformed-output",
-            `Unexpected stop reason: ${response.stopReason}`,
+            `Unexpected stop reason: ${response.providerStopReason ?? "unknown"}`,
           ),
         );
       }

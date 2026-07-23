@@ -20,6 +20,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type {
+  CallOutcome,
   StructuredCallClient,
   StructuredCallRequest,
   StructuredCallResponse,
@@ -61,7 +62,34 @@ function toSdkMessages(
   });
 }
 
-function toStructuredResponse(
+/**
+ * Anthropic `stop_reason` → the neutral `CallOutcome` (portability research §2
+ * P1). This table is the ONLY place Anthropic's stop vocabulary exists; the
+ * discipline in structured-call branches on the neutral set alone.
+ */
+function toCallOutcome(stopReason: string | null): CallOutcome {
+  switch (stopReason) {
+    case "end_turn":
+    case "stop_sequence":
+    case null:
+      return "complete";
+    case "max_tokens":
+    case "model_context_window_exceeded":
+      return "truncated";
+    case "refusal":
+      return "refused";
+    case "pause_turn":
+      return "paused";
+    default:
+      // tool_use or any future stop reason — preserved raw in
+      // providerStopReason for the malformed-output message.
+      return "other";
+  }
+}
+
+/** Exported pure for the contract-test mapping table (same convention as the
+ * OpenAI adapter's mappers). */
+export function toStructuredResponse(
   message: Anthropic.Message,
 ): StructuredCallResponse {
   const text = message.content
@@ -74,13 +102,15 @@ function toStructuredResponse(
       }
     : null;
   return {
-    stopReason: message.stop_reason,
+    outcome: toCallOutcome(message.stop_reason),
+    providerStopReason: message.stop_reason,
     stopDetails,
     text,
     rawContent: message.content,
     usage: {
       inputTokens: message.usage.input_tokens,
       outputTokens: message.usage.output_tokens,
+      cachedInputTokens: message.usage.cache_read_input_tokens ?? undefined,
     },
   };
 }
