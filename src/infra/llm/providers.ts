@@ -20,9 +20,10 @@
  * Model pinning per provider:
  *  - Anthropic: dated snapshot where one exists (alias re-resolution silently
  *    confounds telemetry under an unchanged inputHash — spark-v2 lesson).
- *  - OpenAI: `gpt-5.6-luna` is currently the ALIAS — pin it to the dated
- *    snapshot ID at the first live run (list via /v1/models with the real
- *    key); until then the response-reported model is the only drift signal.
+ *  - OpenAI: `gpt-5.6-luna` is ALIAS-ONLY — /v1/models listed no dated
+ *    snapshot (verified 2026-07-23, same posture as current-gen Anthropic
+ *    models), so the response-reported model is the drift signal. Yield gate
+ *    passed the same day: 3/3 first-attempt on the smoke corpus, no tune.
  */
 
 import type { StructuredCallClient } from "./structured-call";

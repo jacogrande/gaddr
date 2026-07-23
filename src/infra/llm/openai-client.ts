@@ -44,10 +44,12 @@ import type {
 
 const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
 
-/** Reasoning-effort ceiling for structured stage calls. "minimal" keeps
- * reasoning tokens from eating the output budget on latency-bounded stages;
- * a future synthesis-heavy stage can pass a higher value at construction. */
-export type OpenAIReasoningEffort = "minimal" | "low" | "medium" | "high";
+/** Reasoning-effort ceiling for structured stage calls, on the GPT-5.6-family
+ * scale (the first live smoke 400'd on the older "minimal" value — the 5.6
+ * generation renamed the scale). "none" keeps reasoning tokens from eating the
+ * output budget on latency-bounded stages; a future synthesis-heavy stage can
+ * pass a higher value at construction. */
+export type OpenAIReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
 function requireApiKey(): string {
   const key = process.env[OPENAI_API_KEY_ENV];
@@ -202,7 +204,7 @@ export function fromResponsesResponse(
 export function createOpenAIStructuredClient(
   options: { readonly reasoningEffort?: OpenAIReasoningEffort } = {},
 ): StructuredCallClient {
-  const reasoningEffort = options.reasoningEffort ?? "minimal";
+  const reasoningEffort = options.reasoningEffort ?? "none";
   let sdk: OpenAI | undefined;
   const client = (): OpenAI => {
     sdk ??= new OpenAI({ apiKey: requireApiKey() });
