@@ -6,13 +6,20 @@
  * expected to find a prompt tune.
  *
  * Usage:
- *   OPENAI_API_KEY=...    bun scripts/spark-smoke.ts            # registry default
- *   ANTHROPIC_API_KEY=... LLM_PROVIDER=anthropic bun scripts/spark-smoke.ts
+ *   bun scripts/spark-smoke.ts             # 3 inline drafts, full candidate output
+ *   bun scripts/spark-smoke.ts --corpus    # every eval/corpus draft: per-draft
+ *                                          # yield lines + the corpus-wide lens
+ *                                          # histogram (the offline diversity
+ *                                          # early warning); add --verbose for
+ *                                          # candidate text
  *
- * Cost: 3 calls on the cheap-fast tier — well under a cent. Drafts below are
- * synthetic test prose, not user content.
+ * Provider comes from the registry (LLM_PROVIDER); the active provider's key
+ * must be set. Cost: cheap-fast tier — the full corpus run is a few cents.
+ * All drafts are synthetic (see eval/corpus/README.md), never user content.
  */
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { sprintId as makeSprintId } from "../src/domain/types/branded";
 import { createSparkGenerationPort } from "../src/infra/llm/spark-adapter";
 import {
@@ -66,20 +73,48 @@ function sid(raw: string) {
   return result.value;
 }
 
-const SMOKE_SPRINT = sid("99999999-9999-4999-8999-999999999999");
+/** Deterministic per-draft sprint id so seeded lens hints vary across drafts
+ * the way they vary across real sprints. */
+function smokeSprintFor(index: number) {
+  const tail = String(index + 1).padStart(12, "0");
+  return sid(`99999999-9999-4999-8999-${tail}`);
+}
+
+/** Load eval/corpus/*.md: strip frontmatter, keep (id, body). */
+function loadCorpus(): ReadonlyArray<{ readonly label: string; readonly draft: string }> {
+  const dir = join(import.meta.dir, "..", "eval", "corpus");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".md") && f !== "README.md")
+    .sort()
+    .map((f) => {
+      const raw = readFileSync(join(dir, f), "utf8");
+      const end = raw.indexOf("---", raw.indexOf("---") + 3);
+      const body = end >= 0 ? raw.slice(end + 3).trim() : raw.trim();
+      return { label: f.replace(/\.md$/, ""), draft: body };
+    });
+}
 
 async function main(): Promise<void> {
+  const corpusMode = process.argv.includes("--corpus");
+  const verbose = !corpusMode || process.argv.includes("--verbose");
+  const drafts = corpusMode ? loadCorpus() : DRAFTS;
+
   const llm = resolveSparkLlm();
-  console.log(`provider=${llm.provider} model=${llm.modelId}\n`);
+  console.log(
+    `provider=${llm.provider} model=${llm.modelId} drafts=${String(drafts.length)}\n`,
+  );
 
   const client = createStructuredClientFor(llm.provider);
   let firstAttemptOk = 0;
+  const lensCounts = new Map<string, number>();
 
-  for (const { label, draft } of DRAFTS) {
+  for (const [index, { label, draft }] of drafts.entries()) {
     const attempts: string[] = [];
+    let firstOutcome = "";
     const port = createSparkGenerationPort(client, {
       modelId: llm.modelId,
       onAttempt: (a) => {
+        if (a.retryCount === 0) firstOutcome = a.outcome;
         attempts.push(
           `    attempt#${String(a.retryCount)} outcome=${a.outcome} ` +
             `returned=${String(a.candidatesReturned ?? "-")} valid=${String(a.candidatesValid ?? "-")} ` +
@@ -92,29 +127,48 @@ async function main(): Promise<void> {
 
     const result = await port.generate({
       draft,
-      sprintId: SMOKE_SPRINT,
+      sprintId: smokeSprintFor(index),
       servedLenses: [],
     });
 
-    console.log(`[${label}]`);
-    for (const line of attempts) console.log(line);
-    if (attempts.length === 1 && attempts[0]?.includes("outcome=ok")) {
-      firstAttemptOk += 1;
+    const firstAttemptClean = firstOutcome === "ok" && attempts.length === 1;
+    if (firstAttemptClean) firstAttemptOk += 1;
+
+    const lenses = result.ok ? result.value.candidates.map((c) => c.lens) : [];
+    for (const lens of lenses) {
+      lensCounts.set(lens, (lensCounts.get(lens) ?? 0) + 1);
     }
-    if (result.ok) {
-      for (const c of result.value.candidates) {
-        console.log(`    ${c.lens}: ${c.question}  ⚓ "${c.grounding}"`);
+
+    if (verbose) {
+      console.log(`[${label}]`);
+      for (const line of attempts) console.log(line);
+      if (result.ok) {
+        for (const c of result.value.candidates) {
+          console.log(`    ${c.lens}: ${c.question}  ⚓ "${c.grounding}"`);
+        }
+      } else {
+        console.log(`    ERROR ${result.error.reason}: ${result.error.message}`);
       }
+      console.log("");
     } else {
-      console.log(`    ERROR ${result.error.reason}: ${result.error.message}`);
+      const status = result.ok
+        ? `${firstAttemptClean ? "ok " : "repaired"} lenses=[${lenses.join(",")}]`
+        : `ERROR ${result.error.reason}`;
+      console.log(`  ${label.padEnd(28)} ${status}`);
     }
-    console.log("");
   }
 
   console.log(
-    `first-attempt yield: ${String(firstAttemptOk)}/${String(DRAFTS.length)} ` +
+    `\nfirst-attempt yield: ${String(firstAttemptOk)}/${String(drafts.length)} ` +
       `(ship gate: tune the prompt before relaxing anything — spark plan §9 doctrine)`,
   );
+  if (corpusMode) {
+    console.log("\nlens histogram (the homogenization early warning):");
+    const sorted = [...lensCounts.entries()].sort((a, b) => b[1] - a[1]);
+    for (const [lens, count] of sorted) {
+      console.log(`  ${lens.padEnd(13)} ${"█".repeat(count)} ${String(count)}`);
+    }
+  }
 }
 
 main().catch((error: unknown) => {
