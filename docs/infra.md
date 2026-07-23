@@ -226,16 +226,26 @@ That distinction matters for both UX and debugging.
 
 Spark is gaddr's first server-side inference feature, and it changes the data flow: the freewrite draft now leaves the client *during* a sprint, not only at the constellation pass.
 
-- **The draft is transmitted to Anthropic on every pre-warm and every summon.** Pre-warm fires several times per sprint (throttled by a word-delta), so exposure is multiplied relative to an on-summon-only design. The freewrite is the writer's most private artifact, and the whole Spark contract rests on that privacy.
+**The provider is switchable** (`LLM_PROVIDER`, resolved by `src/infra/llm/providers.ts` — OpenAI by default since 2026-07). The posture below is therefore **per provider**: the launch checklist must be satisfied for whichever provider(s) the registry can select, and re-run whenever a new provider is added. No third-party gateway sits in the path — every hosted gateway is an additional data processor for the draft, rejected on exactly this posture (`docs/research/llm-provider-portability.md` §1.2).
+
+- **The draft is transmitted to the active provider on every pre-warm and every summon.** Pre-warm fires several times per sprint (throttled by a word-delta), so exposure is multiplied relative to an on-summon-only design. The freewrite is the writer's most private artifact, and the whole Spark contract rests on that privacy.
 - **Drafts are never persisted in gaddr's own database, and never appear in telemetry.** `inference_attempt` stores a content-free hash of the input plus counts (tokens, candidates returned vs. valid, latency); `spark_event` stores the served question text (model output needed for no-double-serving), never the writer's prose.
-- **Launch requirement — before any real-key production use:**
-  1. Confirm the Anthropic organization's no-training posture (API data is not used for model training by default at the org level).
+- **Launch requirement — before any real-key production use, per provider:**
+
+  *Anthropic:*
+  1. Confirm the organization's no-training posture (API data is not used for model training by default at the org level).
   2. Decide and document Zero-Data-Retention (ZDR) eligibility for the workspace.
   3. Review Console prompt-logging visibility so the draft is not silently retained where it can be read.
 
+  *OpenAI (the current default):*
+  1. No-training default confirmed: API data is not used for training by default (platform policy since 2023-03).
+  2. Retention window: prompts/responses are retained up to ~30 days for abuse monitoring by default; ZDR and Modified Abuse Monitoring are approval-gated via the account team — decide and document, exactly as for Anthropic.
+  3. **`store: false` is hard-coded in the adapter** (`openai-client.ts`) and locked by contract test — the Responses API default is `store: true`, which persists response bodies ≥30 days retrievably. This is the sharpest trap of the provider switch; never relax it.
+  4. Review platform-dashboard logging visibility for the org, same as the Anthropic Console check.
+
   This is a requirement, not a nice-to-have: pre-warm makes retention Spark's decision. The mock adapter path (`E2E_TESTING=true`) sends nothing outbound and is what the evals run against.
 
-See `docs/plans/spark-implementation.md` §4.4 for the full inbound/outbound content-posture rationale.
+See `docs/plans/spark-implementation.md` §4.4 for the full inbound/outbound content-posture rationale, and `docs/research/llm-provider-portability.md` §3 for the per-provider switch protocol (eval-gated rollout, prompt re-tune, yield verification).
 
 ## 8. Environments
 
