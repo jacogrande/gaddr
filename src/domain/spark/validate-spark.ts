@@ -36,6 +36,12 @@ import type { Result } from "../types/result";
 import { err, ok } from "../types/result";
 import type { SparkCandidate, SparkLens, WireSparkCandidate } from "./types";
 import { SPARK_LENSES } from "./types";
+import {
+  echoesSourceBeyondSpan,
+  indexOfSubsequence,
+  matchTokens,
+  ngramSet,
+} from "../text/span-matching";
 
 /**
  * Sparks are tighter than finding notes (which cap at 280). A dimensional
@@ -472,94 +478,13 @@ function opensInterrogativeMood(question: string): boolean {
 
 // ── Grounding & draft-echo (normalized token matching) ──────────────────────
 //
-// Normalization absorbs the paraphrase drift a Haiku-class model introduces
-// even when told to copy verbatim (plan §3.2): lowercase, punctuation stripped
-// to spaces, whitespace collapsed. Matching is on token *subsequences* rather
-// than raw substrings so "car" does not match inside "oscar" — a stricter and
-// more correct reading of "appears in the draft after normalization".
-
-/** NFC-normalize, lowercase, strip punctuation to spaces, collapse whitespace.
- * NFC comes FIRST: an accented character written in decomposed form (NFD, e.g.
- * "cafe" + U+0301) would otherwise have its combining mark — a Mark, not a
- * Letter — stripped to a space, so an NFD draft and an NFC grounding span (or
- * vice versa) would never match and a genuinely grounded spark would be dropped
- * as ungrounded. Folding both sides to NFC before tokenizing fixes that. */
-function normalize(text: string): string {
-  return text
-    .normalize("NFC")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokens(text: string): readonly string[] {
-  const normalized = normalize(text);
-  return normalized.length === 0 ? [] : normalized.split(" ");
-}
-
-/**
- * The start index of `needle` as a contiguous subsequence of `haystack`, or -1.
- */
-function indexOfSubsequence(
-  haystack: readonly string[],
-  needle: readonly string[],
-): number {
-  if (needle.length === 0 || needle.length > haystack.length) {
-    return -1;
-  }
-  for (let i = 0; i + needle.length <= haystack.length; i++) {
-    let matched = true;
-    for (let j = 0; j < needle.length; j++) {
-      if (haystack[i + j] !== needle[j]) {
-        matched = false;
-        break;
-      }
-    }
-    if (matched) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-/** The set of contiguous `size`-grams of `list`, joined for equality. */
-function ngramSet(list: readonly string[], size: number): ReadonlySet<string> {
-  const grams = new Set<string>();
-  for (let i = 0; i + size <= list.length; i++) {
-    grams.add(list.slice(i, i + size).join(" "));
-  }
-  return grams;
-}
-
-/**
- * Does the question echo a clause-length run of the draft, over and above its
- * grounding span? The grounding span is a legitimate verbatim quote of the
- * draft, so it is excised from the question before the check — otherwise this
- * rule would contradict the grounding rule (plan §3.2). Any *other* shared
- * `GHOST_ECHO_NGRAM`-word run means the question is mirroring the draft rather
- * than adding a dimension.
- */
-function echoesDraft(
-  questionTokens: readonly string[],
-  groundingTokens: readonly string[],
-  draftGrams: ReadonlySet<string>,
-): boolean {
-  const at = indexOfSubsequence(questionTokens, groundingTokens);
-  const residual =
-    at >= 0
-      ? [
-          ...questionTokens.slice(0, at),
-          ...questionTokens.slice(at + groundingTokens.length),
-        ]
-      : questionTokens;
-  for (let i = 0; i + GHOST_ECHO_NGRAM <= residual.length; i++) {
-    if (draftGrams.has(residual.slice(i, i + GHOST_ECHO_NGRAM).join(" "))) {
-      return true;
-    }
-  }
-  return false;
-}
+// The machinery lives in the SHARED module `domain/text/span-matching.ts`
+// (extracted for the constellation node validator — plan §8 step 1); this file
+// keeps only the spark policy: which checks run, in what order, with what
+// constants. Normalization absorbs the paraphrase drift a Haiku-class model
+// introduces even when told to copy verbatim (plan §3.2); matching is on token
+// subsequences rather than raw substrings so "car" does not match inside
+// "oscar".
 
 // ── The validator ───────────────────────────────────────────────────────────
 
@@ -634,14 +559,14 @@ export function validateSparkCandidate(
   if (grounding.trim().length === 0) {
     return reject("empty-grounding", "A spark must ground in the draft");
   }
-  const groundingTokens = tokens(grounding);
+  const groundingTokens = matchTokens(grounding);
   if (groundingTokens.length < GROUNDING_MIN_TOKENS) {
     return reject(
       "ungrounded",
       `A grounding span must be at least ${String(GROUNDING_MIN_TOKENS)} words — a single word is not a specific span`,
     );
   }
-  const draftTokens = tokens(draft);
+  const draftTokens = matchTokens(draft);
   if (indexOfSubsequence(draftTokens, groundingTokens) < 0) {
     return reject(
       "ungrounded",
@@ -651,7 +576,14 @@ export function validateSparkCandidate(
 
   // No draft echo beyond the grounding span.
   const draftGrams = ngramSet(draftTokens, GHOST_ECHO_NGRAM);
-  if (echoesDraft(tokens(question), groundingTokens, draftGrams)) {
+  if (
+    echoesSourceBeyondSpan(
+      matchTokens(question),
+      groundingTokens,
+      draftGrams,
+      GHOST_ECHO_NGRAM,
+    )
+  ) {
     return reject(
       "ghost-echo",
       "The question mirrors the draft instead of adding a dimension",
