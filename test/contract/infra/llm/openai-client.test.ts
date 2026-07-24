@@ -38,6 +38,7 @@ const REQUEST: StructuredCallRequest = {
  * the assertions under boilerplate the mapper never touches. */
 function fakeResponse(overrides: {
   status?: string;
+  model?: string;
   output?: readonly unknown[];
   incomplete_details?: { reason?: string } | null;
   error?: { code: string; message: string } | null;
@@ -49,6 +50,7 @@ function fakeResponse(overrides: {
 }): OpenAI.Responses.Response {
   return {
     status: "completed",
+    model: "gpt-5.6-luna-2026-07-01",
     output: [],
     incomplete_details: null,
     error: null,
@@ -81,8 +83,24 @@ describe("buildResponsesRequest", () => {
     }
   });
 
-  test("pins reasoning effort (spark-class latency budgets)", () => {
+  test("uses the fallback effort when the call sets none", () => {
     expect(built.reasoning?.effort).toBe("none");
+  });
+
+  test("a per-call effort WINS over the fallback (model-routing §1)", () => {
+    const withEffort = buildResponsesRequest(
+      { ...REQUEST, effort: "high" },
+      "none",
+    );
+    expect(withEffort.reasoning?.effort).toBe("high");
+  });
+
+  test("the neutral effort passes straight through (OpenAI is the reference scale)", () => {
+    for (const effort of ["low", "medium", "high", "xhigh"] as const) {
+      expect(
+        buildResponsesRequest({ ...REQUEST, effort }, "none").reasoning?.effort,
+      ).toBe(effort);
+    }
   });
 
   test("threads model, system-as-instructions, and the token budget", () => {
@@ -140,6 +158,13 @@ describe("fromResponsesResponse — outcome mapping", () => {
       outputTokens: 30,
       cachedInputTokens: 12,
     });
+  });
+
+  test("surfaces the provider-reported model (alias-drift guard)", () => {
+    const mapped = fromResponsesResponse(
+      fakeResponse({ model: "gpt-5.6-luna-2026-07-01", output: [textMessage("{}")] }),
+    );
+    expect(mapped.model).toBe("gpt-5.6-luna-2026-07-01");
   });
 
   test("a refusal part with status still 'completed' → refused (the refusal channel is authoritative)", () => {

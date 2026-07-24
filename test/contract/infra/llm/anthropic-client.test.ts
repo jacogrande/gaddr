@@ -7,11 +7,15 @@
 
 import { describe, expect, test } from "bun:test";
 import type Anthropic from "@anthropic-ai/sdk";
-import { toStructuredResponse } from "../../../../src/infra/llm/anthropic-client";
+import {
+  toAnthropicEffort,
+  toStructuredResponse,
+} from "../../../../src/infra/llm/anthropic-client";
 
 /** Only the fields the mapper reads; the cast is test-local and deliberate. */
 function fakeMessage(overrides: {
   stop_reason: string | null;
+  model?: string;
   stop_details?: { category: string | null; explanation?: string } | null;
   usage?: {
     input_tokens: number;
@@ -21,6 +25,7 @@ function fakeMessage(overrides: {
 }): Anthropic.Message {
   return {
     content: [{ type: "text", text: "{}" }],
+    model: "claude-haiku-4-5-20251001",
     stop_details: null,
     usage: { input_tokens: 10, output_tokens: 5 },
     ...overrides,
@@ -69,5 +74,28 @@ describe("toStructuredResponse — stop_reason → CallOutcome", () => {
       outputTokens: 30,
       cachedInputTokens: 25,
     });
+  });
+
+  test("surfaces the provider-reported model (alias-drift guard)", () => {
+    const mapped = toStructuredResponse(
+      fakeMessage({ stop_reason: "end_turn", model: "claude-haiku-4-5-20251001" }),
+    );
+    expect(mapped.model).toBe("claude-haiku-4-5-20251001");
+  });
+});
+
+describe("toAnthropicEffort — neutral effort → output_config.effort", () => {
+  test.each([
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"],
+  ] as const)("%p maps 1:1 to %p", (neutral, native) => {
+    expect(toAnthropicEffort(neutral)).toBe(native);
+  });
+
+  test("'none' and absent leave effort UNSET (Anthropic has no true off switch)", () => {
+    expect(toAnthropicEffort("none")).toBeUndefined();
+    expect(toAnthropicEffort(undefined)).toBeUndefined();
   });
 });

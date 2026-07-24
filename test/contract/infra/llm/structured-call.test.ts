@@ -603,3 +603,50 @@ describe("structuredCall — repair cap and attempt accounting", () => {
     ]);
   });
 });
+
+// ── Reasoning effort + served-model threading (model-routing research) ────────
+
+describe("structuredCall — effort + served model", () => {
+  test("threads the per-call effort to the client AND records it on the attempt", async () => {
+    const attempts: InferenceAttempt[] = [];
+    const { client, calls } = makeStub([reply({ model: "model-x-2026-07-01" })]);
+    const result = await structuredCall<Record<string, unknown>>({
+      client,
+      modelId: "model-x",
+      system: "system",
+      userContent: "draft content",
+      schema: { type: "object" },
+      maxTokens: 200,
+      effort: "high",
+      parse: () => ({ result: ok({}) }),
+      telemetry: { stage: "discovery", inputHash: "hash-1", promptVersion: "v1" },
+      onAttempt: (attempt) => attempts.push(attempt),
+      clock: makeClock(),
+    });
+    expect(result.ok).toBe(true);
+    expect(calls[0]?.effort).toBe("high");
+    expect(attempts[0]?.effort).toBe("high");
+    // Telemetry records the PROVIDER-REPORTED model, not the requested id.
+    expect(attempts[0]?.modelId).toBe("model-x-2026-07-01");
+  });
+
+  test("falls back to the requested model id when the adapter reports none, and effort is absent when unset", async () => {
+    const attempts: InferenceAttempt[] = [];
+    const { client, calls } = makeStub([reply()]); // no `model`, no effort set
+    await structuredCall<Record<string, unknown>>({
+      client,
+      modelId: "model-x",
+      system: "system",
+      userContent: "draft content",
+      schema: { type: "object" },
+      maxTokens: 200,
+      parse: () => ({ result: ok({}) }),
+      telemetry: { stage: "spark", inputHash: "hash-1", promptVersion: "v1" },
+      onAttempt: (attempt) => attempts.push(attempt),
+      clock: makeClock(),
+    });
+    expect(calls[0]?.effort).toBeUndefined();
+    expect(attempts[0]?.modelId).toBe("model-x");
+    expect(attempts[0]?.effort).toBeUndefined();
+  });
+});
