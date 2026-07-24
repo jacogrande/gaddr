@@ -9,13 +9,20 @@
  * The discipline has two halves, and both are required:
  *
  *  1. `fenceUntrusted(tag, content)` — wrap the content in `<tag>...</tag>`
- *     with the closing delimiter made unforgeable: any literal `</tag`
- *     sequence inside the content has its `<` rewritten to a full-width `＜`
- *     (U+FF1C) — a visually faithful stand-in that is not markup — rather
- *     than stripped, so the surrounding prose keeps its shape for the model.
- *     Grounding is unaffected: span matching normalizes punctuation (both `<`
- *     variants) to spaces, so a span copied from a rewritten region still
- *     matches the original.
+ *     with the closing delimiter made unforgeable: any `</tag` sequence inside
+ *     the content — including one broken up by whitespace OR invisible format
+ *     characters (zero-width space/joiner U+200B–200D, BOM, word-joiner, soft
+ *     hyphen: Unicode category Cf, which `\s` does NOT match) placed anywhere in
+ *     the delimiter or between the tag's letters — has its leading `<` rewritten
+ *     to a full-width `＜` (U+FF1C), a visually faithful stand-in that is not
+ *     markup. Grounding is unaffected: span matching normalizes punctuation
+ *     (both `<` variants) to spaces, so a span copied from a rewritten region
+ *     still matches the original.
+ *     Residual (documented, not a silent gap): homoglyph tag letters (a
+ *     Cyrillic "а" for the Latin "a") are not neutralized — the tag alphabet is
+ *     fixed and this is a bottomless arms race. The fence is defense-in-depth;
+ *     the primary guards are the data-not-instructions clause and the domain
+ *     validators, never the fence alone (architecture §6.6 stance).
  *  2. `dataNotInstructionsClause(...)` — the system-prompt paragraph declaring
  *     tag contents data, never instructions. The fence without the clause is
  *     half a defense.
@@ -37,17 +44,37 @@ function requireSafeTag(tag: string): void {
   }
 }
 
+/** A run of "invisible" characters that could be smuggled into a delimiter to
+ * break up the `</tag` match: whitespace plus Unicode format characters (Cf —
+ * zero-width space/joiners, BOM, word-joiner, soft hyphen), which `\s` alone
+ * does not cover. */
+const INVISIBLE_RUN = "[\\s\\p{Cf}]*";
+
 /**
- * Neutralize any literal `</tag` sequence (with optional interior whitespace,
- * any case) so the content can never forge the closing delimiter and escape
- * the data region.
+ * Neutralize any `</tag` sequence so the content can never forge the closing
+ * delimiter and escape the data region. Tolerant, by construction, of any
+ * whitespace or invisible format characters interleaved anywhere in the
+ * delimiter — before/after the slash AND between the tag's own letters — since
+ * a model may collapse those to nothing. Case-insensitive. Only the leading
+ * `<` is rewritten; the rest of the match is preserved.
  */
 export function neutralizeClosingDelimiters(
   tag: string,
   content: string,
 ): string {
   requireSafeTag(tag);
-  const pattern = new RegExp(`<(\\s*\\/\\s*${tag})`, "gi");
+  // Interleave the invisible-run class between every tag character so a zero-
+  // width char injected between the tag's letters is caught as readily as a
+  // plain closing tag. requireSafeTag guarantees the tag is ASCII
+  // [a-z0-9_-] — all single code units and all regex-literal — so iterating
+  // it needs no code-point handling and no escaping.
+  const tagChars: string[] = [];
+  for (const ch of tag) tagChars.push(ch);
+  const tagPattern = tagChars.join(INVISIBLE_RUN);
+  const pattern = new RegExp(
+    `<(${INVISIBLE_RUN}\\/${INVISIBLE_RUN}${tagPattern})`,
+    "giu",
+  );
   return content.replace(pattern, "＜$1");
 }
 
