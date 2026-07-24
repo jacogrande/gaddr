@@ -358,6 +358,14 @@ function classifyError(error: unknown): ClassifiedError {
  * transport. Instead, merge into the trailing assistant turn by concatenating
  * the content block lists. Pure: returns a new turn list.
  */
+/** Does the turn list end with an assistant prefill? A trailing assistant turn
+ * means the next model call CONTINUES it (server resumes the turn); a trailing
+ * user turn means the next call generates a fresh assistant turn from scratch.
+ * The pause-accumulation reset in the truncated branch keys on this. */
+function endsWithAssistantTurn(messages: readonly StructuredTurn[]): boolean {
+  return messages[messages.length - 1]?.role === "assistant";
+}
+
 function withAssistantEcho(
   messages: readonly StructuredTurn[],
   content: readonly unknown[],
@@ -494,7 +502,16 @@ export async function structuredCall<T>(
         }
         maxTokensRetryUsed = true;
         currentMaxTokens = currentMaxTokens * MAX_TOKENS_RETRY_MULTIPLIER;
-        pausePrefix = ""; // a retry re-generates — discard any pause accumulation
+        // A max_tokens retry re-generates from the current message list — UNLESS
+        // a pause already left an assistant prefill as the trailing turn, in
+        // which case the retry *continues* that prefill rather than regenerating
+        // it, so the pre-pause text must be carried forward or the eventual
+        // parse loses it (it would see only the post-retry tail). Reset the
+        // accumulator only when the trailing turn is a user turn — the sole
+        // shape that produces a true from-scratch regeneration.
+        if (!endsWithAssistantTurn(messages)) {
+          pausePrefix = "";
+        }
         attemptIndex += 1;
         continue;
       }
