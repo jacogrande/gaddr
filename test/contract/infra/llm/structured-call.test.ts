@@ -222,6 +222,59 @@ describe("structuredCall — outcome branches", () => {
     expect(calls.length).toBe(2);
   });
 
+  test("REGRESSION: a truncation DURING a pause continuation keeps the pre-pause text", async () => {
+    // pause emits the JSON head → the continuation is itself truncated
+    // (max_tokens) → the bigger-budget retry resumes the assistant prefill and
+    // emits the tail. `parse` must receive the WHOLE turn, not just the tail.
+    // The bug: the truncated branch wiped pausePrefix ("a retry re-generates"),
+    // which is false when a pause left an assistant prefill — the retry
+    // CONTINUES it, so parse would otherwise see only "]}".
+    let sawText: string | undefined;
+    const { result, calls } = await run(
+      [
+        reply({
+          outcome: "paused",
+          text: '{"candidates":[',
+          rawContent: [{ type: "server_tool_use", id: "srv_1" }],
+        }),
+        reply({ outcome: "truncated", text: "" }), // the continuation truncates
+        reply({ outcome: "complete", text: "]}" }), // retry resumes the prefill
+      ],
+      (text): StructuredParseOutcome<readonly string[]> => {
+        sawText = text;
+        return text === '{"candidates":[]}'
+          ? { result: ok<readonly string[]>(["whole"]) }
+          : { result: err({ reasons: [`partial: ${text}`] }) };
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual(["whole"]);
+    expect(sawText).toBe('{"candidates":[]}'); // carried across pause + truncation
+    expect(calls.length).toBe(3);
+  });
+
+  test("a truncation with NO prior pause still re-generates (prefix stays empty)", async () => {
+    // The other side of the branch: [user] only, no assistant prefill, so the
+    // retry regenerates from scratch and there is no accumulated prefix to keep.
+    let sawText: string | undefined;
+    const { result } = await run(
+      [
+        reply({ outcome: "truncated", text: "partial-thrown-away" }),
+        reply({ outcome: "complete", text: "FULL" }),
+      ],
+      (text): StructuredParseOutcome<readonly string[]> => {
+        sawText = text;
+        return text === "FULL"
+          ? { result: ok<readonly string[]>(["ok"]) }
+          : { result: err({ reasons: [text] }) };
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(sawText).toBe("FULL"); // not "partial-thrown-awayFULL"
+  });
+
   test("an 'other' outcome (unmapped provider stop value) maps to malformed-output without crashing", async () => {
     const { result, calls, attempts } = await run(
       [reply({ outcome: "other", providerStopReason: "tool_use" })],
