@@ -36,6 +36,7 @@
 import OpenAI from "openai";
 import type {
   CallOutcome,
+  ReasoningEffort,
   StructuredCallClient,
   StructuredCallRequest,
   StructuredCallResponse,
@@ -44,12 +45,17 @@ import type {
 
 const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
 
-/** Reasoning-effort ceiling for structured stage calls, on the GPT-5.6-family
- * scale (the first live smoke 400'd on the older "minimal" value — the 5.6
- * generation renamed the scale). "none" keeps reasoning tokens from eating the
- * output budget on latency-bounded stages; a future synthesis-heavy stage can
- * pass a higher value at construction. */
-export type OpenAIReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+/** Reasoning effort on the GPT-5.6-family scale (the first live smoke 400'd on
+ * the older "minimal" value — the 5.6 generation renamed the scale). Identical
+ * to the neutral `ReasoningEffort` — OpenAI is the reference scale, so no
+ * translation table is needed here; the value passes straight through. Kept as a
+ * named alias for the construction-time default option. */
+export type OpenAIReasoningEffort = ReasoningEffort;
+
+/** The per-client default effort, used only when a call does not set its own
+ * (`request.effort`). Latency-bounded stages default to no reasoning so tokens
+ * never eat the output budget. */
+const DEFAULT_EFFORT: OpenAIReasoningEffort = "none";
 
 function requireApiKey(): string {
   const key = process.env[OPENAI_API_KEY_ENV];
@@ -93,19 +99,22 @@ export function toResponsesInput(
 
 /**
  * Build the non-streaming Responses API payload. Exported pure so the contract
- * test can assert the two invariants that must never regress: `store: false`
- * and strict structured output.
+ * test can assert the invariants that must never regress: `store: false`, strict
+ * structured output, and per-call reasoning effort. The PER-CALL `request.effort`
+ * (the stage's choice, model-routing research §1) wins; `fallbackEffort` is the
+ * per-client default used only when the call sets none. The neutral effort is
+ * OpenAI's own scale, so it passes straight through with no translation.
  */
 export function buildResponsesRequest(
   request: StructuredCallRequest,
-  reasoningEffort: OpenAIReasoningEffort,
+  fallbackEffort: OpenAIReasoningEffort,
 ): OpenAI.Responses.ResponseCreateParamsNonStreaming {
   return {
     model: request.modelId,
     instructions: request.system,
     input: toResponsesInput(request.messages),
     max_output_tokens: request.maxTokens,
-    reasoning: { effort: reasoningEffort },
+    reasoning: { effort: request.effort ?? fallbackEffort },
     text: {
       format: {
         type: "json_schema",
@@ -184,6 +193,10 @@ export function fromResponsesResponse(
 
   return {
     outcome,
+    // The model the API reports serving — the alias-drift signal telemetry
+    // records (portability research §2 P5). `gpt-5.6-luna` is alias-only, so this
+    // is how a silent re-resolution under an unchanged input hash surfaces.
+    model: response.model,
     providerStopReason,
     stopDetails,
     text,
@@ -204,7 +217,9 @@ export function fromResponsesResponse(
 export function createOpenAIStructuredClient(
   options: { readonly reasoningEffort?: OpenAIReasoningEffort } = {},
 ): StructuredCallClient {
-  const reasoningEffort = options.reasoningEffort ?? "none";
+  // Per-client fallback effort. A per-call `request.effort` overrides it; this
+  // only applies when a stage sets none (model-routing research §6).
+  const fallbackEffort = options.reasoningEffort ?? DEFAULT_EFFORT;
   let sdk: OpenAI | undefined;
   const client = (): OpenAI => {
     sdk ??= new OpenAI({ apiKey: requireApiKey() });
@@ -216,7 +231,7 @@ export function createOpenAIStructuredClient(
       request: StructuredCallRequest,
     ): Promise<StructuredCallResponse> {
       const response = await client().responses.create(
-        buildResponsesRequest(request, reasoningEffort),
+        buildResponsesRequest(request, fallbackEffort),
         // Cancellation passthrough, same posture as the Anthropic adapter:
         // an abort classifies as "transport" until the taxonomy grows a
         // cancellation variant.

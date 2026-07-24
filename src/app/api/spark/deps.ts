@@ -136,6 +136,7 @@ async function getRealBackends(): Promise<RealBackends> {
     const generationPortFor: GenerationPortFor = (userId) =>
       createSparkGenerationPort(client, {
         modelId: sparkLlm.modelId,
+        effort: sparkLlm.effort,
         onAttempt: toOnAttempt(attemptSink, userId),
       });
 

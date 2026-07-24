@@ -40,6 +40,7 @@ import { validateSparkCandidateSet } from "../../domain/spark/validate-spark";
 import {
   structuredCall,
   type InferenceAttempt,
+  type ReasoningEffort,
   type StructuredCallClient,
   type StructuredParseOutcome,
 } from "./structured-call";
@@ -184,6 +185,10 @@ export interface SparkAdapterDeps {
   /** The model to call — resolved per provider by `providers.ts` at the
    * composition root, never hardcoded here (portability research §2 P3). */
   readonly modelId: string;
+  /** Reasoning effort for the call — resolved with the model at the composition
+   * root (`"none"` for spark's latency budget, model-routing research §4.3).
+   * Absent = the adapter default (`"none"`). */
+  readonly effort?: ReasoningEffort;
   /** Per-attempt telemetry sink (the inference_attempt seam, Phase 4). */
   readonly onAttempt?: (attempt: InferenceAttempt) => void;
   /** Injected clock for latency; defaults to Date.now inside structured-call. */
@@ -225,6 +230,7 @@ export function createSparkGenerationPort(
           ),
           schema: SPARK_WIRE_SCHEMA,
           maxTokens: SPARK_MAX_TOKENS,
+          effort: deps.effort,
           parse: (rawText) =>
             parseSparkCandidates(rawText, draft, servedLenses),
           telemetry: {

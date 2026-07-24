@@ -26,15 +26,26 @@
  *    passed the same day: 3/3 first-attempt on the smoke corpus, no tune.
  */
 
-import type { StructuredCallClient } from "./structured-call";
+import type { ReasoningEffort, StructuredCallClient } from "./structured-call";
 import { createAnthropicStructuredClient } from "./anthropic-client";
 import { createOpenAIStructuredClient } from "./openai-client";
 
 export type LlmProvider = "anthropic" | "openai";
 
+/**
+ * A stage's resolved routing choice — the 2-D point (model-routing research §1):
+ * a capability tier (`provider` + `modelId`) and a reasoning `effort`. `maxTokens`
+ * is optional here: spark's budget lives in its prompt module (`SPARK_MAX_TOKENS`),
+ * but the field exists so a synthesis stage can size its own budget from the
+ * registry (restoring the portability-research P3 shape). Adding a per-stage
+ * entry beside `spark` is how a future constellation stage picks Sonnet + high
+ * effort — config, not code.
+ */
 export interface StageLlmConfig {
   readonly provider: LlmProvider;
   readonly modelId: string;
+  readonly effort: ReasoningEffort;
+  readonly maxTokens?: number;
 }
 
 const LLM_PROVIDER_ENV = "LLM_PROVIDER";
@@ -61,12 +72,14 @@ function resolveProvider(env: NodeJS.ProcessEnv): LlmProvider {
   );
 }
 
-/** The spark stage's provider + model, resolved from the environment. */
+/** The spark stage's routing choice, resolved from the environment. Effort is
+ * pinned `"none"`: spark's summon→fallback path is latency-bounded (~4s), and a
+ * reasoning pass would blow first-token latency (model-routing research §4.3). */
 export function resolveSparkLlm(
   env: NodeJS.ProcessEnv = process.env,
 ): StageLlmConfig {
   const provider = resolveProvider(env);
-  return { provider, modelId: SPARK_MODEL_BY_PROVIDER[provider] };
+  return { provider, modelId: SPARK_MODEL_BY_PROVIDER[provider], effort: "none" };
 }
 
 /** Construct the structured-call client for a provider. Both factories read

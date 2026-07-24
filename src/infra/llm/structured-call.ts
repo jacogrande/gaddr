@@ -88,6 +88,10 @@ export interface StructuredCallRequest {
   readonly maxTokens: number;
   readonly schema: JsonSchema;
   readonly messages: readonly StructuredTurn[];
+  /** Reasoning-effort dial for this call (model-routing research §1). Absent =
+   * the adapter's default (effectively `"none"`). The adapter translates it to
+   * its provider's native reasoning config. */
+  readonly effort?: ReasoningEffort;
   /** Cancellation passthrough — the client adapter wires it to the SDK call so
    * a route can abandon generation when its own request dies. */
   readonly signal?: AbortSignal;
@@ -107,11 +111,33 @@ export type CallOutcome =
   | "paused"
   | "other";
 
+/**
+ * The neutral reasoning-effort dial (model-routing research §1). Provider-
+ * agnostic — the same discipline as `CallOutcome`: each client adapter
+ * translates it to its native config (OpenAI `reasoning.effort`, Anthropic
+ * `output_config.effort`), and this module never sees a provider string.
+ *
+ * `low | medium | high | xhigh` map 1:1 on both providers. `"none"` means "no
+ * explicit reasoning budget": OpenAI maps it to its own `none` effort (genuinely
+ * no reasoning tokens); Anthropic's adaptive `low…max` scale has no true off
+ * switch, so the adapter leaves effort UNSET (the model default) — a stage that
+ * wants Anthropic's floor passes `"low"` explicitly. Absent (`undefined`) on a
+ * call is equivalent to `"none"` — the adapter default. See the OpenAI/Anthropic
+ * adapters for the translation tables.
+ */
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+
 /** The normalized model response. `text` is the concatenated text blocks (for
  * parsing); `rawContent` is the opaque block list (echoed back on continuation,
  * in a shape only the emitting adapter needs to understand). */
 export interface StructuredCallResponse {
   readonly outcome: CallOutcome;
+  /** The model the provider REPORTS having served (the response `model` field),
+   * which can differ from the requested id when that id was an alias — the
+   * alias-drift signal the telemetry records (portability research §2 P5;
+   * model-routing research §4.4). Absent when the adapter/stub does not surface
+   * it; telemetry then falls back to the requested id. */
+  readonly model?: string;
   /** The raw provider stop value (`stop_reason` / `status`+`incomplete_details`
    * shorthand), preserved for diagnostics and the `other`-outcome error message.
    * Never branched on here — that is what `outcome` is for. */
@@ -168,7 +194,13 @@ export interface InferenceAttempt {
   readonly sprintId?: string;
   readonly inputHash: string;
   readonly promptVersion: string;
+  /** The model that SERVED this attempt — the provider-reported model when the
+   * adapter surfaces it (alias-drift guard), else the requested id. */
   readonly modelId: string;
+  /** The reasoning effort this attempt requested (model-routing research §4.4),
+   * so a quality regression is attributable to a `(stage, model, effort)` triple.
+   * Absent when the stage set none. */
+  readonly effort?: ReasoningEffort;
   readonly outcome: InferenceAttemptOutcome;
   /** 0 for the first model call; incremented per retry / continuation. */
   readonly retryCount: number;
@@ -221,6 +253,11 @@ export interface StructuredCallOptions<T> {
   readonly userContent: string;
   readonly schema: JsonSchema;
   readonly maxTokens: number;
+  /** Reasoning-effort dial for this stage (model-routing research §1/§6). Per-
+   * call because stages differ: spark pins `"none"` for its latency budget; a
+   * synthesis stage passes `"high"`. Threaded to the adapter and recorded in
+   * telemetry. Absent = the adapter default (`"none"`). */
+  readonly effort?: ReasoningEffort;
   readonly parse: (rawText: string) => StructuredParseOutcome<T>;
   readonly telemetry: {
     readonly stage: string;
@@ -419,6 +456,7 @@ export async function structuredCall<T>(
     outcome: InferenceAttemptOutcome,
     latencyMs: number,
     usage: StructuredCallResponse["usage"] | null,
+    servedModel: string,
     yieldInfo?: Pick<
       InferenceAttempt,
       "candidatesReturned" | "candidatesValid" | "rejectReasons"
@@ -428,7 +466,8 @@ export async function structuredCall<T>(
       stage: options.telemetry.stage,
       inputHash: options.telemetry.inputHash,
       promptVersion: options.telemetry.promptVersion,
-      modelId: options.modelId,
+      modelId: servedModel,
+      effort: options.effort,
       outcome,
       retryCount: attemptIndex,
       latencyMs,
@@ -463,21 +502,25 @@ export async function structuredCall<T>(
         maxTokens: currentMaxTokens,
         schema: options.schema,
         messages,
+        effort: options.effort,
         signal: options.signal,
       });
     } catch (caught) {
       const classified = classifyError(caught);
-      emit(classified.outcome, clock() - startedAt, null);
+      emit(classified.outcome, clock() - startedAt, null, options.modelId);
       return err(
         inferenceError(classified.reason, classified.message, caught),
       );
     }
     const latencyMs = clock() - startedAt;
     const usage = response.usage;
+    // The provider-reported model, when the adapter surfaces it, is what
+    // telemetry records (alias-drift guard); otherwise the requested id.
+    const servedModel = response.model ?? options.modelId;
 
     switch (response.outcome) {
       case "refused": {
-        emit("refusal", latencyMs, usage);
+        emit("refusal", latencyMs, usage, servedModel);
         const explanation =
           response.stopDetails?.explanation ??
           response.stopDetails?.category ??
@@ -491,7 +534,7 @@ export async function structuredCall<T>(
       }
 
       case "truncated": {
-        emit("max-tokens", latencyMs, usage);
+        emit("max-tokens", latencyMs, usage, servedModel);
         if (maxTokensRetryUsed) {
           return err(
             inferenceError(
@@ -517,7 +560,7 @@ export async function structuredCall<T>(
       }
 
       case "paused": {
-        emit("pause-turn", latencyMs, usage);
+        emit("pause-turn", latencyMs, usage, servedModel);
         if (pauseContinuations >= MAX_PAUSE_CONTINUATIONS) {
           return err(
             inferenceError(
@@ -546,10 +589,10 @@ export async function structuredCall<T>(
           rejectReasons: parsed.rejectReasons,
         };
         if (parsed.result.ok) {
-          emit("ok", latencyMs, usage, yieldInfo);
+          emit("ok", latencyMs, usage, servedModel, yieldInfo);
           return ok(parsed.result.value);
         }
-        emit("validation-failed", latencyMs, usage, yieldInfo);
+        emit("validation-failed", latencyMs, usage, servedModel, yieldInfo);
         const reasons = parsed.result.error.reasons;
         if (repairsUsed >= repairCap) {
           return err(
@@ -575,7 +618,7 @@ export async function structuredCall<T>(
         // tool_use or any unknown/future provider stop value the adapter could
         // not classify: explicit, never a crash. The switch is exhaustive over
         // the closed CallOutcome union — TypeScript enforces it.
-        emit("malformed-output", latencyMs, usage);
+        emit("malformed-output", latencyMs, usage, servedModel);
         return err(
           inferenceError(
             "malformed-output",
