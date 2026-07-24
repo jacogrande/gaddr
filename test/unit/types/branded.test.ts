@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sprintId, userId } from "../../../src/domain/types/branded";
+import { runId, sprintId, userId } from "../../../src/domain/types/branded";
 
 describe("sprintId — UUID shape validator", () => {
   test("accepts a canonical lowercase UUID", () => {
@@ -52,6 +52,24 @@ describe("sprintId — UUID shape validator", () => {
     expect(sprintId("gggggggg-2222-4333-8444-555555555555").ok).toBe(false); // non-hex
     expect(sprintId("11111111-2222-4333-8444-555555555555 ").ok).toBe(false); // trailing space
     expect(sprintId("11111111-2222-4333-8444-555555555555-extra").ok).toBe(false);
+  });
+});
+
+describe("runId — UUID shape validator (constellation run identity)", () => {
+  test("accepts a canonical UUID and crypto.randomUUID output", () => {
+    expect(runId("11111111-2222-4333-8444-555555555555").ok).toBe(true);
+    expect(runId(crypto.randomUUID()).ok).toBe(true);
+  });
+
+  test("rejects junk and near-miss shapes with a runId-labelled error", () => {
+    for (const junk of ["", "run-1", "not-a-uuid", "11111111-2222-4333-8444"]) {
+      const result = runId(junk);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe("ValidationError");
+        expect(result.error.field).toBe("runId");
+      }
+    }
   });
 });
 
