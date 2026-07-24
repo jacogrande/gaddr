@@ -6,6 +6,7 @@ declare const brand: unique symbol;
 
 export type UserId = string & { readonly [brand]: "UserId" };
 export type SprintId = string & { readonly [brand]: "SprintId" };
+export type RunId = string & { readonly [brand]: "RunId" };
 
 function validateNonEmpty<T>(
   raw: string,
@@ -50,4 +51,21 @@ export function sprintId(raw: string): Result<SprintId, ValidationError> {
     });
   }
   return ok(raw as SprintId);
+}
+
+/**
+ * A `RunId` is the durable identity of one constellation run (plan §4.1),
+ * generated server-side when the run row is first persisted. Same structural
+ * UUID contract as `SprintId` — the domain validates shape only; the app layer
+ * owns generation (it owns randomness), so no crypto import belongs here.
+ */
+export function runId(raw: string): Result<RunId, ValidationError> {
+  if (!UUID_SHAPE.test(raw)) {
+    return err({
+      kind: "ValidationError",
+      message: "Invalid runId: must be a UUID",
+      field: "runId",
+    });
+  }
+  return ok(raw as RunId);
 }
