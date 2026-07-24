@@ -24,6 +24,18 @@ export type ProvenanceTier = "sourced" | "inferred" | "heuristic";
 /** The intent axis a tentative position is taken with. */
 export type PositionIntent = "asserting" | "testing" | "wondering";
 
+/**
+ * The intent axis as a value, for membership checks when narrowing a wire star
+ * (constellation `validate-discovery.ts`). Annotated (not `as const`) so each
+ * literal is checked against `PositionIntent` while honouring the domain's
+ * no-type-assertion rule — the `SPARK_LENSES` pattern.
+ */
+export const POSITION_INTENTS: readonly PositionIntent[] = [
+  "asserting",
+  "testing",
+  "wondering",
+];
+
 /** Is this burst circling a concern we've seen, or opening a new one? */
 export type ThemeDelta = "recurring" | "new-direction" | "none";
 
