@@ -151,6 +151,17 @@ describe("toInferenceAttemptRow — null-field handling", () => {
     expect(row.candidatesReturned).toBe(2);
     expect(row.candidatesValid).toBe(0);
   });
+
+  test("effort maps through when set, null when the stage set none", () => {
+    const withEffort = toInferenceAttemptRow(
+      UID,
+      { ...SPARK_ATTEMPT, effort: "high" },
+      ID,
+    );
+    expect(withEffort.effort).toBe("high");
+    // Spark sets "none"; a truly-absent effort persists as null.
+    expect(toInferenceAttemptRow(UID, TRANSPORT_ATTEMPT, ID).effort).toBeNull();
+  });
 });
 
 // ── Sink factory against a stubbed drizzle client ────────────────────────────
