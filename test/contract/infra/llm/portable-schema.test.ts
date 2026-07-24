@@ -7,12 +7,32 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { portableSchemaViolations } from "../../../../src/infra/llm/portable-schema";
+import {
+  assertPortableSchema,
+  portableSchemaViolations,
+} from "../../../../src/infra/llm/portable-schema";
 import { SPARK_WIRE_SCHEMA } from "../../../../src/infra/llm/prompts/spark";
 
 describe("portableSchemaViolations — shipped schemas", () => {
   test("SPARK_WIRE_SCHEMA is portable as-is", () => {
     expect(portableSchemaViolations(SPARK_WIRE_SCHEMA)).toEqual([]);
+  });
+});
+
+describe("assertPortableSchema — the enforcement gate", () => {
+  test("passes a portable schema silently (the spark adapter's module-load call)", () => {
+    expect(() => assertPortableSchema("spark", SPARK_WIRE_SCHEMA)).not.toThrow();
+  });
+
+  test("throws, naming the schema and the violations, on a non-portable one", () => {
+    expect(() =>
+      assertPortableSchema("bad", {
+        type: "object",
+        additionalProperties: false,
+        required: ["a"],
+        properties: { a: { type: "string", minLength: 1 } },
+      }),
+    ).toThrow(/"bad" is not portable[\s\S]*minLength/);
   });
 });
 
