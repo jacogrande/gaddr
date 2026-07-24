@@ -72,6 +72,8 @@ export function toInferenceAttemptRow(
     inputHash: attempt.inputHash,
     promptVersion: attempt.promptVersion,
     modelId: attempt.modelId,
+    // The requested reasoning effort, when the stage set one (null otherwise).
+    effort: attempt.effort ?? null,
     outcome: attempt.outcome,
     retryCount: attempt.retryCount,
     candidatesReturned: attempt.candidatesReturned ?? null,

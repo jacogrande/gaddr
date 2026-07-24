@@ -140,7 +140,14 @@ export const inferenceAttempt = pgTable("inference_attempt", {
   sprintId: uuid("sprint_id"),
   inputHash: text("input_hash").notNull(),
   promptVersion: text("prompt_version").notNull(),
+  // The model that SERVED the call (provider-reported when available — the
+  // alias-drift guard), not necessarily the requested id.
   modelId: text("model_id").notNull(),
+  // The reasoning effort the stage requested (ReasoningEffort:
+  // 'none'|'low'|'medium'|'high'|'xhigh'). Nullable: a stage may set none, and
+  // pre-routing rows predate the column. Makes quality regressions attributable
+  // to a (stage, model, effort) triple (model-routing research §4.4).
+  effort: text("effort"),
   // InferenceAttemptOutcome: 'ok'|'validation-failed'|'refusal'|'max-tokens'|…
   outcome: text("outcome").notNull(),
   retryCount: integer("retry_count").notNull(),

@@ -1,0 +1,1 @@
+ALTER TABLE "inference_attempt" ADD COLUMN "effort" text;
