@@ -131,3 +131,23 @@ export function portableSchemaViolations(
   walk(schema, "root", 1, violations);
   return violations;
 }
+
+/**
+ * Assert a wire schema is portable, THROWING on any violation. This is the
+ * enforcement gate the lint existed to provide: every stage adapter calls it at
+ * MODULE LOAD against the schema it will ship (see `spark-adapter.ts`), so a
+ * schema that drifts out of the two-provider strict subset fails fast at import
+ * — a crash at startup, never a 400 mid-request or a silent cross-provider
+ * behavior divergence. A non-portable wire schema is a programmer error, not a
+ * runtime condition, so throwing (infra may throw) is correct. The cost is one
+ * cheap walk, once per process.
+ */
+export function assertPortableSchema(name: string, schema: JsonSchema): void {
+  const violations = portableSchemaViolations(schema);
+  if (violations.length > 0) {
+    throw new Error(
+      `Wire schema "${name}" is not portable across providers:\n` +
+        violations.map((v) => `  - ${v}`).join("\n"),
+    );
+  }
+}

@@ -51,6 +51,14 @@ import {
   SPARK_SYSTEM_PROMPT,
   SPARK_WIRE_SCHEMA,
 } from "./prompts/spark";
+import { assertPortableSchema } from "./portable-schema";
+
+// Enforcement gate (portability research §2 P4): the wire schema this adapter
+// ships must live inside the two-provider strict subset, so a provider flip can
+// never 400 on schema shape. Checked once at module load — a non-portable
+// schema crashes at import, not mid-request. Every future stage adapter does
+// the same beside its own schema; that is how the lint stops being aspirational.
+assertPortableSchema("spark", SPARK_WIRE_SCHEMA);
 
 /**
  * `hash(draft + promptVersion + schemaVersion + modelId)` — the content-free
