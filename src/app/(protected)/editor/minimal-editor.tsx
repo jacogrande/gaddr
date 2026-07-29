@@ -20,6 +20,7 @@ import { useTimerHoverControls } from "./use-timer-hover-controls";
 import { useTriggerDetector, type TriggerObserver } from "./use-trigger-detector";
 import { useBackgroundInference } from "./use-background-inference";
 import { useSpark } from "./use-spark";
+import { useConstellationRun } from "./use-constellation-run";
 import { rankFindings } from "../../../domain/constellation/substrate";
 import {
   collectExitingModifierKeys,
@@ -154,6 +155,10 @@ export function MinimalEditor() {
   const boardModeRef = useRef<BoardMode>("hidden");
   const setBoardModeRef = useRef<(mode: BoardMode) => void>(() => undefined);
   const boardEntryActionsRef = useRef<BoardEntryActions | null>(null);
+  /** True while the board has a focused star or an opened card. Escape then means
+   * "close that", not "leave the board" — without this, pressing Escape to close
+   * a card ejected the writer out of review entirely. */
+  const boardHasFocusRef = useRef(false);
   // Spark wiring, hoisted so the editor config can reference them via ref (the
   // editor is built once; these read the latest handler at event time):
   //  - onUpdate composes in the spark `edit` signal (re-arm / card-end) rather
@@ -291,6 +296,29 @@ export function MinimalEditor() {
     editor,
     sprintId: session.sprintId,
     sprintPhase: session.sprintPhase,
+  });
+
+  // === Sprint-end constellation run (plan §6) ===
+  // Fires on the completed-phase TRANSITION (observed on the value, so all four
+  // completion sites are covered — D3), then polls the two-beat reveal. Reading
+  // the draft + substrate is deferred to a callback so nothing runs off the
+  // keystroke path.
+  const editorRef = useRef<TiptapEditor | null>(editor);
+  editorRef.current = editor;
+  const substrateRef = useRef(inference.substrate);
+  substrateRef.current = inference.substrate;
+  const getConstellationInput = useCallback(() => {
+    const current = editorRef.current;
+    if (current === null) return null;
+    return {
+      draft: current.getText({ blockSeparator: "\n\n" }),
+      substrateSnapshot: JSON.stringify(substrateRef.current),
+    };
+  }, []);
+  const constellation = useConstellationRun({
+    sprintId: session.sprintId,
+    sprintPhase: session.sprintPhase,
+    getRunInput: getConstellationInput,
   });
 
   // ONE detector, ONE combined observer fanning out to both consumers. A second
@@ -551,6 +579,10 @@ export function MinimalEditor() {
 
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && (boardModeRef.current === "visible" || boardModeRef.current === "transition_in")) {
+        // The board owns Escape while it has something open (a focused star or an
+        // opened card) — it closes that layer itself. Only an Escape with nothing
+        // open means "leave the board".
+        if (boardHasFocusRef.current) return;
         event.preventDefault();
         setBoardModeRef.current("transition_out");
         return;
@@ -1109,7 +1141,7 @@ export function MinimalEditor() {
       {DEBUG_INFERENCE_ENABLED ? (
         <div
           data-testid="substrate-debug"
-          className="pointer-events-none fixed bottom-4 left-4 z-[70] w-72 rounded-lg border border-[var(--app-border,#3333)] bg-[var(--app-bg,#000)]/80 p-3 text-[0.7rem] leading-5 text-[var(--app-fg)] backdrop-blur-sm"
+          className="pointer-events-none fixed bottom-4 right-4 z-[70] w-72 rounded-lg border border-[var(--app-border,#3333)] bg-[var(--app-bg,#000)]/80 p-3 text-[0.7rem] leading-5 text-[var(--app-fg)] backdrop-blur-sm"
         >
           <div className="mb-1 font-semibold tracking-[0.12em] text-[color:var(--app-muted)]">
             SUBSTRATE
@@ -1143,6 +1175,22 @@ export function MinimalEditor() {
             boardMode={boardEntry.boardMode}
             onExitBoard={exitBoardAndFocus}
             onNewFreewrite={startNewFreewrite}
+            onBoardFocusChange={(hasFocus) => {
+              boardHasFocusRef.current = hasFocus;
+            }}
+            constellation={{
+              status: constellation.status,
+              stars: constellation.stars,
+              nodes: constellation.nodes,
+              cruxStarId: constellation.cruxStarId,
+              confidence: constellation.confidence,
+              resumable: constellation.resumable,
+              onOpen: constellation.actions.open,
+              onReact: constellation.actions.react,
+              onDismiss: constellation.actions.dismiss,
+              onSetAside: constellation.actions.setAside,
+              onRetry: constellation.actions.retry,
+            }}
           />
         </EditorCardProvider>
       </div>

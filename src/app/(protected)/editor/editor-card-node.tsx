@@ -19,9 +19,14 @@ function EditorCardNodeInner() {
   return (
     <div className={`nodrag nopan ${boardActive ? "nowheel gaddr-canvas-node--card" : ""}`}>
       <Handle type="target" position={Position.Top} style={{ visibility: "hidden" }} />
+      {/* `pointer-events-none` blocks the mouse but NOT the keyboard: while the
+          board is up the draft must also leave the tab order, or Tab lands in a
+          still-editable surface where any keystroke mutates the draft AND
+          silently exits review. `inert` removes it from focus and a11y entirely. */}
       <div
         className={boardActive ? "pointer-events-none" : "gaddr-editor-scroll"}
         onMouseDown={handleScrollMouseDown}
+        inert={boardActive}
       >
         <EditorContent editor={editor} />
       </div>
