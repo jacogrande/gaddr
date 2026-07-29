@@ -162,6 +162,24 @@ describe("toInferenceAttemptRow — null-field handling", () => {
     // Spark sets "none"; a truly-absent effort persists as null.
     expect(toInferenceAttemptRow(UID, TRANSPORT_ATTEMPT, ID).effort).toBeNull();
   });
+
+  test("runId and cachedInputTokens map through, null when absent", () => {
+    const enriched = toInferenceAttemptRow(
+      UID,
+      {
+        ...SPARK_ATTEMPT,
+        runId: "11111111-2222-4333-8444-555555555555",
+        cachedInputTokens: 4096,
+      },
+      ID,
+    );
+    expect(enriched.runId).toBe("11111111-2222-4333-8444-555555555555");
+    expect(enriched.cachedInputTokens).toBe(4096);
+    // Spark carries neither — both persist as null.
+    const spark = toInferenceAttemptRow(UID, SPARK_ATTEMPT, ID);
+    expect(spark.runId).toBeNull();
+    expect(spark.cachedInputTokens).toBeNull();
+  });
 });
 
 // ── Sink factory against a stubbed drizzle client ────────────────────────────
