@@ -1,0 +1,154 @@
+{
+  "module": "constellation-run",
+  "description": "The sprint-end constellation. When a writing sprint finishes, the system reads the whole draft once and turns it into a map: the writer's load-bearing ideas as 'stars' around their own draft, and cards hanging off each star that push on it — the strongest sincere case against it, a genuine question, a commitment test, a line of inquiry — plus a cluster naming what the draft never opened. The writer opens what pulls them, and can answer a card in one line. Nothing interrupts the writing itself: the run happens after the sprint, the board can be ignored entirely, and the writer can always go straight back to the draft.",
+  "baseUrl": "http://localhost:8080",
+  "preamble": "Requires the dev server started with E2E_TESTING=true E2E_BYPASS_AUTH=true bun run dev — BOTH are needed: E2E_TESTING selects the deterministic mock model and an in-memory store (so no ANTHROPIC_API_KEY or DATABASE_URL is required, and the mapped ideas are fixed stand-ins rather than real model output), and E2E_BYPASS_AUTH lets /editor load without OAuth. A run starts only when a sprint reaches its natural end — let the timer run out (the wizard offers a 5-second option for exactly this); pressing the stop control abandons the sprint instead and starts a new one. After the sprint ends the board takes a few seconds to appear and fills in two beats, so allow roughly fifteen seconds before judging the finished state. In this mode the mapped content is the same for any draft, so judge structure and behaviour, not wording. Two markers let a draft force a failure on purpose: a draft containing FORCE_CONSTELLATION_FAILURE fails before anything is mapped, and one containing FORCE_CONSTELLATION_PARTIAL maps the ideas but fails before the cards — use these only where a workflow calls for them.",
+  "workflows": [
+    {
+      "id": "sprint-end-starts-a-run-quietly",
+      "name": "Finishing a sprint starts the review without interrupting the writing",
+      "steps": [
+        "Clear local storage and navigate to /editor.",
+        "From the wizard, start the shortest sprint offered.",
+        "Type a short paragraph of a real-sounding draft — three or four sentences making a claim and wondering about it.",
+        "Keep typing until the timer runs out, and verify that nothing about the review appears while the sprint is still running: no cards, no map, no status line, no badge — the writing surface stays exactly as it was.",
+        "After the sprint ends, wait for the surface to pull back into the board view.",
+        "Verify a status line appears saying the draft is being read, and that it reads as plain language about the writer's own draft rather than a technical or system message.",
+        "Verify the draft text itself is unchanged — the review never edits, annotates, or rewrites what was written."
+      ]
+    },
+    {
+      "id": "two-beat-reveal",
+      "name": "The ideas appear before the cards do",
+      "steps": [
+        "Start the shortest sprint, type a short paragraph, and let the sprint end.",
+        "Watch the board as it fills in, without clicking anything.",
+        "Verify there is a moment where the writer's mapped ideas are on screen but no cards have appeared yet — the map arrives first and the cards follow.",
+        "Verify the status line changes with it: first that the draft is being read, then that the ideas have been mapped, and finally a line inviting the writer to open what pulls them.",
+        "Verify the writer is never shown an empty board with only a spinner — at every moment there is either an honest status line or real content."
+      ]
+    },
+    {
+      "id": "board-survives-a-full-reload",
+      "name": "The finished board is still there after a full page reload",
+      "steps": [
+        "Start the shortest sprint, type a short paragraph, and let the sprint end.",
+        "Wait until the board reports that the ideas are mapped and cards are available.",
+        "Note how many ideas are shown and which one is marked as the crux.",
+        "Fully reload the page.",
+        "Verify the board comes back with the same ideas and the same crux marked — the review is durable, not something held only in the open tab.",
+        "Verify the writer is not made to wait through the whole reading again on reload."
+      ]
+    },
+    {
+      "id": "open-a-star-and-read-a-card",
+      "name": "Opening an idea reveals its cards, each anchored to the writer's own words",
+      "steps": [
+        "Reach a finished board (start a short sprint, type a paragraph, let it end, and wait for the cards).",
+        "Verify the writer's draft is shown small at the centre of the map, with the mapped ideas arranged around it and faint lines connecting them to it.",
+        "Verify one idea is visibly marked as the crux and is more prominent than the others.",
+        "Click an idea that reports having cards.",
+        "Verify its cards appear around it, each connected back to that idea by a visible line, and that the other ideas recede so the opened cluster is what reads.",
+        "Verify each card shows: a short label naming what kind of push it is, a one-line headline, and a short quote taken from the writer's own draft.",
+        "Verify the card text is comfortably readable without zooming in or leaning toward the screen.",
+        "Verify no card contains a web link, a citation, a year in parentheses, or a claim attributed to a named person — this review reasons, it never cites."
+      ]
+    },
+    {
+      "id": "reaction-resolves-and-persists",
+      "name": "Answering a card in one line marks it answered, and that survives a reload",
+      "steps": [
+        "Reach a finished board and open an idea, then open one of its cards.",
+        "Verify the opened card shows its full text plus a single-line input inviting a response.",
+        "Type a short response in the writer's own words and submit it.",
+        "Verify the card now shows that response back, and reads as answered rather than merely dismissed.",
+        "Verify the writer's own words are not faded out or de-emphasised once written.",
+        "Fully reload the page and return to the board.",
+        "Open the same idea and card again.",
+        "Verify the response is still there and the card is still marked answered."
+      ]
+    },
+    {
+      "id": "dismiss-and-set-aside-persist",
+      "name": "Dismissing and setting aside a card persist across a reload",
+      "steps": [
+        "Reach a finished board, open an idea, and open one of its cards.",
+        "Verify the card offers both 'Set aside' and 'Dismiss' as single actions, and that the wording is 'Set aside' — never 'defer' or anything promising the card will come back later.",
+        "Dismiss that card and verify it now reads as dismissed rather than disappearing without a trace.",
+        "Open a different card on the same idea and set it aside.",
+        "Fully reload the page and reopen that idea.",
+        "Verify both cards still show their states — one dismissed, one set aside.",
+        "Verify there are no unread counts, no badges, and no 'clear all' anywhere on the board."
+      ]
+    },
+    {
+      "id": "escape-closes-one-layer-at-a-time",
+      "name": "Escape closes what is open, and only then leaves the board",
+      "steps": [
+        "Reach a finished board, open an idea, and open one of its cards.",
+        "Press Escape once.",
+        "Verify the card closes but the idea stays open and the writer is still on the board.",
+        "Press Escape again.",
+        "Verify the idea collapses and the writer is still on the board.",
+        "Press Escape a third time.",
+        "Verify only now does the writer leave the board and return to the draft."
+      ]
+    },
+    {
+      "id": "board-does-not-edit-the-draft",
+      "name": "The draft cannot be typed into while the board is up",
+      "steps": [
+        "Reach a finished board and do not click into the draft.",
+        "Press Tab several times from the top of the page and note where focus lands.",
+        "Verify focus moves through the board's own ideas and controls, and never lands inside the draft text.",
+        "Type a few characters without clicking anything.",
+        "Verify the draft text is unchanged and the writer has not been silently thrown back into writing."
+      ]
+    },
+    {
+      "id": "off-map-cluster-is-named-and-apart",
+      "name": "'What you didn't write about' is present, named, and clearly separate",
+      "steps": [
+        "Reach a finished board.",
+        "Verify there is a cluster labelled in plain language as what the draft didn't write about.",
+        "Verify it sits clearly apart from the writer's own ideas rather than reading as one more of them.",
+        "Open it if it reports having cards.",
+        "Verify any cards there are only questions or lines of inquiry — this cluster never argues a position, because it has nothing in the draft to stand on."
+      ]
+    },
+    {
+      "id": "partial-failure-degrades-visibly",
+      "name": "A run that fails partway shows what it got, and says so",
+      "steps": [
+        "Start the shortest sprint and type a short paragraph that includes the text FORCE_CONSTELLATION_PARTIAL somewhere in it.",
+        "Let the sprint end and wait for the board.",
+        "Verify the writer's mapped ideas are still shown — the board is never blank just because the run stopped partway.",
+        "Verify an honest line says the review stopped partway and that what is shown is real.",
+        "Verify a way to try again is offered.",
+        "Verify the wording does not blame the writer or pretend the run succeeded."
+      ]
+    },
+    {
+      "id": "total-failure-is-honest",
+      "name": "A run that fails before mapping anything says so plainly",
+      "steps": [
+        "Start the shortest sprint and type a short paragraph that includes the text FORCE_CONSTELLATION_FAILURE somewhere in it.",
+        "Let the sprint end and wait for the board.",
+        "Verify the board says plainly that the review didn't come through this time, and offers a way to try again.",
+        "Verify the writer can still resume writing or start a new freewrite without clearing anything.",
+        "Verify no fabricated or placeholder ideas are shown to fill the space."
+      ]
+    },
+    {
+      "id": "zero-engagement-stays-frictionless",
+      "name": "Ignoring the review entirely costs the writer nothing",
+      "steps": [
+        "Start the shortest sprint, type a short paragraph, and let the sprint end.",
+        "As soon as the board appears, without opening anything, choose to start a new freewrite.",
+        "Verify the writer goes straight into a new sprint with no confirmation prompt about the unopened review and no penalty or nagging.",
+        "Verify the new sprint's writing surface is clean — none of the previous review's ideas or cards are carried into it.",
+        "Repeat once more but choose 'Resume writing' instead, and verify the writer lands back in their draft with the cursor ready."
+      ]
+    }
+  ]
+}
