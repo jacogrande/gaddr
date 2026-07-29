@@ -30,6 +30,9 @@ import type {
   WireStar,
 } from "./node-types";
 import {
+  BRIEF_MAX_CHARS,
+  NODE_GHOST_ECHO_NGRAM,
+  NODE_GROUNDING_MAX_TOKENS,
   NODE_GROUNDING_MIN_TOKENS,
   OFF_MAP_MAX,
   STAR_MAX,
@@ -38,11 +41,18 @@ import {
   STAR_WEIGHT_MAX,
   STAR_WEIGHT_MIN,
 } from "./node-types";
-import { indexOfSubsequence, matchTokens } from "../text/span-matching";
+import {
+  echoesSourceBeyondSpan,
+  indexOfSubsequence,
+  matchTokens,
+  ngramSet,
+} from "../text/span-matching";
 
 /** The closed set of reasons a discovery (or one of its stars) can be rejected. */
 export type DiscoveryRejectReason =
   | "empty-brief"
+  | "brief-too-long"
+  | "brief-echoes-draft"
   | "bad-confidence"
   | "star-count"
   | "low-confidence-star-count"
@@ -53,7 +63,8 @@ export type DiscoveryRejectReason =
   | "empty-label"
   | "bad-weight"
   | "empty-grounding"
-  | "ungrounded";
+  | "ungrounded"
+  | "grounding-too-long";
 
 export type DiscoveryRejection = {
   readonly reason: DiscoveryRejectReason;
@@ -131,6 +142,12 @@ export function validateStar(
         `A grounding span must be at least ${String(NODE_GROUNDING_MIN_TOKENS)} words`,
       );
     }
+    if (groundingTokens.length > NODE_GROUNDING_MAX_TOKENS) {
+      return rejectStar(
+        "grounding-too-long",
+        `A grounding span must be at most ${String(NODE_GROUNDING_MAX_TOKENS)} words — one sentence, not a paragraph`,
+      );
+    }
     if (indexOfSubsequence(matchTokens(draft), groundingTokens) < 0) {
       return rejectStar(
         "ungrounded",
@@ -159,8 +176,32 @@ export function validateDiscovery(
   wire: WireDiscovery,
   draft: string,
 ): Result<Discovery, DiscoveryRejection> {
-  if (wire.brief.trim().length === 0) {
+  const brief = wire.brief.trim();
+  if (brief.length === 0) {
     return err({ reason: "empty-brief", message: "S1 must return a brief" });
+  }
+  // Content posture (D11): the brief is model output, but a ceiling + a
+  // ghost-echo check keep it from becoming a near-copy of the draft (which would
+  // put draft prose at rest server-side).
+  if (brief.length > BRIEF_MAX_CHARS) {
+    return err({
+      reason: "brief-too-long",
+      message: `The brief must be at most ${String(BRIEF_MAX_CHARS)} chars — it is a thesis summary, not a copy of the draft`,
+    });
+  }
+  const draftGrams = ngramSet(matchTokens(draft), NODE_GHOST_ECHO_NGRAM);
+  if (
+    echoesSourceBeyondSpan(
+      matchTokens(brief),
+      [],
+      draftGrams,
+      NODE_GHOST_ECHO_NGRAM,
+    )
+  ) {
+    return err({
+      reason: "brief-echoes-draft",
+      message: "The brief reproduces a run of the draft verbatim — summarize the thesis, do not copy it",
+    });
   }
   if (wire.confidence !== "high" && wire.confidence !== "low") {
     return err({
@@ -228,5 +269,5 @@ export function validateDiscovery(
     offMapSeeds.push(result.value);
   }
 
-  return ok({ brief: wire.brief.trim(), stars, offMapSeeds, confidence });
+  return ok({ brief, stars, offMapSeeds, confidence });
 }

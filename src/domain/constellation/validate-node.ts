@@ -36,6 +36,7 @@ import type {
 import {
   NODE_BODY_MAX_CHARS,
   NODE_GHOST_ECHO_NGRAM,
+  NODE_GROUNDING_MAX_TOKENS,
   NODE_GROUNDING_MIN_TOKENS,
   NODE_KINDS,
   NODE_PAYOFF_MAX_CHARS,
@@ -71,6 +72,7 @@ export type NodeRejectReason =
   | "not-interrogative"
   | "empty-grounding"
   | "ungrounded"
+  | "grounding-too-long"
   | "ghost-echo";
 
 /** A rejected node: the machine-readable code plus a human-readable why (the
@@ -484,6 +486,12 @@ export function validateNode(
       return reject(
         "ungrounded",
         `A grounding span must be at least ${String(NODE_GROUNDING_MIN_TOKENS)} words — a single word is not a specific span`,
+      );
+    }
+    if (groundingTokens.length > NODE_GROUNDING_MAX_TOKENS) {
+      return reject(
+        "grounding-too-long",
+        `A grounding span must be at most ${String(NODE_GROUNDING_MAX_TOKENS)} words — copy one sentence, not a paragraph (the draft is never stored at large)`,
       );
     }
     if (indexOfSubsequence(draftTokens, groundingTokens) < 0) {

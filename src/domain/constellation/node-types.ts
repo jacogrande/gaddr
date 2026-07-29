@@ -78,6 +78,17 @@ export type NodeStatus =
   | "dismissed"
   | "deferred";
 
+/** The node statuses as a value, for iteration/membership (the `SPARK_LENSES`
+ * pattern — annotated, not `as const`, so each literal is checked against
+ * `NodeStatus` while keeping the domain's no-type-assertion rule). */
+export const NODE_STATUSES: readonly NodeStatus[] = [
+  "unseen",
+  "opened",
+  "resolved",
+  "dismissed",
+  "deferred",
+];
+
 /**
  * A star: one of the writer's load-bearing ideas (`kind: "star"`) or a deliberate
  * off-map seed (`kind: "off-map"`). `weight` is the S1-emitted load-bearing
@@ -294,6 +305,22 @@ export const NODE_GHOST_ECHO_NGRAM = 8;
 export const NODE_GROUNDING_MIN_TOKENS = 2;
 
 /**
+ * A grounding span carries at MOST this many normalized tokens. A grounding is
+ * the writer's own sentence anchoring the node — one sentence, never a
+ * paragraph. This is the enforcement teeth on D11's binding rule ("the draft is
+ * never at rest server-side"): without a ceiling, a model could copy a large
+ * verbatim draft excerpt into a persisted grounding column. A long legitimate
+ * sentence that trips it costs a dropped node (spares exist); a copied paragraph
+ * costs the content posture, so the validator errs toward rejection.
+ */
+export const NODE_GROUNDING_MAX_TOKENS = 40;
+
+/** The S1 brief is a thesis/stance summary — MODEL OUTPUT, bounded so it can
+ * never become a near-copy of the draft (D11). Paired with a ghost-echo check
+ * in `validate-discovery.ts`. */
+export const BRIEF_MAX_CHARS = 600;
+
+/**
  * The node kinds, as a value, for membership checks and iteration. Annotated
  * (not `as const`) so each literal is checked against `NodeKind` while staying
  * within the domain's no-type-assertion rule — the `SPARK_LENSES` pattern.
@@ -340,4 +367,20 @@ export const NODE_STATUS_TRANSITIONS: Readonly<
 /** Is moving from `from` to `to` a permitted Run 1 lifecycle step? */
 export function canTransitionStatus(from: NodeStatus, to: NodeStatus): boolean {
   return NODE_STATUS_TRANSITIONS[from].includes(to);
+}
+
+/**
+ * The statuses a node may legally be in for a transition TO `target` to be
+ * permitted — the inverse of `NODE_STATUS_TRANSITIONS`. The PATCH route hands
+ * this to the persistence layer so the transition legality is enforced ATOMICALLY
+ * at the UPDATE (a `WHERE status IN (…predecessors)` precondition) rather than by
+ * a read-then-write the writer could race. An empty result means `target` is
+ * unreachable (e.g. `unseen`, which nothing transitions into) and the update
+ * matches nothing — the correct outcome. Pure and derived, so it can never drift
+ * from the forward map.
+ */
+export function statusPredecessors(target: NodeStatus): readonly NodeStatus[] {
+  return NODE_STATUSES.filter((from) =>
+    NODE_STATUS_TRANSITIONS[from].includes(target),
+  );
 }
