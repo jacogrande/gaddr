@@ -7,7 +7,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { resolveSparkLlm } from "../../../../src/infra/llm/providers";
+import {
+  resolveDiscoveryLlm,
+  resolveNodesLlm,
+  resolveSparkLlm,
+} from "../../../../src/infra/llm/providers";
 
 function env(provider?: string): NodeJS.ProcessEnv {
   const base: NodeJS.ProcessEnv = { NODE_ENV: "test" };
@@ -38,5 +42,25 @@ describe("resolveSparkLlm — the spark stage's routing choice", () => {
 
   test("a typo'd provider fails loudly at composition", () => {
     expect(() => resolveSparkLlm(env("claude"))).toThrow("not a known provider");
+  });
+});
+
+describe("resolveDiscoveryLlm / resolveNodesLlm — the constellation strong tier", () => {
+  test("both resolve to the same Sonnet-class model at medium effort", () => {
+    for (const resolve of [resolveDiscoveryLlm, resolveNodesLlm]) {
+      expect(resolve(env("anthropic"))).toEqual({
+        provider: "anthropic",
+        modelId: "claude-sonnet-5",
+        effort: "medium",
+      });
+      expect(resolve(env("openai")).modelId).toBe("gpt-5.6-terra");
+    }
+  });
+
+  test("resolveNodesLlm takes no kind — the cache-safe uniform S3 choice", () => {
+    // Structural guarantee (model-routing §4.1): a per-kind model/effort flip
+    // would break the shared S3 prefix cache, so the signature forbids it — the
+    // only (optional, defaulted) param is `env`, so arity is 0.
+    expect(resolveNodesLlm.length).toBe(0);
   });
 });
