@@ -396,6 +396,11 @@ html[data-theme="dark"] body::after {
   --xy-background-color-dots-default: color-mix(in srgb, var(--border-strong) 85%, transparent);
 }
 
+/* The same 85% reads noticeably heavier against the dark ground. */
+html[data-theme="dark"] .gaddr-react-flow-bg {
+  --xy-background-color-dots-default: color-mix(in srgb, var(--border-strong) 52%, transparent);
+}
+
 /* React Flow gives nodes a default focus outline; the writing surface should
    look like a plain document, not a focusable card. */
 .gaddr-react-flow .react-flow__node,
@@ -474,11 +479,13 @@ html[data-theme="dark"] body::after {
 
 .gaddr-board-overlay__new {
   margin-top: -0.25rem;
-  font-size: 0.66rem;
+  /* Discards the constellation, and ran at 1.89:1 — the most destructive action
+     on the board was also its least visible text. */
+  font-size: 0.76rem;
   font-weight: 500;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--app-muted-soft);
+  color: var(--app-muted);
   background: transparent;
   border: none;
   padding: 0.25rem 0.5rem;
@@ -496,3 +503,740 @@ html[data-theme="dark"] body::after {
   border-radius: 4px;
 }
 
+
+/* ══ Constellation board ═══════════════════════════════════════════════════
+   Celestial cartography on warm paper: the writer's draft sits at the centre of
+   its own constellation, stars ringed around it, cards fanning outward on
+   hairline spokes. Every value below is drawn from the existing token ramp —
+   no new palette, so the board reads as the same product in both themes.
+
+   Designed against the 2026-03 board audit's twelve failures: dominant crux
+   (#4), decisive dimming (#5), purposeful edges (#6), type above the legibility
+   floors (#7/#8), cards spatially tied to their star (#9), real keyboard
+   support (#10). */
+
+/* ── Shared: the spoke, handles, ignition ── */
+
+.gaddr-flow-handle {
+  visibility: hidden;
+}
+
+.gaddr-react-flow .react-flow__edge.gaddr-spoke .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--accent) 62%, transparent);
+  stroke-width: 1.25;
+  /* A genuine draw: one long dash the length of any spoke we render, wound out
+     from the star. (The previous `3 5` + offset 24 just shifted the dashes by
+     three periods — a shimmer, not a draw.) */
+  stroke-dasharray: 1200;
+  stroke-dashoffset: 1200;
+  animation: gaddr-spoke-draw 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 260ms;
+}
+
+/* Resting draft→star spokes: present enough to read as structure, quiet enough
+   not to compete with the stars themselves. */
+.gaddr-react-flow .react-flow__edge.gaddr-spoke--rest .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--accent) 34%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+  animation: gaddr-spoke-fade 900ms ease-out both;
+}
+
+.gaddr-react-flow .react-flow__edge.gaddr-spoke--offmap .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--app-muted) 30%, transparent);
+  stroke-dasharray: 1 9;
+}
+
+@keyframes gaddr-spoke-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes gaddr-spoke-draw {
+  from {
+    opacity: 0;
+    stroke-dashoffset: 1200;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The staggered ignition — stars light in reading order as the board opens.
+   CRITICAL: the animation lives on the node's INNER element, never on the React
+   Flow node wrapper. The wrapper's `transform` is how React Flow positions the
+   node on the canvas; animating `transform` there (with fill-mode `both`)
+   overwrites that translate and collapses every node onto the canvas origin.
+   Learned the hard way — the whole constellation stacked on the draft card. */
+.gaddr-star-ignite {
+  animation: gaddr-ignite 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--ignite-delay, 0ms);
+}
+
+@keyframes gaddr-ignite {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Same rule as the ignition above: inner element only, never the wrapper. */
+.gaddr-card-unfurl {
+  animation: gaddr-unfurl 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--unfurl-delay, 0ms);
+}
+
+@keyframes gaddr-unfurl {
+  from {
+    opacity: 0;
+    /* Starts at (a fraction of the way toward) its star, so the fan reads as
+       unfurling from the hub rather than popping in place. The offsets are set
+       per-card by the renderer from the layout's own geometry. */
+    transform: translate(
+        calc(var(--unfurl-from-x, 0px) * 0.55),
+        calc(var(--unfurl-from-y, 0px) * 0.55)
+      )
+      scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+/* On the board the draft becomes the CENTRE MARK the ring orbits — it is context
+   at this zoom, never a reading surface, and at full size it would force the ring
+   so far out that star labels shrink past legibility (measured: ~0.08 zoom). */
+/* The scale targets the node's CHILD, not the wrapper — the wrapper's transform
+   is React Flow's positioning (see the ignition note above). Opacity is safe on
+   the wrapper itself. */
+.gaddr-draft--constellation {
+  opacity: 0.62;
+  transition: opacity 520ms ease;
+}
+
+.gaddr-draft--constellation > div {
+  transform: scale(0.4);
+  transform-origin: center center;
+  transition: transform 780ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* In board mode the editor card has no scroll container, so a long draft would
+     grow a card tall enough to swallow the ring. Clamp it: at board zoom this is
+     a centre mark, not a reading surface, and the text fades out rather than
+     ending on a hard cut. */
+  max-height: 900px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+}
+
+/* The draft recedes further while a star holds focus, so the cards read. */
+.gaddr-draft--receded {
+  opacity: 0.3;
+  transition: opacity 520ms ease;
+}
+
+.gaddr-draft--constellation.gaddr-draft--receded {
+  opacity: 0.22;
+}
+
+/* ── Star anchors ── */
+
+.gaddr-star {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "mark crux"
+    "label label"
+    "meta meta";
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  width: 100%;
+  padding: 0.7rem 0.95rem 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 62%, transparent);
+  /* surface-2 (not surface-1): against #f4e9d8 the lighter surface was a
+     two-value step and the anchors read as floating. The shadow is built from a
+     neutral brown-black rather than the page colour, so it actually reads. */
+  background-color: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, #2b1d10 14%, transparent);
+  backdrop-filter: blur(2px);
+  transition:
+    opacity 420ms ease,
+    transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 240ms ease,
+    box-shadow 240ms ease,
+    filter 420ms ease;
+}
+
+.gaddr-star:hover {
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  box-shadow: 0 14px 38px color-mix(in srgb, var(--app-bg) 56%, transparent);
+}
+
+.gaddr-star:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+
+.gaddr-star__mark {
+  grid-area: mark;
+  display: inline-flex;
+  color: color-mix(in srgb, var(--accent-strong) 88%, transparent);
+}
+
+/* The crux carries three redundant signals: size, the ⚡ chip, and this glow. */
+.gaddr-star--crux {
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 96%, transparent);
+  /* A glow alone vanishes on the light parchment ground, so the crux carries a
+     real 2px accent border too — the size + ⚡ + border read in BOTH themes. */
+  border-width: 2px;
+  border-color: var(--accent-strong);
+  box-shadow:
+    0 16px 46px color-mix(in srgb, var(--app-bg) 58%, transparent),
+    0 0 68px -18px color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.gaddr-star--crux .gaddr-star__label {
+  font-size: 1.3rem;
+}
+
+.gaddr-star__crux {
+  grid-area: crux;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.gaddr-star--offmap {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--border-strong) 52%, transparent);
+  background-color: color-mix(in srgb, var(--surface-1) 78%, transparent);
+}
+
+.gaddr-star--offmap .gaddr-star__mark {
+  color: var(--app-muted);
+}
+
+.gaddr-star__label {
+  grid-area: label;
+  font-family: var(--font-heading), ui-serif, Georgia, serif;
+  font-size: 1.15rem;
+  line-height: 1.3;
+  color: var(--heading-2);
+  text-wrap: balance;
+  /* The reserved STAR_HEIGHT is what the camera frames against, so a runaway
+     third line would overflow the box the layout promised. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gaddr-star__meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.84rem;
+  color: var(--app-muted);
+}
+
+.gaddr-star__intent {
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+
+.gaddr-star__dot {
+  color: var(--app-muted-soft);
+}
+
+.gaddr-star--expanded {
+  border-color: color-mix(in srgb, var(--accent) 80%, transparent);
+  transform: scale(1.03);
+}
+
+/* Decisive recession — the audit found 0.3 opacity alone too subtle against the
+   warm ground, so unfocused stars also shrink, soften, and drop their shadow. */
+.gaddr-star--dimmed {
+  opacity: 0.3;
+  transform: scale(0.95);
+  filter: blur(0.6px);
+  box-shadow: none;
+}
+
+/* Never leave a keyboard user focused on something they cannot read. */
+.gaddr-star--dimmed:focus-visible {
+  opacity: 1;
+  filter: none;
+  transform: none;
+}
+
+/* A star with nothing behind it is not a button — it should not invite a click
+   that zooms into an empty cluster. */
+.gaddr-star--quiet {
+  cursor: default;
+  opacity: 0.82;
+}
+
+.gaddr-star--quiet:hover {
+  border-color: color-mix(in srgb, var(--border-strong) 58%, transparent);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--app-bg) 46%, transparent);
+}
+
+/* ── Node cards ── */
+
+.gaddr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.85rem 0.95rem 0.8rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 58%, transparent);
+  background-color: color-mix(in srgb, var(--surface-2) 97%, transparent);
+  box-shadow: 0 14px 36px color-mix(in srgb, #2b1d10 16%, transparent);
+  backdrop-filter: blur(2px);
+  transition:
+    box-shadow 260ms ease,
+    border-color 260ms ease,
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gaddr-card--opened {
+  border-color: color-mix(in srgb, var(--card-tone) 55%, var(--border-strong));
+  box-shadow: 0 26px 66px color-mix(in srgb, var(--app-bg) 66%, transparent);
+  transform: translateY(-2px);
+}
+
+/* A settled card is MARKED, never faded: the reaction is the writer's own prose,
+   and dimming it the moment they write it reads as the tool losing interest. */
+.gaddr-card--settled {
+  border-color: color-mix(in srgb, var(--card-tone) 60%, var(--border-strong));
+}
+
+.gaddr-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.gaddr-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.16rem 0.48rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  /* Contrast fix: the tone alone ran 2.7–4.2:1 on its own tint. Mixing toward
+     the ink keeps the tone readable as identity while clearing 4.5:1. */
+  color: color-mix(in srgb, var(--chip-tone) 52%, var(--app-fg));
+  background-color: color-mix(in srgb, var(--chip-tone) 11%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chip-tone) 40%, transparent);
+}
+
+.gaddr-card__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--app-muted);
+}
+
+.gaddr-card__tier {
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+}
+
+.gaddr-card__payoff {
+  font-family: var(--font-heading), ui-serif, Georgia, serif;
+  font-size: 0.96rem;
+  line-height: 1.34;
+  color: var(--heading-3);
+  text-wrap: balance;
+}
+
+/* Provenance, in the app's own blockquote language — the writer's words, quoted
+   back, legible at scan zoom. */
+.gaddr-card__grounding {
+  border-left: 2px solid color-mix(in srgb, var(--blockquote-border) 74%, transparent);
+  padding-left: 0.55rem;
+  font-size: 0.82rem;
+  line-height: 1.42;
+  font-style: italic;
+  color: var(--blockquote-fg);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gaddr-card__foot {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.gaddr-card__open {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--accent-strong);
+  background: transparent;
+  border: none;
+  padding: 0.4rem 0.1rem;
+  min-height: 1.75rem;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.gaddr-card__open:hover {
+  color: var(--app-fg);
+}
+
+.gaddr-card__open:focus-visible,
+.gaddr-card__action:focus-visible,
+.gaddr-card__respond-submit:focus-visible,
+.gaddr-card__respond-input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.gaddr-card__settled {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--app-muted);
+}
+
+/* ── Opened card detail ── */
+
+.gaddr-card__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  animation: gaddr-detail-open 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes gaddr-detail-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.gaddr-card__body {
+  font-size: 0.9rem;
+  line-height: 1.56;
+  color: var(--app-fg);
+  /* A full-length body (900 chars) is ~26 lines in a 320-wide card — far past
+     its reserved box. Scroll it in place so the reaction row and the actions
+     stay reachable no matter how long the node is. */
+  max-height: 13rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.gaddr-card__respond-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+  margin-bottom: 0.32rem;
+}
+
+.gaddr-card__respond-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.gaddr-card__respond-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--app-fg);
+  background-color: color-mix(in srgb, var(--surface-3) 46%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-soft) 74%, transparent);
+  border-radius: 8px;
+  padding: 0.42rem 0.6rem;
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.gaddr-card__respond-input::placeholder {
+  /* muted-soft ran 1.76:1 on the input fill — the one prompt on the surface was
+     effectively invisible. */
+  color: var(--app-muted);
+  opacity: 1;
+}
+
+.gaddr-card__respond-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  background-color: color-mix(in srgb, var(--surface-4) 70%, transparent);
+}
+
+.gaddr-card__respond-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  color: var(--app-bg);
+  background-color: var(--accent-strong);
+  border: none;
+  cursor: pointer;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.gaddr-card__respond-submit:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.gaddr-card__respond-submit:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.gaddr-card__reaction-said {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.34rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--app-fg);
+  background-color: color-mix(in srgb, var(--surface-3) 40%, transparent);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
+.gaddr-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding-top: 0.15rem;
+}
+
+.gaddr-card__action {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--app-muted);
+  background: transparent;
+  border: none;
+  padding: 0.4rem 0.25rem;
+  min-height: 1.9rem;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.gaddr-card__action:hover {
+  color: var(--app-fg);
+}
+
+.gaddr-card__action--close {
+  margin-left: auto;
+}
+
+/* ── Board status line (the two-beat reveal) ── */
+
+.gaddr-constellation-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.15rem;
+}
+
+.gaddr-constellation-status__line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: var(--app-fg);
+  text-align: center;
+}
+
+.gaddr-constellation-status__line--working {
+  color: var(--app-muted);
+}
+
+.gaddr-constellation-status__line--failed {
+  color: var(--app-fg);
+}
+
+.gaddr-constellation-status__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background-color: var(--accent);
+  animation: gaddr-status-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes gaddr-status-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.gaddr-constellation-status__retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--app-fg);
+  background-color: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 0.34rem 0.85rem;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.gaddr-constellation-status__retry:hover {
+  background-color: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.gaddr-constellation-status__retry:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 2px;
+}
+
+/* ── Motion sensitivity ── */
+
+@media (prefers-reduced-motion: reduce) {
+  .gaddr-star-ignite,
+  .gaddr-card-unfurl,
+  .gaddr-card__detail,
+  .gaddr-react-flow .react-flow__edge.gaddr-spoke .react-flow__edge-path {
+    animation: none;
+  }
+
+  .gaddr-star,
+  .gaddr-card,
+  .gaddr-draft--constellation,
+  .gaddr-draft--constellation > div,
+  .gaddr-draft--receded,
+  .gaddr-card__respond-input,
+  .gaddr-card__respond-submit {
+    transition: none;
+  }
+
+  .gaddr-constellation-status__pulse {
+    animation: none;
+    opacity: 0.8;
+  }
+
+  .gaddr-star--expanded,
+  .gaddr-star--dimmed {
+    transform: none;
+  }
+}
+
+/* ── Forced colours: keep identity on shape + text, never colour ── */
+
+@media (forced-colors: active) {
+  .gaddr-star,
+  .gaddr-card,
+  .gaddr-kind-chip {
+    border: 1px solid CanvasText;
+  }
+
+  .gaddr-star--dimmed {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+/* The board's one orienting line — names the centre mark so the tiny scaled
+   draft reads as "your draft", not as something that failed to load, and tells
+   the writer what to do next. Top-centre, clear of the bottom action stack. */
+.gaddr-board-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--app-muted);
+  background-color: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-soft) 60%, transparent);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  backdrop-filter: blur(2px);
+}
+
+.gaddr-board-legend__mark {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--app-muted) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+}
+
+/* ── Off-map zone header (D10) ──
+   The cluster's whole point is "what you didn't write about". Without the words
+   on screen it reads as one more point of the ring — the dashed border and the
+   9px "unwritten" chip were carrying the entire idea. */
+.gaddr-offmap-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  padding-bottom: 0.15rem;
+  pointer-events: none;
+}
+
+.gaddr-offmap-heading__label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+  white-space: nowrap;
+}
+
+.gaddr-offmap-heading__rule {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--border-strong) 70%, transparent),
+    transparent
+  );
+}
