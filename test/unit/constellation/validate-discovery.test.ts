@@ -107,6 +107,7 @@ describe("validateStar", () => {
     ["fractional weight", { weight: 2.5 }, "star", "bad-weight"],
     ["empty grounding", { grounding: "" }, "star", "empty-grounding"],
     ["single-word grounding", { grounding: "goods" }, "star", "ungrounded"],
+    ["over-long grounding", { grounding: Array.from({ length: 41 }, (_, i) => `w${String(i)}`).join(" ") }, "star", "grounding-too-long"],
     ["grounding off-draft", { grounding: "quantum foam bubbles" }, "star", "ungrounded"],
     ["empty off-map rationale", { grounding: "", kind: "off-map" }, "off-map", "empty-grounding"],
   ])("rejects %s", (_label, overrides, expectedKind, reason) => {
@@ -143,6 +144,20 @@ describe("validateDiscovery", () => {
   test("rejects an empty brief", () => {
     expect(discoveryReason(validateDiscovery(wireDiscovery({ brief: "  " }), DRAFT))).toBe(
       "empty-brief",
+    );
+  });
+
+  test("rejects an over-long brief (D11 — not a copy of the draft)", () => {
+    expect(
+      discoveryReason(validateDiscovery(wireDiscovery({ brief: "x".repeat(601) }), DRAFT)),
+    ).toBe("brief-too-long");
+  });
+
+  test("rejects a brief that reproduces a run of the draft verbatim", () => {
+    const brief =
+      "The thesis is that mass production made goods affordable for ordinary people, at a cost.";
+    expect(discoveryReason(validateDiscovery(wireDiscovery({ brief }), DRAFT))).toBe(
+      "brief-echoes-draft",
     );
   });
 

@@ -329,6 +329,15 @@ describe("validateNode — grounding and ghost-echo", () => {
     ).toBe("ungrounded");
   });
 
+  test("an over-long grounding span is rejected (D11 — no paragraphs at rest)", () => {
+    // 41 tokens > NODE_GROUNDING_MAX_TOKENS (40); the max check fires before the
+    // draft-match, so it need not appear in the draft.
+    const long = Array.from({ length: 41 }, (_, i) => `w${String(i)}`).join(" ");
+    expect(reasonOf(validateNode(node({ grounding: long }), DRAFT, STAR_ASSERT))).toBe(
+      "grounding-too-long",
+    );
+  });
+
   test("a body echoing a draft run beyond its grounding span", () => {
     const result = validateNode(
       node({
