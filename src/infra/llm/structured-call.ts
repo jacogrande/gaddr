@@ -192,6 +192,13 @@ export interface InferenceAttempt {
    * before forwarding, so per-sprint yield stays a plain SQL slice.
    */
   readonly sprintId?: string;
+  /**
+   * Correlates the attempt to its constellation run, for stages that have one
+   * (`discovery`, `nodes:*`). Like `sprintId`, structured-call is run-agnostic —
+   * the constellation adapters enrich their caller's `onAttempt` with this before
+   * forwarding, so per-run yield stays a plain SQL slice.
+   */
+  readonly runId?: string;
   readonly inputHash: string;
   readonly promptVersion: string;
   /** The model that SERVED this attempt — the provider-reported model when the

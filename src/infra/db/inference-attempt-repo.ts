@@ -74,6 +74,9 @@ export function toInferenceAttemptRow(
     modelId: attempt.modelId,
     // The requested reasoning effort, when the stage set one (null otherwise).
     effort: attempt.effort ?? null,
+    // The constellation run this attempt belongs to (discovery/nodes:*); null for
+    // spark, which correlates by sprint_id instead.
+    runId: attempt.runId ?? null,
     outcome: attempt.outcome,
     retryCount: attempt.retryCount,
     candidatesReturned: attempt.candidatesReturned ?? null,
@@ -82,6 +85,8 @@ export function toInferenceAttemptRow(
     latencyMs: attempt.latencyMs,
     inputTokens: attempt.inputTokens,
     outputTokens: attempt.outputTokens,
+    // Cached prompt tokens, when the provider reports them (null otherwise).
+    cachedInputTokens: attempt.cachedInputTokens ?? null,
   };
 }
 
