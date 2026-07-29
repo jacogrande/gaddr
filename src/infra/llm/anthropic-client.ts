@@ -164,7 +164,20 @@ export function createAnthropicStructuredClient(): StructuredCallClient {
         {
           model: request.modelId,
           max_tokens: request.maxTokens,
-          system: request.system,
+          // The system prompt carries the large stable prefix — for S3, the
+          // shared `[stance + fenced draft + brief + stars]` that is byte-
+          // identical across the four kind calls (the kind block travels in the
+          // user turn). Mark it as an ephemeral cache breakpoint so the three
+          // later kind calls read the cache instead of reprocessing the draft
+          // (plan D5/§5.5). A no-op below the model's cache-token floor (Haiku's
+          // 4096-trap, §5.5), a large win above it (Sonnet at 1024).
+          system: [
+            {
+              type: "text",
+              text: request.system,
+              cache_control: { type: "ephemeral" },
+            },
+          ],
           messages: toSdkMessages(request.messages),
           // Effort is set only when the stage asked for reasoning; `"none"`/
           // absent leaves it unset so the model uses its default (see

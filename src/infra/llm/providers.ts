@@ -57,6 +57,17 @@ const SPARK_MODEL_BY_PROVIDER: Record<LlmProvider, string> = {
   openai: "gpt-5.6-luna",
 };
 
+/** The constellation stages' strong-synthesis tier (D6: "Sonnet for both
+ * stages"; the OpenAI parallel is the terra tier — portability research §2 P3).
+ * S1 and S3 share it; the Sonnet-vs-Opus A/B on the counterargument call is an
+ * OFFLINE quality-lane experiment, not a production per-kind flip (a per-kind
+ * model/effort change would break the shared S3 prefix cache — model-routing
+ * research §4.1). */
+const CONSTELLATION_MODEL_BY_PROVIDER: Record<LlmProvider, string> = {
+  anthropic: "claude-sonnet-5",
+  openai: "gpt-5.6-terra",
+};
+
 function resolveProvider(env: NodeJS.ProcessEnv): LlmProvider {
   const raw = env[LLM_PROVIDER_ENV];
   if (raw === undefined || raw === "") {
@@ -80,6 +91,35 @@ export function resolveSparkLlm(
 ): StageLlmConfig {
   const provider = resolveProvider(env);
   return { provider, modelId: SPARK_MODEL_BY_PROVIDER[provider], effort: "none" };
+}
+
+/** S1 discovery's routing choice. Sonnet-class at `medium` effort — S1
+ * determines everything downstream, so it earns real reasoning, but this is an
+ * async sprint-end stage with no keystroke budget, and the effort is tuned on
+ * the golden corpus (model-routing research §5). */
+export function resolveDiscoveryLlm(
+  env: NodeJS.ProcessEnv = process.env,
+): StageLlmConfig {
+  const provider = resolveProvider(env);
+  return {
+    provider,
+    modelId: CONSTELLATION_MODEL_BY_PROVIDER[provider],
+    effort: "medium",
+  };
+}
+
+/** S3 node generation's routing choice — the SAME model + effort across all four
+ * kind calls, so the shared prefix cache holds (model-routing §4.1). The
+ * steelman-quality A/B stays offline (D6). */
+export function resolveNodesLlm(
+  env: NodeJS.ProcessEnv = process.env,
+): StageLlmConfig {
+  const provider = resolveProvider(env);
+  return {
+    provider,
+    modelId: CONSTELLATION_MODEL_BY_PROVIDER[provider],
+    effort: "medium",
+  };
 }
 
 /** Construct the structured-call client for a provider. Both factories read
